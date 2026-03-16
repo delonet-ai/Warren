@@ -9,6 +9,10 @@ STATE="/etc/r5s-bootstrap.state"
 CONF="/etc/r5s-bootstrap.conf"
 LOG="/root/r5s-bootstrap.log"
 TTY="/dev/tty"
+EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-https://openwrt.org/_export/code/docs/guide-user/advanced/expand_root?codeblock=0}"
+PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh}"
+EXPAND_ROOT_SHA256="${EXPAND_ROOT_SHA256:-}"
+PODKOP_INSTALL_SHA256="${PODKOP_INSTALL_SHA256:-}"
 
 GREEN="\033[1;32m"; RED="\033[1;31m"; YELLOW="\033[1;33m"; NC="\033[0m"
 
@@ -89,6 +93,51 @@ print_progress() {
 get_state(){ [ -f "$STATE" ] && cat "$STATE" || echo "0"; }
 set_state(){ echo "$1" > "$STATE"; sync; }
 
+quote_sh() {
+  printf "'%s'" "$(printf "%s" "$1" | sed "s/'/'\\\\''/g")"
+}
+
+save_conf() {
+  {
+    printf "MODE=%s\n" "$(quote_sh "${MODE:-}")"
+    printf "VLESS=%s\n" "$(quote_sh "${VLESS:-}")"
+    printf "LIST_RU=%s\n" "$(quote_sh "${LIST_RU:-}")"
+    printf "LIST_CF=%s\n" "$(quote_sh "${LIST_CF:-}")"
+    printf "LIST_META=%s\n" "$(quote_sh "${LIST_META:-}")"
+    printf "LIST_GOOGLE_AI=%s\n" "$(quote_sh "${LIST_GOOGLE_AI:-}")"
+    printf "WG_ENDPOINT=%s\n" "$(quote_sh "${WG_ENDPOINT:-}")"
+  } > "$CONF"
+}
+
+conf_set() {
+  key="$1"
+  val="$2"
+
+  case "$key" in
+    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|WG_ENDPOINT) ;;
+    *) fail "Неизвестный ключ конфига: $key" ;;
+  esac
+
+  eval "$key=$(quote_sh "$val")"
+  save_conf
+}
+
+download_file() {
+  url="$1"
+  out="$2"
+  expected_sha="$3"
+  label="$4"
+
+  wget -qO "$out" "$url" || fail "Не удалось скачать $label: $url"
+
+  if [ -n "$expected_sha" ]; then
+    actual_sha="$(sha256sum "$out" | awk '{print $1}')"
+    [ "$actual_sha" = "$expected_sha" ] || fail "SHA256 mismatch для $label: ожидался $expected_sha, получен $actual_sha"
+  else
+    warn "$label скачан без SHA256-проверки. Для жёсткой верификации задай ${label}_SHA256."
+  fi
+}
+
 # Read from /dev/tty so menu works even when script is piped: wget -O- ... | sh
 ask() {
   # ask "Prompt" VAR "default"
@@ -101,7 +150,7 @@ ask() {
     IFS= read -r ans || ans=""
   fi
   [ -z "$ans" ] && ans="$def"
-  eval "$var=\$ans"
+  eval "$var=$(quote_sh "$ans")"
 }
 
 uciq(){ uci -q "$@"; }
@@ -141,15 +190,7 @@ fi
   # WireGuard endpoint for peer configs (optional, asked later if empty)
   WG_ENDPOINT=""
 
-  cat > "$CONF" <<EOF
-MODE=$MODE
-VLESS=$VLESS
-LIST_RU=$LIST_RU
-LIST_CF=$LIST_CF
-LIST_META=$LIST_META
-LIST_GOOGLE_AI=$LIST_GOOGLE_AI
-WG_ENDPOINT=$WG_ENDPOINT
-EOF
+  save_conf
   done_ "Параметры сохранены в $CONF"
 }
 
@@ -225,25 +266,25 @@ check_space_overlay() {
 expand_root_prep() {
   cd /root
   rm -f /root/expand-root.sh 2>/dev/null || true
-  wget -U "" -O expand-root.sh "https://openwrt.org/_export/code/docs/guide-user/advanced/expand_root?codeblock=0"
-  # shellcheck disable=SC1091
-  . ./expand-root.sh
-[ -f /etc/uci-defaults/70-rootpt-resize ] || fail "Не найден /etc/uci-defaults/70-rootpt-resize после подготовки expand-root."
-chmod +x /etc/uci-defaults/70-rootpt-resize 2>/dev/null || true
-done_ "Подготовлен expand-root (uci-defaults/70-rootpt-resize готов)"
+  download_file "$EXPAND_ROOT_URL" /root/expand-root.sh "$EXPAND_ROOT_SHA256" "EXPAND_ROOT"
+  sh ./expand-root.sh || fail "expand-root prep script завершился с ошибкой"
+  [ -f /etc/uci-defaults/70-rootpt-resize ] || fail "Не найден /etc/uci-defaults/70-rootpt-resize после подготовки expand-root."
+  chmod +x /etc/uci-defaults/70-rootpt-resize 2>/dev/null || true
+  done_ "Подготовлен expand-root (uci-defaults/70-rootpt-resize готов)"
 }
 
 expand_root_run_and_reboot() {
   # This script typically triggers a reboot itself; we reboot anyway after marking progress.
   sh /etc/uci-defaults/70-rootpt-resize || true
+  set_state 60
   done_ "Запущен expand-root. Сейчас будет ребут. После загрузки запусти скрипт снова."
   reboot
+  fail "Команда reboot не выполнилась"
 }
 
 # -------------------- PODKOP --------------------
 install_podkop() {
-  url="https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh"
-  wget -qO /tmp/podkop-install.sh "$url"
+  download_file "$PODKOP_INSTALL_URL" /tmp/podkop-install.sh "$PODKOP_INSTALL_SHA256" "PODKOP_INSTALL"
   chmod +x /tmp/podkop-install.sh
 
   # ВАЖНО: заставляем install.sh читать ввод с терминала
@@ -260,7 +301,7 @@ configure_podkop_full() {
   if [ -z "${VLESS:-}" ]; then
     warn "VLESS пустой — сейчас спрошу заново."
     ask "Вставь строку VLESS (одной строкой)" VLESS ""
-    sed -i "s|^VLESS=.*|VLESS=$VLESS|" "$CONF" 2>/dev/null || true
+    conf_set VLESS "$VLESS"
   fi
   [ -n "${VLESS:-}" ] || fail "VLESS пустой. Запусти скрипт заново и введи VLESS (MODE 1/2)."
 
@@ -413,7 +454,7 @@ create_peer() {
   if [ -z "${WG_ENDPOINT:-}" ]; then
     ask "Endpoint для клиентов (например: my.domain.com:51820)" WG_ENDPOINT ""
     # persist back to CONF
-    sed -i "s/^WG_ENDPOINT=.*/WG_ENDPOINT=$WG_ENDPOINT/" "$CONF" 2>/dev/null || true
+    conf_set WG_ENDPOINT "$WG_ENDPOINT"
   fi
 
   cat > "$dir/$name.conf" <<EOF
@@ -505,7 +546,7 @@ wg_create_client() {
   # если endpoint не задан — спросим и сохраним
   if [ -z "${WG_ENDPOINT:-}" ]; then
     ask "Endpoint для клиентов (например: 89.207.218.164:51820)" WG_ENDPOINT ""
-    sed -i "s|^WG_ENDPOINT=.*|WG_ENDPOINT=$WG_ENDPOINT|" "$CONF" 2>/dev/null || true
+    conf_set WG_ENDPOINT "$WG_ENDPOINT"
   fi
 
   ip32="$(wg_next_free_ip32)" || fail "Не нашёл свободный IP в ${WG_NET_PREFIX}.0/24"
@@ -623,7 +664,7 @@ print_progress
   fi
 
   # Если expand-root всё же выбран — запускаем и уходим в reboot
-  [ "$st" -lt 60 ] && expand_root_run_and_reboot && set_state 60
+  [ "$st" -lt 60 ] && expand_root_run_and_reboot
 
   # После ребута (или если expand-root был нужен) — повторим установку пакетов и покажем место
   [ "$st" -lt 70 ] && install_full_pkg_list && set_state 70
