@@ -1,143 +1,349 @@
-# NanoPi R5S/R5C OpenWrt Bootstrap: Podkop + WireGuard + WG Client Manager
+# Warren
 
-🇷🇺 **Русский ** • 🇬🇧 **English below**
+![Warren logo](assets/warren-logo.svg)
 
----
+Русская версия для пользователя находится ниже на этой странице.  
+English version is also available below: see [English](#english).
 
-## 🇷🇺 Русский
+## Русская версия
 
 ### Что это
-`bootstrap.sh` — один скрипт для NanoPi R5S/R5C на **чистом OpenWrt**, который по шагам:
-- ставит нужные пакеты
-- (по желанию) расширяет раздел под `/overlay` (**expand-root** с ребутом)
-- устанавливает и настраивает **Podkop** (VLESS + community_lists)
-- поднимает **WireGuard** 
-- умеет управлять WireGuard-клиентами через меню: список/QR/текстовый конфиг/создать/удалить.
+`Warren` это удобный установщик и помощник для роутеров на OpenWrt, в первую очередь для NanoPi R5S/R5C.
 
-## Архитектура и как это работает (Podkop + WireGuard)
-Режим **Podkop + WireGuard** — это “ваш личный VPN до вашего дома”.
+Проект нужен, чтобы с минимальным количеством ручных действий:
+- подготовить OpenWrt,
+- настроить Podkop,
+- подготовить VPS под `VLESS + Reality`,
+- поднять приватный доступ через `AmneziaWG`,
+- позже управлять клиентами, QoS и удалённым администрированием.
 
-### Что вы получаете
-1) **Доступ к домашней сети из любой точки мира**  
-   Через WireGuard клиент на любом устрйостве вы “попадаете” в вашу LAN-сеть: можно видеть и использовать домашние устройства и сервисы:
-   - принтеры, NAS/файловые серверы, камеры, умный дом,
-   - домашние компьютеры и локальные веб-интерфейсы,
-   - любые ресурсы по локальным IP/именам.
+Идея простая: пользователь заходит по SSH на роутер, запускает одну команду и дальше работает через понятное меню.
 
-2) **Выход в мировой интернет “как из дома с подкопом”**  
-   Трафик вашего устройства идёт через домашний роутер, а дальше — в интернет через вашего провайдера, а часть уходит на ваш VPS через VLESS.  
-   Это позволяет:
-   - обходить блокировки так же, как если бы вы были дома,
-   - не “светить” исходящие соединения с ваших VPS/серверов (нет прямых коннекнов с устройств к VPS, а через одну сессию).
+### Для кого это
+Проект ориентирован на тех, кто не хочет:
+- ставить Homebrew, Python и дополнительные утилиты на компьютер,
+- вручную конфигурировать VPS и роутер по десяткам инструкций,
+- каждый раз вспоминать команды OpenWrt, WireGuard, firewall и UCI.
 
-3) **DNS через роутер (DoH внутри Podkop)**  
-   В конфигурациях WireGuard клиентов DNS указывается как IP роутера, а роутер уже резолвит через Podkop с DoH. Это делает поведение предсказуемым: DNS тоже проходит “через дом”.
+### Что уже есть сейчас
+Текущий скрипт уже умеет:
+- проверять OpenWrt, интернет и время,
+- устанавливать базовые пакеты,
+- расширять `overlay` через `expand-root`,
+- ставить и настраивать Podkop,
+- поднимать приватный туннель,
+- управлять клиентами приватного доступа.
 
-### Важное условие
-Чтобы WireGuard-клиенты могли подключаться к вашему дому, нужен **внешний (публичный) IP** на стороне провайдера и нормальная скорость соединения, так как люой клиент будет есть 2х от своей скорости! 
+### Что планируется
+В проекте будет главное меню с такими режимами:
+- `Автоматический режим`
+- `Basic setup`
+- `Настрой мне VPS`
+- `Podkop`
+- `Podkop + Amnezia Private`
+- `Доустановить Amnezia в Podkop`
+- `QoS для Amnezia`
+- `Управление Amnezia клиентами`
+- `Remote Admin` (`WIP`)
+- `USB модем настрой` (`WIP`)
 
-### Требования
-- OpenWrt **24.10.x**
-- Доступ по SSH (root)
-- Интернет на роутере (opkg / загрузка скриптов)
+### Как будет работать автоматический режим
+`Автоматический режим` должен стать основным сценарием.
+
+Он будет:
+1. Сразу спрашивать все нужные данные.
+2. Сам выполнять базовую настройку роутера.
+3. Сам настраивать VPS.
+4. Сам подключать Podkop.
+5. Сохранять результат в лог.
+6. Показывать пользователю важные данные от `3x-ui` и подключения.
+
+### Как запустить
+
+```sh
+wget -O /tmp/bootstrap.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/bootstrap.sh" && sh /tmp/bootstrap.sh
+```
+
+### Текущее направление проекта
+- Центром всей логики будет `OpenWrt`.
+- Основной язык проекта: `sh`.
+- Для приватного доступа делаем ставку на `AmneziaWG`.
+- `Remote Admin` и работа с USB-модемами будут добавляться отдельными этапами.
 
 ---
 
-### Быстрый старт
-1) Подключись по SSH на роутер.
-2) Скачай и запусти скрипт:
+## English
 
-wget -O /tmp/bootstrap.sh "https://raw.githubusercontent.com/delonet-ai/r5sPodkop/main/bootstrap.sh" && sh /tmp/bootstrap.sh
+### What it is
+`Warren` is a guided OpenWrt setup project for NanoPi R5S/R5C routers.
 
+Its goal is to make router and VPS setup much easier from a single SSH session on OpenWrt.
 
-Режимы меню
-	•	0) Basic setup — пакеты + (опционально) expand-root
-	•	1) Podkop — установка Podkop и настройка (VLESS + списки)
-	•	2) Podkop + WireGuard Private — Podkop + WireGuard + создание клиентов и QR
-	•	3) Доустановить WireGuard к Podkop — если Podkop уже есть, добавляет WG и подключает wg0 в Podkop
-	•	4) Управление WireGuard клиентами — отдельное меню:
-	•	показать список клиентов,
-	•	показать QR,
-	•	показать текстовый конфиг,
-	•	создать клиента,
-	•	удалить клиента.
+The project is intended to help users:
+- prepare a clean OpenWrt system,
+- configure Podkop,
+- provision a VPS for `VLESS + Reality`,
+- set up private remote access with `AmneziaWG`,
+- later manage clients, QoS, and remote administration features.
 
-⸻
+### Who it is for
+This project is for users who want a simple, guided setup flow and do not want to install extra tooling on their local machine.
 
-Как работает “продолжение после ребута”
+The intended experience is:
+1. SSH into the router.
+2. Run one install command.
+3. Follow a friendly on-screen menu.
 
-Скрипт хранит прогресс в:
-	•	/etc/r5s-bootstrap.state — текущий шаг (state)
-	•	/etc/r5s-bootstrap.conf — выбранные параметры (MODE, VLESS, списки, endpoint)
-	•	/root/r5s-bootstrap.log — лог выполнения
+### Current status
+The repository already contains a working bootstrap script and is evolving into a broader orchestration system for:
+- router preparation,
+- VPS setup,
+- Podkop configuration,
+- private remote access,
+- future client/QoS/admin workflows.
 
-Если что-то пошло не так — просто перезапусти скрипт, он продолжит.
+### Installation
 
-⸻
+```sh
+wget -O /tmp/bootstrap.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/bootstrap.sh" && sh /tmp/bootstrap.sh
+```
 
-WireGuard: важные моменты
-	•	Интерфейс: wg0
-	•	Порт: 51820/udp
-	•	Сеть (эталон): 10.10.10.0/24, роутер: 10.10.10.1
-	•	Firewall: wg0 добавляется в зону lan, входящий UDP/51820 разрешён с wan
-	•	Клиентам в конфиге выставляется DNS: 10.10.10.1 (DNS через роутер/Podkop)
+---
 
-Что указывать в Endpoint при создании клиентов
-Endpoint — это то, по чему клиент достучится до роутера из интернета:
-	•	внешний IP роутера (например 89.207.218.164:51820), или
-	•	домен (например wg.example.com:51820)
+## Technical Overview
 
+### Product Direction
 
+The router on OpenWrt is the center of orchestration.
 
-🇬🇧 English
+Why this approach:
+- the user only needs SSH access to OpenWrt,
+- no Homebrew, Python, or local tooling on macOS/Windows/Linux is required,
+- one entrypoint is easier for non-technical users,
+- the router can configure both itself and the remote VPS.
 
-What is this
+The project stays on `sh` and is intended to be modularized into multiple shell libraries rather than migrated wholesale to Python.
 
-bootstrap.sh is a single-file bootstrap script for NanoPi R5S/R5C running a fresh OpenWrt install. It:
-	•	installs required packages,
-	•	(optionally) expands /overlay (expand-root with reboot),
-	•	installs & configures Podkop (VLESS + community_lists),
-	•	configures WireGuard using the “golden” layout (wg0 is part of the lan firewall zone),
-	•	includes a WireGuard client management menu: list / show QR / show config / create / delete.
+### User Journey
 
-⸻
-## 🇬🇧 Architecture (Podkop + WireGuard)
+#### Install flow
+1. The user connects to OpenWrt over SSH.
+2. The user runs a single install command.
+3. The script clears terminal noise, shows a welcome screen, and opens the main menu.
+4. The user chooses either a guided full flow or a focused mode for a specific task.
 
-The **Podkop + WireGuard** mode is essentially “your personal VPN into your home”.
+#### Main menu target design
+- `Automatic mode`
+  Runs the full guided flow except client creation for AmneziaWG.
+- `Basic setup`
+  Installs packages and prepares the OpenWrt base system.
+- `Configure my VPS`
+  Connects to the VPS and configures the VLESS + Reality side.
+- `Podkop`
+  Installs and configures Podkop on OpenWrt.
+- `Podkop + Amnezia Private`
+  Installs/configures Podkop and private AmneziaWG access together.
+- `Add Amnezia to existing Podkop`
+  Extends an already configured Podkop setup with private AmneziaWG access.
+- `QoS for Amnezia`
+  Applies client policies, shaping, or prioritization rules.
+- `Manage Amnezia clients`
+  Create, list, show config/QR, revoke, and remove clients.
+- `Remote Admin`
+  Work in progress placeholder for remote administration tooling.
+- `USB modem setup`
+  Work in progress placeholder for mobile uplink / backup uplink scenarios.
 
-### What you get
-1) **Access to your home network from anywhere**  
-   WireGuard connects you into your LAN so you can reach:
-   - printers, NAS/file servers, cameras, smart home services,
-   - home PCs and local web UIs,
-   - anything available on local IPs/hostnames.
+### Automatic Mode
 
-2) **Internet access “as if you were at home”**  
-   Your device’s traffic goes through your home router and then out via your ISP.  
-   This allows you to:
-   - bypass blocks the same way you would from home,
-   - avoid exposing your outbound traffic as coming from your VPS (traffic exits via home, not via a VPS).
+`Automatic mode` is intended to be the main happy-path experience.
 
-3) **DNS via the router (DoH inside Podkop)**  
-   WireGuard client configs point DNS to the router (e.g. `10.10.10.1`), while the router resolves via Podkop using DoH. This keeps DNS behavior consistent and routed “through home”.
+It should:
+1. Collect all required inputs at the start.
+2. Save them to a temporary JSON state file for the duration of the run.
+3. Run:
+   - `Basic setup`
+   - `Configure my VPS`
+   - `Podkop`
+4. Print and save the resulting VPS/3x-ui access data for the user.
+5. Remove the temporary JSON file at the end.
 
-### Key requirement
-To connect to your home from the Internet you need a **public WAN IP** from your ISP:
-- static public IP, or
-- dynamic public IP (DDNS is recommended).
+#### Expected inputs for automatic mode
+- OpenWrt-side choices:
+  - whether to expand root,
+  - preset selection,
+  - Podkop options,
+  - future QoS defaults.
+- VPS-side inputs:
+  - VPS IP,
+  - root password,
+  - optional SSH port,
+  - optional preferred domain/SNI/public host values for Reality.
 
+#### Output expectations
+- concise on-screen summary,
+- persisted log file,
+- explicit display of:
+  - 3x-ui login,
+  - 3x-ui password,
+  - important connection parameters,
+  - generated VLESS string or equivalent import data.
 
-Requirements
-	•	OpenWrt 24.10.x
-	•	SSH access (root)
-	•	Internet connectivity (opkg + downloads)
-	•	Prefer running interactively (Podkop installer may ask questions)
+### Functional Areas
 
-⸻
+#### 1. OpenWrt base preparation
+This is the current foundation and already exists in the repository in working form:
+- package installation,
+- overlay/expand-root workflow,
+- reboot-safe continuation,
+- basic preparation for Podkop and private tunnel services.
 
-Quick start
-	1.	SSH into your router.
-	2.	Download & run:
-wget -O /tmp/bootstrap.sh "https://raw.githubusercontent.com/delonet-ai/r5sPodkop/main/bootstrap.sh" && sh /tmp/bootstrap.sh
+#### 2. VPS provisioning
+Planned behavior:
+- connect from OpenWrt to a remote VPS,
+- install required tools,
+- install and configure `3x-ui`,
+- configure `VLESS + Reality`,
+- return the generated connection details back to OpenWrt.
 
-  
+Important implementation note:
+- the first iteration may use password-based SSH login,
+- but the flow should aim to transition to key-based access as early as possible.
+
+#### 3. Podkop configuration
+Current and planned behavior:
+- install Podkop,
+- configure VLESS import data,
+- enable selected community lists / presets,
+- later support curated preset profiles rather than only raw toggles.
+
+#### 4. AmneziaWG private access
+The project direction is to prefer `AmneziaWG` for private remote access.
+
+Planned behavior:
+- install and configure AmneziaWG server on OpenWrt,
+- integrate firewall/network rules,
+- issue client configs,
+- show QR where applicable,
+- support revoke/delete/list flows.
+
+#### 5. QoS for Amnezia clients
+Planned behavior:
+- define per-client priorities or profiles,
+- optionally apply bandwidth limits,
+- later expose policy profiles through UCI/LuCI-compatible config,
+- keep initial implementation simple and deterministic.
+
+#### 6. Remote Admin
+Status: `WIP`
+
+Target idea:
+- enable the maintainer to reach both OpenWrt and VPS remotely,
+- work even when the router has no public external IP,
+- account for USB modem / cellular scenarios,
+- likely depend on an outbound tunnel model rather than inbound access to the router.
+
+This area needs a separate design pass before implementation.
+
+#### 7. USB modem setup
+Status: `WIP`
+
+Target idea:
+- prepare the system for using a USB modem as the main channel,
+- prepare the system for using a USB modem as a backup uplink,
+- integrate with remote admin and tunnel persistence where possible.
+
+### Current State In Repository
+
+The current `bootstrap.sh` already supports:
+- OpenWrt version/internet/time checks,
+- package installation,
+- optional expand-root,
+- Podkop installation and configuration,
+- WireGuard-based private access setup,
+- basic WireGuard peer management.
+
+This existing functionality is the base being evolved toward the broader orchestration design described above.
+
+### Architecture Direction
+
+The codebase should move from one large script to a modular shell layout.
+
+Target structure:
+
+```text
+bootstrap.sh
+lib/common.sh
+lib/ui.sh
+lib/state.sh
+lib/basic.sh
+lib/podkop.sh
+lib/vps.sh
+lib/amnezia.sh
+lib/qos.sh
+lib/remote_admin.sh
+lib/usb_modem.sh
+lib/presets.sh
+```
+
+#### Module responsibilities
+- `bootstrap.sh`
+  Entry point, menu, high-level orchestration.
+- `lib/common.sh`
+  Logging, retries, helpers, command wrappers.
+- `lib/ui.sh`
+  Banner, terminal reset/clear, prompts, menus, summaries.
+- `lib/state.sh`
+  State files, temporary JSON payload, cleanup, resume logic.
+- `lib/basic.sh`
+  Base OpenWrt preparation and package logic.
+- `lib/podkop.sh`
+  Podkop install/config/presets integration.
+- `lib/vps.sh`
+  Remote VPS connection, setup, and extraction of generated config.
+- `lib/amnezia.sh`
+  AmneziaWG server and client management.
+- `lib/qos.sh`
+  Traffic shaping and policy profiles.
+- `lib/remote_admin.sh`
+  Placeholder module for future remote admin flows.
+- `lib/usb_modem.sh`
+  Placeholder module for modem-related flows.
+- `lib/presets.sh`
+  Named opinionated configurations instead of only raw toggle choices.
+
+### State And Safety
+
+The project should remain reboot-safe and resumable.
+
+Planned state layers:
+- persistent step/state marker for resumable operations,
+- persistent config only where the user expects installed settings to remain,
+- temporary JSON file for one-shot guided flows,
+- cleanup of sensitive temporary data after success or explicit abort.
+
+Sensitive data rules:
+- never keep VPS root password longer than needed,
+- prefer upgrading to SSH key auth,
+- scrub temporary files on success and on controlled failure paths where possible.
+
+### Roadmap Snapshot
+
+Near-term:
+- redesign menu around the new user journey,
+- split the current script into `lib/*.sh`,
+- add temporary JSON-driven automatic mode,
+- add VPS provisioning for `3x-ui + VLESS + Reality`,
+- replace current WireGuard direction with AmneziaWG-oriented flows.
+
+Later:
+- QoS profiles for private clients,
+- remote admin architecture,
+- USB modem main/backup uplink flows,
+- LuCI/UCI-friendly configuration surfaces where practical.
+
+### Branding
+
+The project name is now `Warren`.
+
+The repository is being repositioned from a Podkop-focused bootstrap script into a broader OpenWrt-centered orchestration project for router, VPS, and private access setup.

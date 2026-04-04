@@ -1,13 +1,13 @@
 #!/bin/sh
-# r5sPodkop bootstrap: packages -> expand-root (reboot) -> podkop -> wireguard -> peers+QR
+# Warren bootstrap: packages -> expand-root (reboot) -> podkop -> wireguard -> peers+QR
 # Designed for OpenWrt 24.10.x on NanoPi R5S/R5C
-# Usage (GitHub): wget -qO- "https://raw.githubusercontent.com/delonet-ai/r5sPodkop/main/bootstrap.sh" | sh
+# Usage (GitHub): wget -qO- "https://raw.githubusercontent.com/delonet-ai/Warren/main/bootstrap.sh" | sh
 
 set -e
 
-STATE="/etc/r5s-bootstrap.state"
-CONF="/etc/r5s-bootstrap.conf"
-LOG="/root/r5s-bootstrap.log"
+STATE="/etc/warren.state"
+CONF="/etc/warren.conf"
+LOG="/root/warren.log"
 TTY="/dev/tty"
 EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-https://openwrt.org/_export/code/docs/guide-user/advanced/expand_root?codeblock=0}"
 PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh}"
@@ -30,7 +30,7 @@ log()   { echo "[$(date +'%F %T')] $*" >> "$LOG"; }
 print_banner() {
   say ""
   say "╔══════════════════════════════════════════════════════════════╗"
-  say "║                      R5S / R5C Bootstrap                     ║"
+  say "║                         Warren Setup                         ║"
   say "╠══════════════════════════════════════════════════════════════╣"
   say "║ Этот скрипт с любовью разработал для тебя delonet-ai.         ║"
   say "║ Просто следуй шагам. Если что-то пошло не так —               ║"
