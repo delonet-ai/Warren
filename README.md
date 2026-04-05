@@ -61,7 +61,7 @@ English version is also available below: see [English](#english).
 ### Как запустить
 
 ```sh
-wget -O /tmp/bootstrap.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/bootstrap.sh" && sh /tmp/bootstrap.sh
+wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/warren.sh" && sh /tmp/warren.sh
 ```
 
 ### Текущее направление проекта
@@ -105,7 +105,7 @@ The repository already contains a working bootstrap script and is evolving into 
 ### Installation
 
 ```sh
-wget -O /tmp/bootstrap.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/bootstrap.sh" && sh /tmp/bootstrap.sh
+wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/warren.sh" && sh /tmp/warren.sh
 ```
 
 ---
@@ -255,15 +255,7 @@ Target idea:
 
 ### Current State In Repository
 
-The current `bootstrap.sh` already supports:
-- OpenWrt version/internet/time checks,
-- package installation,
-- optional expand-root,
-- Podkop installation and configuration,
-- WireGuard-based private access setup,
-- basic WireGuard peer management.
-
-This existing functionality is the base being evolved toward the broader orchestration design described above.
+The current `warren.sh` and modular `lib/*.sh` layout already cover the first stage of the project refactor.
 
 ### Architecture Direction
 
@@ -272,6 +264,7 @@ The codebase should move from one large script to a modular shell layout.
 Target structure:
 
 ```text
+warren.sh
 bootstrap.sh
 lib/common.sh
 lib/ui.sh
@@ -283,12 +276,13 @@ lib/amnezia.sh
 lib/qos.sh
 lib/remote_admin.sh
 lib/usb_modem.sh
-lib/presets.sh
 ```
 
 #### Module responsibilities
+- `warren.sh`
+  Main entry point and orchestrator.
 - `bootstrap.sh`
-  Entry point, menu, high-level orchestration.
+  Backward-compatible wrapper.
 - `lib/common.sh`
   Logging, retries, helpers, command wrappers.
 - `lib/ui.sh`
@@ -298,9 +292,9 @@ lib/presets.sh
 - `lib/basic.sh`
   Base OpenWrt preparation and package logic.
 - `lib/podkop.sh`
-  Podkop install/config/presets integration.
+  Podkop install/config integration.
 - `lib/vps.sh`
-  Remote VPS connection, setup, and extraction of generated config.
+  Remote VPS connection, probing, setup, and generated config extraction.
 - `lib/amnezia.sh`
   AmneziaWG server and client management.
 - `lib/qos.sh`
@@ -309,8 +303,6 @@ lib/presets.sh
   Placeholder module for future remote admin flows.
 - `lib/usb_modem.sh`
   Placeholder module for modem-related flows.
-- `lib/presets.sh`
-  Named opinionated configurations instead of only raw toggle choices.
 
 ### State And Safety
 
@@ -330,20 +322,12 @@ Sensitive data rules:
 ### Roadmap Snapshot
 
 Near-term:
-- redesign menu around the new user journey,
-- split the current script into `lib/*.sh`,
-- add temporary JSON-driven automatic mode,
-- add VPS provisioning for `3x-ui + VLESS + Reality`,
-- replace current WireGuard direction with AmneziaWG-oriented flows.
+- finish VPS provisioning for `3x-ui + VLESS + Reality`,
+- replace current WireGuard backend with AmneziaWG flows,
+- add QoS profiles for private clients,
+- expand automatic mode into a full end-to-end setup.
 
 Later:
-- QoS profiles for private clients,
 - remote admin architecture,
 - USB modem main/backup uplink flows,
 - LuCI/UCI-friendly configuration surfaces where practical.
-
-### Branding
-
-The project name is now `Warren`.
-
-The repository is being repositioned from a Podkop-focused bootstrap script into a broader OpenWrt-centered orchestration project for router, VPS, and private access setup.
