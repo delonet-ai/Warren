@@ -2,6 +2,8 @@
 
 ![Warren logo](assets/warren-logo.svg)
 
+🇷🇺 **Русский ** • 🇬🇧 **English below**
+
 Русская версия для пользователя находится ниже на этой странице.  
 English version is also available below: see [English](#english).
 
