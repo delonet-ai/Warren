@@ -95,22 +95,25 @@ expand_root_run_and_reboot() {
 }
 
 mode_is_podkop() {
-  [ "$MODE" = "podkop" ] || [ "$MODE" = "podkop_private" ] || [ "$MODE" = "auto" ]
+  [ "$MODE" = "podkop_setup" ] || [ "$MODE" = "auto" ]
 }
 
 mode_is_private() {
-  [ "$MODE" = "podkop_private" ] || [ "$MODE" = "add_private" ]
+  [ "$MODE" = "add_private" ]
 }
 
 show_mode_banner() {
   say ""
   case "$MODE" in
     auto)
-      say "${YELLOW}INFO${NC}  Автоматический режим пока в переходном состоянии."
-      say "Сейчас он ещё не умеет настраивать VPS сам, но временный runtime JSON уже готов для следующего этапа."
+      say "${YELLOW}INFO${NC}  Автоматический режим доводит маршрут до Podkop под ключ."
+      say "Если есть готовые VPS-конфиги, предложу выбрать один. Если нет — можно сразу пройти через настройку VPS."
       ;;
-    podkop_private|add_private|manage_private)
+    add_private|manage_private)
       say "${YELLOW}INFO${NC}  Название уже про Amnezia Private, но backend пока ещё временно WireGuard."
+      ;;
+    podkop_backup)
+      say "${YELLOW}INFO${NC}  Режим резервного канала переведёт Podkop на URLTest с несколькими VLESS."
       ;;
   esac
 }
@@ -118,9 +121,50 @@ show_mode_banner() {
 mode_target_state() {
   case "$MODE" in
     basic) echo 75 ;;
-    podkop|auto) echo 90 ;;
-    podkop_private|add_private) echo 120 ;;
+    podkop_setup|auto) echo 90 ;;
+    add_private) echo 120 ;;
     *) echo 0 ;;
+  esac
+}
+
+prepare_auto_vless() {
+  [ "$MODE" = "auto" ] || return 0
+
+  if select_vps_report_for_podkop; then
+    return 0
+  fi
+
+  warn "Не нашёл готовых VPS-отчётов в $(vps_reports_dir)."
+  say "1) Настроить VPS сейчас и продолжить авторежим"
+  say "2) Вставить VLESS вручную"
+  ask "Выбор (1-2)" AUTO_VLESS_CHOICE "1"
+
+  case "$AUTO_VLESS_CHOICE" in
+    1)
+      run_vps_flow
+      REPORT_FILE="${REPORT_FILE:-$(vps_report_file)}"
+      if [ -r "$REPORT_FILE" ]; then
+        SELECTED_VPS_REPORT="$REPORT_FILE"
+        conf_set SELECTED_VPS_REPORT "$SELECTED_VPS_REPORT"
+        runtime_state_set "selected_vps_report" "$SELECTED_VPS_REPORT"
+      fi
+      [ -n "${VLESS:-}" ] || VLESS="$(vps_report_vless_link "${SELECTED_VPS_REPORT:-}")"
+      [ -n "${VLESS:-}" ] || fail "После настройки VPS не удалось получить VLESS для Podkop."
+      conf_set VLESS "$VLESS"
+      runtime_state_set "vless" "$VLESS"
+      ;;
+    2)
+      ask "Вставь строку VLESS для Podkop (одной строкой)" VLESS "${VLESS:-}"
+      [ -n "${VLESS:-}" ] || fail "VLESS пустой. Сначала настрой VPS или вставь ссылку вручную."
+      conf_set VLESS "$VLESS"
+      SELECTED_VPS_REPORT=""
+      conf_set SELECTED_VPS_REPORT ""
+      runtime_state_set "vless" "$VLESS"
+      runtime_state_set "selected_vps_report" ""
+      ;;
+    *)
+      fail "Введи 1 или 2"
+      ;;
   esac
 }
 
@@ -167,9 +211,16 @@ run_basic_flow() {
 }
 
 run_podkop_flow() {
-  st="$(get_state)"
-  [ "$st" -lt 80 ] && install_podkop && set_state 80
-  [ "$st" -lt 90 ] && configure_podkop_full && set_state 90
+  case "$MODE" in
+    podkop_backup)
+      add_podkop_backup_channel
+      ;;
+    *)
+      st="$(get_state)"
+      [ "$st" -lt 80 ] && install_podkop && set_state 80
+      [ "$st" -lt 90 ] && configure_podkop_full && set_state 90
+      ;;
+  esac
 }
 
 run_service_mode() {
@@ -202,9 +253,13 @@ main() {
   print_banner
   show_mode_banner
 
+  prepare_auto_vless
+
   run_service_mode || true
 
-  run_basic_flow
+  if [ "$MODE" != "podkop_backup" ]; then
+    run_basic_flow
+  fi
 
   if mode_is_podkop; then
     run_podkop_flow

@@ -59,6 +59,69 @@ vps_report_file() {
   printf "%s/%s.txt" "$(vps_reports_dir)" "$(vps_sanitized_host)"
 }
 
+vps_report_files() {
+  reports_dir="$(vps_reports_dir)"
+  [ -d "$reports_dir" ] || return 0
+  find "$reports_dir" -maxdepth 1 -type f -name '*.txt' | sort
+}
+
+vps_report_vless_link() {
+  report_file="$1"
+  [ -r "$report_file" ] || return 1
+  sed -n 's/^VLESS inbound link: //p' "$report_file" | head -n1
+}
+
+select_vps_report_for_podkop() {
+  report_list="$(vps_report_files)"
+  report_count="$(printf "%s\n" "$report_list" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+  if [ "${report_count:-0}" -eq 0 ]; then
+    return 1
+  fi
+
+  if [ "$report_count" -eq 1 ]; then
+    SELECTED_VPS_REPORT="$(printf "%s\n" "$report_list" | sed -n '1p')"
+    VLESS="$(vps_report_vless_link "$SELECTED_VPS_REPORT")"
+    [ -n "$VLESS" ] || fail "Не удалось прочитать VLESS из отчёта VPS: $SELECTED_VPS_REPORT"
+    conf_set SELECTED_VPS_REPORT "$SELECTED_VPS_REPORT"
+    conf_set VLESS "$VLESS"
+    runtime_state_set "selected_vps_report" "$SELECTED_VPS_REPORT"
+    runtime_state_set "vless" "$VLESS"
+    say "${GREEN}DONE${NC}  Найден один VPS-отчёт, использую его для Podkop: $SELECTED_VPS_REPORT"
+    return 0
+  fi
+
+  say ""
+  say "Найдено несколько VPS-отчётов. Выбери, какой использовать для Podkop:"
+  report_index=1
+  printf "%s\n" "$report_list" | while IFS= read -r report_file; do
+    [ -n "$report_file" ] || continue
+    report_name="$(basename "$report_file" .txt)"
+    say "$report_index) $report_name"
+    report_index=$((report_index + 1))
+  done
+  ask "Выбор VPS для Podkop" REPORT_CHOICE "1"
+
+  case "$REPORT_CHOICE" in
+    ''|*[!0-9]*)
+      fail "Введи номер VPS-отчёта"
+      ;;
+  esac
+  [ "$REPORT_CHOICE" -ge 1 ] && [ "$REPORT_CHOICE" -le "$report_count" ] || fail "Нет VPS-отчёта с номером $REPORT_CHOICE"
+
+  SELECTED_VPS_REPORT="$(printf "%s\n" "$report_list" | sed -n "${REPORT_CHOICE}p")"
+  [ -n "$SELECTED_VPS_REPORT" ] || fail "Не удалось определить выбранный VPS-отчёт"
+  VLESS="$(vps_report_vless_link "$SELECTED_VPS_REPORT")"
+  [ -n "$VLESS" ] || fail "Не удалось прочитать VLESS из отчёта VPS: $SELECTED_VPS_REPORT"
+
+  conf_set SELECTED_VPS_REPORT "$SELECTED_VPS_REPORT"
+  conf_set VLESS "$VLESS"
+  runtime_state_set "selected_vps_report" "$SELECTED_VPS_REPORT"
+  runtime_state_set "vless" "$VLESS"
+  say "${GREEN}DONE${NC}  Для Podkop выбран VPS-отчёт: $SELECTED_VPS_REPORT"
+  return 0
+}
+
 vps_key_file() {
   key_name="$(vps_sanitized_host)"
   if [ -n "${VPS_INSTANCE_ID:-}" ]; then

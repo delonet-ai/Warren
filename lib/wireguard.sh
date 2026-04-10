@@ -5,7 +5,7 @@ WG_CLIENT_DIR="/etc/wireguard/clients"
 install_wireguard() {
   opkg update
   opkg install kmod-wireguard wireguard-tools luci-app-wireguard qrencode
-  done_ "WireGuard + QR установлены"
+  done_ "Private backend + QR установлены"
 }
 
 configure_wireguard_server() {
@@ -57,7 +57,7 @@ configure_wireguard_server() {
   /etc/init.d/network restart >/dev/null 2>&1 || true
   /etc/init.d/firewall restart >/dev/null 2>&1 || true
 
-  done_ "WireGuard сервер wg0 настроен как на эталоне (wg0 в зоне lan)"
+  done_ "Private server wg0 настроен (wg0 в зоне lan)"
 }
 
 create_peer() {
@@ -80,7 +80,7 @@ create_peer() {
   /etc/init.d/network restart >/dev/null 2>&1 || true
 
   if [ -z "${WG_ENDPOINT:-}" ]; then
-    ask "Endpoint для клиентов (например: my.domain.com:51820)" WG_ENDPOINT ""
+    ask "Endpoint для private-клиентов (например: my.domain.com:51820)" WG_ENDPOINT ""
     conf_set WG_ENDPOINT "$WG_ENDPOINT"
   fi
 
@@ -99,14 +99,14 @@ PersistentKeepalive = 25
 EOF
 
   say ""
-  say "${GREEN}QR (ANSI) для $name:${NC}"
+  say "${GREEN}QR (ANSI) для private-клиента $name:${NC}"
   qrencode -t ansiutf8 < "$dir/$name.conf" || true
-  done_ "Peer $name создан: $dir/$name.conf"
+  done_ "Private-клиент $name создан: $dir/$name.conf"
 }
 
 wg_clients_list() {
   say ""
-  say "=== WireGuard клиенты (wg0) ==="
+  say "=== Private clients (wg0) ==="
   uci show network 2>/dev/null | grep "=wireguard_wg0" | cut -d. -f2 | while read -r sec; do
     desc="$(uci -q get network."$sec".description || true)"
     ips="$(uci -q get network."$sec".allowed_ips || true)"
@@ -139,7 +139,7 @@ wg_show_conf_qr() {
   file="$WG_CLIENT_DIR/$name.conf"
   [ -f "$file" ] || fail "Файл конфига не найден: $file"
   say ""
-  say "${GREEN}QR (ANSI) для $name:${NC}"
+  say "${GREEN}QR (ANSI) для private-клиента $name:${NC}"
   qrencode -t ansiutf8 < "$file" || fail "qrencode не сработал (проверь пакет qrencode)"
   say ""
 }
@@ -159,12 +159,12 @@ wg_create_client() {
   mkdir -p "$WG_CLIENT_DIR"
   [ -f /etc/wireguard/server.pub ] || fail "Не найден /etc/wireguard/server.pub (сервер WG не настроен?)"
 
-  ask "Имя нового клиента (латиница, без пробелов)" name ""
+  ask "Имя нового private-клиента (латиница, без пробелов)" name ""
   [ -n "$name" ] || fail "Имя пустое"
   [ -f "$WG_CLIENT_DIR/$name.conf" ] && fail "Уже есть файл: $WG_CLIENT_DIR/$name.conf"
 
   if [ -z "${WG_ENDPOINT:-}" ]; then
-    ask "Endpoint для клиентов (например: 89.207.218.164:51820)" WG_ENDPOINT ""
+    ask "Endpoint для private-клиентов (например: 89.207.218.164:51820)" WG_ENDPOINT ""
     conf_set WG_ENDPOINT "$WG_ENDPOINT"
   fi
 
@@ -197,12 +197,12 @@ AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 EOF
 
-  done_ "Клиент создан: $name ($ip32)"
+  done_ "Private-клиент создан: $name ($ip32)"
   wg_show_conf_qr "$name"
 }
 
 wg_delete_client() {
-  ask "Имя клиента для удаления" name ""
+  ask "Имя private-клиента для удаления" name ""
   [ -n "$name" ] || fail "Имя пустое"
 
   sec="$(wg_find_section_by_name "$name")"
@@ -213,13 +213,13 @@ wg_delete_client() {
   /etc/init.d/network restart >/dev/null 2>&1 || true
 
   rm -f "$WG_CLIENT_DIR/$name.conf" 2>/dev/null || true
-  done_ "Клиент удалён: $name"
+  done_ "Private-клиент удалён: $name"
 }
 
 wg_manage_menu() {
   while true; do
     say ""
-    say "=== Управление WireGuard (wg0) ==="
+    say "=== Управление Private / Amnezia (wg0) ==="
     say "1) Показать список клиентов"
     say "2) Показать QR для клиента"
     say "3) Показать текстовый конфиг клиента"

@@ -38,6 +38,7 @@ save_conf() {
     printf "WG_ENDPOINT=%s\n" "$(quote_sh "${WG_ENDPOINT:-}")"
     printf "VPS_HOST=%s\n" "$(quote_sh "${VPS_HOST:-}")"
     printf "VPS_SSH_PORT=%s\n" "$(quote_sh "${VPS_SSH_PORT:-}")"
+    printf "SELECTED_VPS_REPORT=%s\n" "$(quote_sh "${SELECTED_VPS_REPORT:-}")"
   } > "$CONF"
 }
 
@@ -46,7 +47,7 @@ conf_set() {
   val="$2"
 
   case "$key" in
-    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|WG_ENDPOINT|VPS_HOST|VPS_SSH_PORT) ;;
+    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|WG_ENDPOINT|VPS_HOST|VPS_SSH_PORT|SELECTED_VPS_REPORT) ;;
     *) fail "Неизвестный ключ конфига: $key" ;;
   esac
 
@@ -98,6 +99,7 @@ capture_runtime_inputs() {
   runtime_state_set "wg_endpoint" "${WG_ENDPOINT:-}"
   runtime_state_set "vps_host" "${VPS_HOST:-}"
   runtime_state_set "vps_ssh_port" "${VPS_SSH_PORT:-}"
+  runtime_state_set "selected_vps_report" "${SELECTED_VPS_REPORT:-}"
 }
 
 cleanup_runtime_state() {
@@ -107,8 +109,8 @@ cleanup_runtime_state() {
 normalize_mode() {
   case "${MODE:-}" in
     0) MODE="basic" ;;
-    1) MODE="podkop" ;;
-    2) MODE="podkop_private" ;;
+    1) MODE="podkop_setup" ;;
+    2) MODE="add_private" ;;
     3) MODE="add_private" ;;
     4) MODE="manage_private" ;;
   esac

@@ -68,8 +68,8 @@ print_progress() {
   _stage_line 4 "$cur" "Пакеты после resize + проверка места"
   _stage_line 5 "$cur" "Установка Podkop"
   _stage_line 6 "$cur" "Настройка Podkop (VLESS + community_lists)"
-  _stage_line 7 "$cur" "WireGuard (установка + сервер)"
-  _stage_line 8 "$cur" "Peers + QR (клиенты)"
+  _stage_line 7 "$cur" "Private access (сервер)"
+  _stage_line 8 "$cur" "Private clients + QR"
   say "└──────────────────────────────────────────────────────────────┘"
   say "State: $st"
   say ""
@@ -92,6 +92,27 @@ ask() {
   eval "$var=$(quote_sh "$ans")"
 }
 
+podkop_submenu() {
+  say ""
+  say "Podkop:"
+  say "1) Стандартная настройка"
+  say "2) Добавить резервный канал"
+  say "0) Назад"
+  ask "Ввод (0-2)" PODKOP_MENU_CHOICE "1"
+
+  case "$PODKOP_MENU_CHOICE" in
+    1) MODE="podkop_setup" ;;
+    2) MODE="podkop_backup" ;;
+    0)
+      menu
+      return 0
+      ;;
+    *)
+      fail "Неверный выбор: $PODKOP_MENU_CHOICE"
+      ;;
+  esac
+}
+
 menu() {
   clear_terminal
   print_banner
@@ -102,25 +123,23 @@ menu() {
   say "2) Basic setup"
   say "3) Настрой мне VPS"
   say "4) Podkop"
-  say "5) Podkop + Amnezia Private"
-  say "6) Доустановить Amnezia в Podkop"
-  say "7) QoS для Amnezia"
-  say "8) Управление Amnezia клиентами"
-  say "9) Remote Admin (WIP)"
-  say "10) USB модем настрой (WIP)"
-  ask "Ввод (1-10)" MENU_CHOICE "4"
+  say "5) Доустановить Amnezia в Podkop"
+  say "6) QoS для Amnezia"
+  say "7) Управление Amnezia клиентами"
+  say "8) Remote Admin (WIP)"
+  say "9) USB модем настрой (WIP)"
+  ask "Ввод (1-9)" MENU_CHOICE "4"
 
   case "$MENU_CHOICE" in
     1) MODE="auto" ;;
     2) MODE="basic" ;;
     3) MODE="vps" ;;
-    4) MODE="podkop" ;;
-    5) MODE="podkop_private" ;;
-    6) MODE="add_private" ;;
-    7) MODE="qos_private" ;;
-    8) MODE="manage_private" ;;
-    9) MODE="remote_admin" ;;
-    10) MODE="usb_modem" ;;
+    4) podkop_submenu ;;
+    5) MODE="add_private" ;;
+    6) MODE="qos_private" ;;
+    7) MODE="manage_private" ;;
+    8) MODE="remote_admin" ;;
+    9) MODE="usb_modem" ;;
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
 
@@ -148,8 +167,7 @@ menu() {
   LIST_META="1"
   LIST_GOOGLE_AI="1"
 
-  if [ "$MODE" = "podkop" ] || [ "$MODE" = "podkop_private" ] || [ "$MODE" = "auto" ]; then
-    ask "Вставь строку VLESS (одной строкой)" VLESS ""
+  if [ "$MODE" = "auto" ]; then
     say ""
     say "Списки (community_lists) — 0/1:"
     ask "russia_inside" LIST_RU "1"

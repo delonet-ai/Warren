@@ -42,7 +42,6 @@ English version is also available below: see [English](#english).
 - `Basic setup`
 - `Настрой мне VPS`
 - `Podkop`
-- `Podkop + Amnezia Private`
 - `Доустановить Amnezia в Podkop`
 - `QoS для Amnezia`
 - `Управление Amnezia клиентами`
@@ -143,8 +142,6 @@ The project stays on `sh` and is intended to be modularized into multiple shell 
   Connects to the VPS and configures the VLESS + Reality side.
 - `Podkop`
   Installs and configures Podkop on OpenWrt.
-- `Podkop + Amnezia Private`
-  Installs/configures Podkop and private AmneziaWG access together.
 - `Add Amnezia to existing Podkop`
   Extends an already configured Podkop setup with private AmneziaWG access.
 - `QoS for Amnezia`
