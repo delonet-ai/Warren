@@ -3,7 +3,13 @@ get_state() {
 }
 
 json_escape() {
-  printf "%s" "$1" | sed ':a;N;$!ba;s/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g'
+  printf "%s" "$1" | awk 'BEGIN { ORS=""; first=1 } {
+    if (!first) printf "\\n";
+    gsub(/\\/,"\\\\");
+    gsub(/"/,"\\\"");
+    printf "%s", $0;
+    first=0
+  }'
 }
 
 set_state() {

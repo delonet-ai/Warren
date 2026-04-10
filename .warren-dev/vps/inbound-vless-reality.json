@@ -1,0 +1,15 @@
+{
+  "up": 0,
+  "down": 0,
+  "total": 0,
+  "remark": "warren-reality",
+  "enable": true,
+  "expiryTime": 0,
+  "listen": "",
+  "port": 443,
+  "protocol": "vless",
+  "settings": "{\"clients\":[{\"comment\":\"Warren\",\"email\":\"VOONps3L\",\"enable\":true,\"expiryTime\":0,\"flow\":\"xtls-rprx-vision\",\"id\":\"2AA08D2A-36E6-49C5-9F79-50B720A3AAFA\",\"limitIp\":0,\"reset\":0,\"subId\":\"9YTLuZNlp0VMPu8u\",\"tgId\":\"\",\"totalGB\":0}],\"decryption\":\"none\",\"encryption\":\"none\"}",
+  "streamSettings": "{\"network\":\"tcp\",\"security\":\"reality\",\"externalProxy\":[],\"realitySettings\":{\"show\":false,\"xver\":0,\"target\":\"login.vk.com:443\",\"serverNames\":[\"login.vk.com\",\"www.login.vk.com\"],\"privateKey\":\"iGTZg24N3HvX2beqtZyiuFYaYuYNwRTaRl0ZPuq3TUE\",\"minClientVer\":\"\",\"maxClientVer\":\"\",\"maxTimediff\":0,\"shortIds\":[\"2721f6a30a33fa\",\"287a90ab6ead98bc\",\"2e31\",\"a5827a0e\",\"cc\",\"b0cdc1fae1\",\"e417e2\",\"007fd1d74e4d\"],\"mldsa65Seed\":\"\",\"settings\":{\"publicKey\":\"fLniY-2XUyaAYE8tnXkd70higLVbZVllytKYdNvZq1Q\",\"fingerprint\":\"chrome\",\"serverName\":\"\",\"spiderX\":\"/\",\"mldsa65Verify\":\"\"}},\"tcpSettings\":{\"acceptProxyProtocol\":false,\"header\":{\"type\":\"none\"}}}",
+  "tag": "inbound-443",
+  "sniffing": "{\"enabled\":false,\"destOverride\":[\"http\",\"tls\",\"quic\",\"fakedns\"],\"metadataOnly\":false,\"routeOnly\":false}"
+}

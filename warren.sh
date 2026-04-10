@@ -5,20 +5,38 @@
 
 set -e
 
-STATE="/etc/warren.state"
-CONF="/etc/warren.conf"
-LOG="/root/warren.log"
 TTY="/dev/tty"
 EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-https://openwrt.org/_export/code/docs/guide-user/advanced/expand_root?codeblock=0}"
 PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh}"
 EXPAND_ROOT_SHA256="${EXPAND_ROOT_SHA256:-}"
 PODKOP_INSTALL_SHA256="${PODKOP_INSTALL_SHA256:-}"
 WARREN_LIB_BASE_URL="${WARREN_LIB_BASE_URL:-${BOOTSTRAP_LIB_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main/lib}}"
-LIB_CACHE_DIR="${LIB_CACHE_DIR:-/tmp/warren-lib}"
-AUTO_STATE_JSON="${AUTO_STATE_JSON:-/tmp/warren-runtime.json}"
-AUTO_STATE_STORE="${AUTO_STATE_STORE:-/tmp/warren-runtime.tsv}"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || echo ".")"
+WARREN_DEV_DIR_DEFAULT="${SCRIPT_DIR}/.warren-dev"
+
+if [ "$(id -u 2>/dev/null || echo 1)" = "0" ] && [ -w /etc ] && [ -d /root ]; then
+  WARREN_BASE_DIR="${WARREN_BASE_DIR:-/etc}"
+  WARREN_LOG_DIR="${WARREN_LOG_DIR:-/root}"
+  STATE="${STATE:-${WARREN_BASE_DIR}/warren.state}"
+  CONF="${CONF:-${WARREN_BASE_DIR}/warren.conf}"
+  LOG="${LOG:-${WARREN_LOG_DIR}/warren.log}"
+  LIB_CACHE_DIR="${LIB_CACHE_DIR:-/tmp/warren-lib}"
+  AUTO_STATE_JSON="${AUTO_STATE_JSON:-/tmp/warren-runtime.json}"
+  AUTO_STATE_STORE="${AUTO_STATE_STORE:-/tmp/warren-runtime.tsv}"
+else
+  WARREN_DEV_DIR="${WARREN_DEV_DIR:-$WARREN_DEV_DIR_DEFAULT}"
+  mkdir -p "$WARREN_DEV_DIR" || {
+    printf "%s\n" "Не удалось создать каталог для локального режима: $WARREN_DEV_DIR" >&2
+    exit 1
+  }
+  STATE="${STATE:-${WARREN_DEV_DIR}/warren.state}"
+  CONF="${CONF:-${WARREN_DEV_DIR}/warren.conf}"
+  LOG="${LOG:-${WARREN_DEV_DIR}/warren.log}"
+  LIB_CACHE_DIR="${LIB_CACHE_DIR:-${WARREN_DEV_DIR}/lib-cache}"
+  AUTO_STATE_JSON="${AUTO_STATE_JSON:-${WARREN_DEV_DIR}/warren-runtime.json}"
+  AUTO_STATE_STORE="${AUTO_STATE_STORE:-${WARREN_DEV_DIR}/warren-runtime.tsv}"
+fi
 
 warren_die() {
   printf "%s\n" "$*" >&2

@@ -137,7 +137,7 @@ menu() {
     manage_private|vps|qos_private|remote_admin|usb_modem)
       load_conf_if_exists || true
       conf_set MODE "$MODE"
-      done_ "Режим сохранён в $CONF"
+      say "${GREEN}DONE${NC}  Режим сохранён в $CONF"
       return 0
       ;;
   esac
