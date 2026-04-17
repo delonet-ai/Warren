@@ -70,6 +70,7 @@ source_lib state.sh
 source_lib basic.sh
 source_lib podkop.sh
 source_lib wireguard.sh
+source_lib amneziawg.sh
 source_lib vps.sh
 source_lib amnezia.sh
 source_lib qos.sh
