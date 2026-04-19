@@ -76,6 +76,7 @@ source_lib amnezia.sh
 source_lib qos.sh
 source_lib remote_admin.sh
 source_lib usb_modem.sh
+source_lib tg_bot.sh
 
 expand_root_prep() {
   cd /root
@@ -230,6 +231,7 @@ run_service_mode() {
     qos_private) run_qos_flow ;;
     remote_admin) run_remote_admin_flow ;;
     usb_modem) run_usb_modem_flow ;;
+    tg_bot) run_tg_bot_flow ;;
     manage_private) run_amnezia_manage_flow ;;
     *) return 1 ;;
   esac

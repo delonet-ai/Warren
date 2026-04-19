@@ -1,0 +1,17 @@
+Warren VPS setup report
+=======================
+
+VLESS inbound link: vless://0FAD37D0-06CA-44A0-B4B0-C78E9178DA2B@89.22.228.86:443?type=tcp&security=reality&pbk=-fSaO9zKF5sLOVM26p2uQafl16cyDVY1cYfd6CkDamM&fp=chrome&sni=login.vk.com&sid=c25b06cc6621a3&spx=%2F&flow=xtls-rprx-vision#Warren
+
+Host: 89.22.228.86
+SSH port: 22
+OS: Ubuntu 24.04.1 LTS
+3x-ui URL: https://89.22.228.86:24473/YnVwETITab0sfpaDGw
+3x-ui username: warrenNIFdUR
+3x-ui password: 08ZJPj6oP6ZWQQXBm4
+
+Reality public key: -fSaO9zKF5sLOVM26p2uQafl16cyDVY1cYfd6CkDamM
+Reality short id: c25b06cc6621a3
+Client email: U6ZLTXeR
+Client uuid: 0FAD37D0-06CA-44A0-B4B0-C78E9178DA2B
+Reality config status: created
