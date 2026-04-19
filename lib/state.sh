@@ -35,8 +35,7 @@ save_conf() {
     printf "LIST_CF=%s\n" "$(quote_sh "${LIST_CF:-}")"
     printf "LIST_META=%s\n" "$(quote_sh "${LIST_META:-}")"
     printf "LIST_GOOGLE_AI=%s\n" "$(quote_sh "${LIST_GOOGLE_AI:-}")"
-    printf "WG_ENDPOINT=%s\n" "$(quote_sh "${WG_ENDPOINT:-}")"
-    printf "AMNEZIA_BACKEND=%s\n" "$(quote_sh "${AMNEZIA_BACKEND:-}")"
+    printf "AWG_ENDPOINT=%s\n" "$(quote_sh "${AWG_ENDPOINT:-}")"
     printf "VPS_HOST=%s\n" "$(quote_sh "${VPS_HOST:-}")"
     printf "VPS_SSH_PORT=%s\n" "$(quote_sh "${VPS_SSH_PORT:-}")"
     printf "SELECTED_VPS_REPORT=%s\n" "$(quote_sh "${SELECTED_VPS_REPORT:-}")"
@@ -48,7 +47,7 @@ conf_set() {
   val="$2"
 
   case "$key" in
-    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|WG_ENDPOINT|AMNEZIA_BACKEND|VPS_HOST|VPS_SSH_PORT|SELECTED_VPS_REPORT) ;;
+    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|AWG_ENDPOINT|VPS_HOST|VPS_SSH_PORT|SELECTED_VPS_REPORT) ;;
     *) fail "Неизвестный ключ конфига: $key" ;;
   esac
 
@@ -97,8 +96,7 @@ capture_runtime_inputs() {
   runtime_state_set "list_cf" "${LIST_CF:-}"
   runtime_state_set "list_meta" "${LIST_META:-}"
   runtime_state_set "list_google_ai" "${LIST_GOOGLE_AI:-}"
-  runtime_state_set "wg_endpoint" "${WG_ENDPOINT:-}"
-  runtime_state_set "amnezia_backend" "${AMNEZIA_BACKEND:-}"
+  runtime_state_set "awg_endpoint" "${AWG_ENDPOINT:-}"
   runtime_state_set "vps_host" "${VPS_HOST:-}"
   runtime_state_set "vps_ssh_port" "${VPS_SSH_PORT:-}"
   runtime_state_set "selected_vps_report" "${SELECTED_VPS_REPORT:-}"

@@ -1,8 +1,5 @@
 podkop_private_iface() {
-  case "${AMNEZIA_BACKEND:-wg}" in
-    awg) printf "awg0" ;;
-    *) printf "wg0" ;;
-  esac
+  printf "awg0"
 }
 
 install_podkop() {
@@ -330,8 +327,4 @@ patch_podkop_add_private_iface_only() {
     /etc/init.d/podkop restart >/dev/null 2>&1 || true
   fi
   done_ "Podkop: ${private_iface} добавлен в source_network_interfaces"
-}
-
-patch_podkop_add_wg0_only() {
-  patch_podkop_add_private_iface_only "wg0"
 }

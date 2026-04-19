@@ -150,7 +150,7 @@ menu() {
   LIST_CF="${LIST_CF:-1}"
   LIST_META="${LIST_META:-1}"
   LIST_GOOGLE_AI="${LIST_GOOGLE_AI:-1}"
-  WG_ENDPOINT="${WG_ENDPOINT:-}"
+  AWG_ENDPOINT="${AWG_ENDPOINT:-}"
   VPS_HOST="${VPS_HOST:-}"
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
@@ -178,7 +178,7 @@ menu() {
     ask "google_ai" LIST_GOOGLE_AI "1"
   fi
 
-  WG_ENDPOINT=""
+  AWG_ENDPOINT=""
   VPS_HOST="${VPS_HOST:-}"
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 

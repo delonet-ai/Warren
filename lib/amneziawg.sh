@@ -192,11 +192,50 @@ ensure_awg_obfuscation_defaults() {
 }
 
 ensure_awg_endpoint() {
-  if [ -z "${WG_ENDPOINT:-}" ]; then
-    ask "Endpoint для private-клиентов AmneziaWG (например: my.domain.com:${AWG_LISTEN_PORT})" WG_ENDPOINT ""
-    [ -n "$WG_ENDPOINT" ] || fail "Endpoint для private-клиентов пустой"
-    conf_set WG_ENDPOINT "$WG_ENDPOINT"
+  if [ -z "${AWG_ENDPOINT:-}" ]; then
+    ask "Endpoint для private-клиентов AmneziaWG (например: my.domain.com:${AWG_LISTEN_PORT})" AWG_ENDPOINT ""
+    [ -n "$AWG_ENDPOINT" ] || fail "Endpoint для private-клиентов пустой"
+    conf_set AWG_ENDPOINT "$AWG_ENDPOINT"
   fi
+}
+
+amneziawg_server_ready() {
+  command -v awg >/dev/null 2>&1 || return 1
+  [ -f "$AWG_SERVER_DIR/server.key" ] || return 1
+  [ -f "$AWG_SERVER_DIR/server.pub" ] || return 1
+  uci -q get network."$AWG_IFACE".proto 2>/dev/null | grep -qx 'amneziawg' || return 1
+  [ -n "${AWG_ENDPOINT:-}" ] || return 1
+  return 0
+}
+
+amneziawg_interface_running() {
+  command -v ip >/dev/null 2>&1 || return 0
+  ip link show "$AWG_IFACE" >/dev/null 2>&1
+}
+
+amneziawg_require_server_ready() {
+  if ! amneziawg_server_ready; then
+    fail "AmneziaWG server не готов. Сначала запусти пункт 5: Доустановить Amnezia в Podkop."
+  fi
+
+  if ! amneziawg_interface_running; then
+    /etc/init.d/network restart >/dev/null 2>&1 || true
+    sleep 2
+    amneziawg_interface_running || fail "AmneziaWG server настроен, но интерфейс ${AWG_IFACE} не поднят. Проверь /etc/config/network и system log."
+  fi
+}
+
+amneziawg_validate_client_name() {
+  name="$1"
+  [ -n "$name" ] || return 1
+  printf "%s" "$name" | grep -Eq '^[A-Za-z0-9._-]{1,32}$'
+}
+
+amneziawg_client_exists() {
+  name="$1"
+  [ -f "$AWG_CLIENT_DIR/$name.conf" ] && return 0
+  [ -n "$(awg_find_section_by_name "$name")" ] && return 0
+  return 1
 }
 
 find_lan_zone_name() {
@@ -306,7 +345,7 @@ H4 = $AWG_H4
 [Peer]
 PublicKey = $(cat "$AWG_SERVER_DIR/server.pub")
 PresharedKey = $client_psk
-Endpoint = $WG_ENDPOINT
+Endpoint = $AWG_ENDPOINT
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 EOF
@@ -318,6 +357,9 @@ create_amneziawg_peer() {
 
   [ -n "$name" ] || fail "Имя AWG-клиента пустое"
   [ -n "$client_ip32" ] || fail "IP AWG-клиента пустой"
+  amneziawg_validate_client_name "$name" || fail "Имя клиента должно быть 1-32 символа: латиница, цифры, точка, подчёркивание или дефис"
+  amneziawg_require_server_ready
+  amneziawg_client_exists "$name" && fail "Клиент уже существует: $name"
   ensure_awg_server_keys
   ensure_awg_obfuscation_defaults
   ensure_awg_endpoint
@@ -347,6 +389,7 @@ create_amneziawg_peer() {
 }
 
 amneziawg_clients_list() {
+  amneziawg_require_server_ready
   say ""
   say "=== Private clients (${AWG_IFACE}) ==="
   awg_peer_section_list | while read -r sec; do
@@ -360,6 +403,7 @@ amneziawg_clients_list() {
 }
 
 amneziawg_show_conf_text() {
+  amneziawg_require_server_ready
   name="$1"
   file="$AWG_CLIENT_DIR/$name.conf"
   [ -f "$file" ] || fail "Файл конфига не найден: $file"
@@ -370,6 +414,7 @@ amneziawg_show_conf_text() {
 }
 
 amneziawg_show_conf_qr() {
+  amneziawg_require_server_ready
   name="$1"
   file="$AWG_CLIENT_DIR/$name.conf"
   [ -f "$file" ] || fail "Файл конфига не найден: $file"
@@ -380,18 +425,20 @@ amneziawg_show_conf_qr() {
 }
 
 amneziawg_create_client() {
+  amneziawg_require_server_ready
   mkdir -p "$AWG_CLIENT_DIR"
   [ -f "$AWG_SERVER_DIR/server.pub" ] || fail "Не найден $AWG_SERVER_DIR/server.pub (сервер AWG не настроен?)"
 
   ask "Имя нового private-клиента (латиница, без пробелов)" name ""
-  [ -n "$name" ] || fail "Имя пустое"
-  [ -f "$AWG_CLIENT_DIR/$name.conf" ] && fail "Уже есть файл: $AWG_CLIENT_DIR/$name.conf"
+  amneziawg_validate_client_name "$name" || fail "Имя клиента должно быть 1-32 символа: латиница, цифры, точка, подчёркивание или дефис"
+  amneziawg_client_exists "$name" && fail "Клиент уже существует: $name"
 
   ip32="$(awg_next_free_ip32)" || fail "Не нашёл свободный IP в ${AWG_SERVER_NET_PREFIX}.0/24"
   create_amneziawg_peer "$name" "$ip32"
 }
 
 amneziawg_delete_client() {
+  amneziawg_require_server_ready
   ask "Имя private-клиента для удаления" name ""
   [ -n "$name" ] || fail "Имя пустое"
 

@@ -22,9 +22,17 @@ tg_bot_write_runner() {
 CONFIG="${WARREN_TG_BOT_CONFIG:-/etc/warren-tg-bot.conf}"
 ENDPOINTS="${WARREN_TG_BOT_ENDPOINTS:-/etc/warren-vless-endpoints}"
 REPORTS_DIR="${WARREN_TG_BOT_REPORTS_DIR:-/etc/vps/reports}"
+WARREN_CONF="${WARREN_TG_BOT_WARREN_CONF:-/etc/warren.conf}"
 OFFSET_FILE="${WARREN_TG_BOT_OFFSET:-/tmp/warren-tg-bot.offset}"
 PENDING_DIR="${WARREN_TG_BOT_PENDING_DIR:-/tmp/warren-tg-bot-pending}"
 REPORT_CACHE="${WARREN_TG_BOT_REPORT_CACHE:-/tmp/warren-tg-bot-reports.tsv}"
+AMZ_CACHE="${WARREN_TG_BOT_AMZ_CACHE:-/tmp/warren-tg-bot-amnezia.tsv}"
+AWG_IFACE="${AWG_IFACE:-awg0}"
+AWG_CLIENT_DIR="${AWG_CLIENT_DIR:-/etc/amneziawg/clients}"
+AWG_SERVER_DIR="${AWG_SERVER_DIR:-/etc/amneziawg}"
+AWG_SERVER_NET_PREFIX="${AWG_SERVER_NET_PREFIX:-10.10.10}"
+AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX}.1"
+AWG_LISTEN_PORT="${AWG_LISTEN_PORT:-51820}"
 
 log() {
   logger -t warren-tg-bot "$*"
@@ -38,6 +46,10 @@ load_config() {
   }
   # shellcheck disable=SC1090
   . "$CONFIG"
+  if [ -r "$WARREN_CONF" ]; then
+    # shellcheck disable=SC1090
+    . "$WARREN_CONF"
+  fi
   [ -n "${TG_TOKEN:-}" ] || {
     log "TG_TOKEN is empty"
     sleep 30
@@ -58,6 +70,7 @@ save_bound_chat() {
     printf "TG_TOKEN=%s\n" "$(shell_quote_value "$TG_TOKEN")"
     printf "ALLOWED_CHAT_ID=%s\n" "$(shell_quote_value "$chat_id")"
     printf "REPORTS_DIR=%s\n" "$(shell_quote_value "${REPORTS_DIR:-/etc/vps/reports}")"
+    printf "WARREN_CONF=%s\n" "$(shell_quote_value "${WARREN_CONF:-/etc/warren.conf}")"
   } > "$tmp" && mv "$tmp" "$CONFIG"
   chmod 600 "$CONFIG" 2>/dev/null || true
   ALLOWED_CHAT_ID="$chat_id"
@@ -91,6 +104,28 @@ send_keyboard() {
     --data-urlencode "reply_markup=${markup}" >/dev/null 2>&1 || true
 }
 
+send_document() {
+  chat_id="$1"
+  file="$2"
+  caption="${3:-}"
+  [ -r "$file" ] || return 1
+  curl -fsS -X POST "${API}/sendDocument" \
+    -F "chat_id=${chat_id}" \
+    -F "document=@${file}" \
+    -F "caption=${caption}" >/dev/null 2>&1 || return 1
+}
+
+send_photo() {
+  chat_id="$1"
+  file="$2"
+  caption="${3:-}"
+  [ -r "$file" ] || return 1
+  curl -fsS -X POST "${API}/sendPhoto" \
+    -F "chat_id=${chat_id}" \
+    -F "photo=@${file}" \
+    -F "caption=${caption}" >/dev/null 2>&1 || return 1
+}
+
 answer_callback() {
   callback_id="$1"
   text="${2:-}"
@@ -109,6 +144,7 @@ main_keyboard() {
     inline_keyboard: [
       [{text:"Добавить в black",callback_data:"black_prompt"},{text:"Добавить в white",callback_data:"white_prompt"}],
       [{text:"IP без VPN",callback_data:"ip:no_vpn"},{text:"IP только с VPN",callback_data:"ip:vpn_only"}],
+      [{text:"Amnezia клиенты",callback_data:"amz_menu"}],
       [{text:"Выбор Endpoint",callback_data:"endpoint_choose"}],
       [{text:"Редактор Endpoint",callback_data:"endpoint_editor"}],
       [{text:"Статус",callback_data:"status"}]
@@ -129,9 +165,234 @@ back_keyboard() {
   jq -cn '{inline_keyboard:[[{text:"Назад",callback_data:"main"}]]}'
 }
 
+amz_menu_keyboard() {
+  jq -cn '{
+    inline_keyboard: [
+      [{text:"Список клиентов",callback_data:"amz_list"}],
+      [{text:"Создать клиента",callback_data:"amz_create"}],
+      [{text:"Показать QR",callback_data:"amz_pick_qr"},{text:"Показать конфиг",callback_data:"amz_pick_conf"}],
+      [{text:"Удалить клиента",callback_data:"amz_pick_delete"}],
+      [{text:"Назад",callback_data:"main"}]
+    ]
+  }'
+}
+
 restart_podkop() {
   uci commit podkop >/dev/null 2>&1 || return 1
   /etc/init.d/podkop restart >/dev/null 2>&1 || true
+}
+
+amz_server_ready() {
+  command -v awg >/dev/null 2>&1 || return 1
+  [ -f "$AWG_SERVER_DIR/server.key" ] || return 1
+  [ -f "$AWG_SERVER_DIR/server.pub" ] || return 1
+  uci -q get network."$AWG_IFACE".proto 2>/dev/null | grep -qx 'amneziawg' || return 1
+  [ -n "${AWG_ENDPOINT:-}" ] || return 1
+  return 0
+}
+
+amz_interface_running() {
+  command -v ip >/dev/null 2>&1 || return 0
+  ip link show "$AWG_IFACE" >/dev/null 2>&1
+}
+
+amz_require_ready_text() {
+  if ! amz_server_ready; then
+    printf "AmneziaWG server ещё не готов. Сначала в SSH запусти пункт 5: Доустановить Amnezia в Podkop."
+    return 1
+  fi
+  if ! amz_interface_running; then
+    /etc/init.d/network restart >/dev/null 2>&1 || true
+    sleep 2
+    if ! amz_interface_running; then
+      printf "AmneziaWG server настроен, но интерфейс %s не поднят. Проверь OpenWrt network/system log." "$AWG_IFACE"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+amz_validate_client_name() {
+  name="$1"
+  [ -n "$name" ] || return 1
+  printf "%s" "$name" | grep -Eq '^[A-Za-z0-9._-]{1,32}$'
+}
+
+amz_peer_sections() {
+  uci show network 2>/dev/null | grep "=amneziawg_${AWG_IFACE}" | cut -d. -f2
+}
+
+amz_find_section_by_name() {
+  name="$1"
+  amz_peer_sections | while read -r sec; do
+    desc="$(uci -q get network."$sec".description || uci -q get network."$sec".name || true)"
+    [ "$desc" = "$name" ] && { echo "$sec"; break; }
+  done
+}
+
+amz_client_exists() {
+  name="$1"
+  [ -f "$AWG_CLIENT_DIR/$name.conf" ] && return 0
+  [ -n "$(amz_find_section_by_name "$name")" ] && return 0
+  return 1
+}
+
+amz_next_free_ip32() {
+  used="$(uci show network 2>/dev/null | sed -n "s/.*'\(${AWG_SERVER_NET_PREFIX}\.[0-9]\+\)\/32'.*/\1/p")"
+  i=2
+  while [ "$i" -le 254 ]; do
+    ip="${AWG_SERVER_NET_PREFIX}.${i}"
+    echo "$used" | grep -qx "$ip" || { echo "$ip/32"; return 0; }
+    i=$((i + 1))
+  done
+  return 1
+}
+
+amz_obfuscation_defaults() {
+  AWG_JC="${AWG_JC:-4}"
+  AWG_JMIN="${AWG_JMIN:-40}"
+  AWG_JMAX="${AWG_JMAX:-70}"
+  AWG_S1="${AWG_S1:-0}"
+  AWG_S2="${AWG_S2:-0}"
+  AWG_H1="${AWG_H1:-1}"
+  AWG_H2="${AWG_H2:-2}"
+  AWG_H3="${AWG_H3:-3}"
+  AWG_H4="${AWG_H4:-4}"
+}
+
+amz_create_config() {
+  name="$1"
+  client_priv="$2"
+  client_ip32="$3"
+  client_psk="$4"
+  file="$AWG_CLIENT_DIR/$name.conf"
+  amz_obfuscation_defaults
+  cat > "$file" <<AMZ_CONF_EOF
+[Interface]
+PrivateKey = $client_priv
+Address = ${client_ip32%/32}/32
+DNS = $AWG_SERVER_IP
+Jc = $AWG_JC
+Jmin = $AWG_JMIN
+Jmax = $AWG_JMAX
+S1 = $AWG_S1
+S2 = $AWG_S2
+H1 = $AWG_H1
+H2 = $AWG_H2
+H3 = $AWG_H3
+H4 = $AWG_H4
+
+[Peer]
+PublicKey = $(cat "$AWG_SERVER_DIR/server.pub")
+PresharedKey = $client_psk
+Endpoint = $AWG_ENDPOINT
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+AMZ_CONF_EOF
+}
+
+amz_create_client() {
+  name="$1"
+  amz_validate_client_name "$name" || return 3
+  amz_client_exists "$name" && return 2
+  mkdir -p "$AWG_CLIENT_DIR" || return 1
+  client_ip32="$(amz_next_free_ip32)" || return 1
+  umask 077
+  client_priv="$(awg genkey)" || return 1
+  client_pub="$(printf "%s" "$client_priv" | awg pubkey)" || return 1
+  client_psk="$(awg genpsk)" || return 1
+  sec="$(uci add network "amneziawg_${AWG_IFACE}")" || return 1
+  uci set network."$sec".description="$name"
+  uci set network."$sec".public_key="$client_pub"
+  uci set network."$sec".preshared_key="$client_psk"
+  uci set network."$sec".route_allowed_ips='0'
+  uci set network."$sec".persistent_keepalive='25'
+  uci add_list network."$sec".allowed_ips="$client_ip32"
+  uci commit network || return 1
+  /etc/init.d/network restart >/dev/null 2>&1 || true
+  amz_create_config "$name" "$client_priv" "$client_ip32" "$client_psk" || return 1
+  printf "%s" "$client_ip32"
+  return 0
+}
+
+amz_refresh_cache() {
+  : > "$AMZ_CACHE"
+  i=1
+  amz_peer_sections | while read -r sec; do
+    [ -n "$sec" ] || continue
+    name="$(uci -q get network."$sec".description || uci -q get network."$sec".name || true)"
+    ip="$(uci -q get network."$sec".allowed_ips || true)"
+    [ -n "$name" ] || name="$sec"
+    printf "%s\t%s\t%s\t%s\n" "$i" "$name" "$ip" "$sec" >> "$AMZ_CACHE"
+    i=$((i + 1))
+  done
+}
+
+amz_client_count() {
+  amz_refresh_cache
+  [ -s "$AMZ_CACHE" ] || { echo 0; return 0; }
+  wc -l < "$AMZ_CACHE" | tr -d ' '
+}
+
+amz_list_text() {
+  amz_refresh_cache
+  count="$(amz_client_count)"
+  {
+    printf "Amnezia клиенты: %s\n\n" "${count:-0}"
+    if [ ! -s "$AMZ_CACHE" ]; then
+      printf "Клиентов пока нет."
+      return 0
+    fi
+    while IFS='	' read -r idx name ip sec; do
+      printf "%s) %s  %s\n" "$idx" "$name" "${ip:-no-ip}"
+    done < "$AMZ_CACHE"
+  }
+}
+
+amz_pick_keyboard() {
+  action="$1"
+  amz_refresh_cache
+  tmp="/tmp/warren-tg-amz-keyboard.$$"
+  printf '{"inline_keyboard":[[{"text":"Назад","callback_data":"amz_menu"}]' > "$tmp"
+  shown=0
+  if [ -s "$AMZ_CACHE" ]; then
+    while IFS='	' read -r idx name ip sec; do
+      [ "$shown" -lt 19 ] || break
+      label="${name} ${ip}"
+      printf ',[{"text":%s,"callback_data":"amz_%s:%s"}]' "$(jq_string "$label")" "$action" "$idx" >> "$tmp"
+      shown=$((shown + 1))
+    done < "$AMZ_CACHE"
+  fi
+  printf ']}' >> "$tmp"
+  cat "$tmp"
+  rm -f "$tmp"
+}
+
+amz_name_by_index() {
+  index="$1"
+  amz_refresh_cache
+  sed -n "${index}p" "$AMZ_CACHE" 2>/dev/null | cut -f2
+}
+
+amz_conf_file_by_index() {
+  index="$1"
+  name="$(amz_name_by_index "$index")"
+  [ -n "$name" ] || return 1
+  printf "%s/%s.conf" "$AWG_CLIENT_DIR" "$name"
+}
+
+amz_delete_by_index() {
+  index="$1"
+  amz_refresh_cache
+  line="$(sed -n "${index}p" "$AMZ_CACHE" 2>/dev/null)"
+  [ -n "$line" ] || return 1
+  name="$(printf "%s" "$line" | cut -f2)"
+  sec="$(printf "%s" "$line" | cut -f4)"
+  [ -n "$sec" ] || return 1
+  uci delete network."$sec" || return 1
+  uci commit network || return 1
+  /etc/init.d/network restart >/dev/null 2>&1 || true
+  rm -f "$AWG_CLIENT_DIR/$name.conf" 2>/dev/null || true
 }
 
 normalize_domain() {
@@ -518,6 +779,8 @@ Warren TG bot
 /endpoints
 /use 1
 /add_endpoint vless://...
+/clients
+/amz_create phone
 /no_vpn 192.168.1.20
 /vpn_only 192.168.1.30
 /status
@@ -560,6 +823,36 @@ show_endpoint_choose() {
 show_endpoint_editor() {
   chat_id="$1"
   send_keyboard "$chat_id" "Редактор Endpoint." "$(endpoint_editor_keyboard)"
+}
+
+show_amz_menu() {
+  chat_id="$1"
+  clear_pending "$chat_id"
+  ready_error="$(amz_require_ready_text)" || {
+    send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+    return 0
+  }
+  send_keyboard "$chat_id" "Amnezia клиенты: выбери действие." "$(amz_menu_keyboard)"
+}
+
+show_amz_list() {
+  chat_id="$1"
+  ready_error="$(amz_require_ready_text)" || {
+    send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+    return 0
+  }
+  send_keyboard "$chat_id" "$(amz_list_text)" "$(amz_menu_keyboard)"
+}
+
+show_amz_picker() {
+  chat_id="$1"
+  action="$2"
+  title="$3"
+  ready_error="$(amz_require_ready_text)" || {
+    send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+    return 0
+  }
+  send_keyboard "$chat_id" "$title" "$(amz_pick_keyboard "$action")"
 }
 
 show_ip_main() {
@@ -625,6 +918,30 @@ handle_pending_text() {
         send_keyboard "$chat_id" "Endpoint должен начинаться с vless://, ss://, trojan://, socks4://, socks5://, hy2:// или hysteria2://." "$(endpoint_editor_keyboard)"
       fi
       ;;
+    amz_create)
+      ready_error="$(amz_require_ready_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      created_ip="$(amz_create_client "$text")"
+      rc="$?"
+      if [ "$rc" -eq 3 ]; then
+        send_keyboard "$chat_id" "Имя клиента: 1-32 символа, латиница, цифры, точка, подчёркивание или дефис." "$(amz_menu_keyboard)"
+      elif [ "$rc" -eq 2 ]; then
+        send_keyboard "$chat_id" "Клиент уже существует: ${text}" "$(amz_menu_keyboard)"
+      elif [ "$rc" -eq 0 ]; then
+        send_keyboard "$chat_id" "Клиент создан: ${text} ${created_ip}" "$(amz_menu_keyboard)"
+        conf_file="$AWG_CLIENT_DIR/$text.conf"
+        if command -v qrencode >/dev/null 2>&1; then
+          qr_file="/tmp/warren-amz-${text}.png"
+          qrencode -o "$qr_file" < "$conf_file" >/dev/null 2>&1 && send_photo "$chat_id" "$qr_file" "QR для ${text}" || true
+          rm -f "$qr_file" 2>/dev/null || true
+        fi
+        send_document "$chat_id" "$conf_file" "Конфиг ${text}" || true
+      else
+        send_keyboard "$chat_id" "Не получилось создать клиента. Проверь AmneziaWG на роутере." "$(amz_menu_keyboard)"
+      fi
+      ;;
     ip_no_vpn)
       add_ip_to_list no_vpn "$text"
       rc="$?"
@@ -676,6 +993,9 @@ handle_command() {
     /menu)
       show_main_menu "$chat_id"
       ;;
+    /amnezia|/clients)
+      show_amz_menu "$chat_id"
+      ;;
     /black|/blacklist)
       [ -n "$arg" ] || {
         set_pending "$chat_id" black
@@ -711,6 +1031,15 @@ handle_command() {
       else
         send_keyboard "$chat_id" "Endpoint должен начинаться с vless://, ss://, trojan://, socks4://, socks5://, hy2:// или hysteria2://." "$(endpoint_editor_keyboard)"
       fi
+      ;;
+    /amz_create)
+      [ -n "$arg" ] || {
+        set_pending "$chat_id" amz_create
+        send_keyboard "$chat_id" "Пришли имя нового Amnezia-клиента." "$(amz_menu_keyboard)"
+        return 0
+      }
+      set_pending "$chat_id" amz_create
+      handle_pending_text "$chat_id" "$arg"
       ;;
     /no_vpn)
       [ -n "$arg" ] || {
@@ -766,6 +1095,63 @@ handle_callback() {
     white_prompt)
       set_pending "$chat_id" white
       send_keyboard "$chat_id" "Пришли домен для white/exclusion list." "$(back_keyboard)"
+      ;;
+    amz_menu)
+      show_amz_menu "$chat_id"
+      ;;
+    amz_list)
+      show_amz_list "$chat_id"
+      ;;
+    amz_create)
+      ready_error="$(amz_require_ready_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      set_pending "$chat_id" amz_create
+      send_keyboard "$chat_id" "Пришли имя нового Amnezia-клиента." "$(amz_menu_keyboard)"
+      ;;
+    amz_pick_qr)
+      show_amz_picker "$chat_id" qr "Выбери клиента для QR."
+      ;;
+    amz_pick_conf)
+      show_amz_picker "$chat_id" conf "Выбери клиента для отправки конфига."
+      ;;
+    amz_pick_delete)
+      show_amz_picker "$chat_id" delete "Выбери клиента для удаления."
+      ;;
+    amz_qr:*)
+      idx="${data#amz_qr:}"
+      conf_file="$(amz_conf_file_by_index "$idx")"
+      name="$(amz_name_by_index "$idx")"
+      if [ -r "$conf_file" ] && command -v qrencode >/dev/null 2>&1; then
+        qr_file="/tmp/warren-amz-${name}.png"
+        qrencode -o "$qr_file" < "$conf_file" >/dev/null 2>&1 && send_photo "$chat_id" "$qr_file" "QR для ${name}" || send_document "$chat_id" "$conf_file" "Конфиг ${name}" || true
+        rm -f "$qr_file" 2>/dev/null || true
+        send_keyboard "$chat_id" "Готово." "$(amz_menu_keyboard)"
+      elif [ -r "$conf_file" ]; then
+        send_document "$chat_id" "$conf_file" "Конфиг ${name}" || true
+        send_keyboard "$chat_id" "qrencode не найден, отправил конфиг файлом." "$(amz_menu_keyboard)"
+      else
+        send_keyboard "$chat_id" "Конфиг клиента не найден." "$(amz_menu_keyboard)"
+      fi
+      ;;
+    amz_conf:*)
+      idx="${data#amz_conf:}"
+      conf_file="$(amz_conf_file_by_index "$idx")"
+      name="$(amz_name_by_index "$idx")"
+      if send_document "$chat_id" "$conf_file" "Конфиг ${name}"; then
+        send_keyboard "$chat_id" "Конфиг отправлен." "$(amz_menu_keyboard)"
+      else
+        send_keyboard "$chat_id" "Конфиг клиента не найден." "$(amz_menu_keyboard)"
+      fi
+      ;;
+    amz_delete:*)
+      idx="${data#amz_delete:}"
+      if amz_delete_by_index "$idx"; then
+        send_keyboard "$chat_id" "Клиент удалён." "$(amz_menu_keyboard)"
+      else
+        send_keyboard "$chat_id" "Не получилось удалить клиента." "$(amz_menu_keyboard)"
+      fi
       ;;
     ip_main)
       show_ip_main "$chat_id"
@@ -968,6 +1354,7 @@ run_tg_bot_flow() {
     printf "TG_TOKEN=%s\n" "$(quote_sh "$TG_BOT_TOKEN")"
     printf "ALLOWED_CHAT_ID=%s\n" "$(quote_sh "$TG_BOT_CHAT_ID")"
     printf "REPORTS_DIR=%s\n" "$(quote_sh "$TG_BOT_REPORTS_DIR")"
+    printf "WARREN_CONF=%s\n" "$(quote_sh "$CONF")"
   } > "$TG_BOT_CONFIG"
   chmod 600 "$TG_BOT_CONFIG" 2>/dev/null || true
 

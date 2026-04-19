@@ -69,7 +69,6 @@ source_lib ui.sh
 source_lib state.sh
 source_lib basic.sh
 source_lib podkop.sh
-source_lib wireguard.sh
 source_lib amneziawg.sh
 source_lib vps.sh
 source_lib amnezia.sh
@@ -112,7 +111,7 @@ show_mode_banner() {
       say "Если есть готовые VPS-конфиги, предложу выбрать один. Если нет — можно сразу пройти через настройку VPS."
       ;;
     add_private|manage_private)
-      say "${YELLOW}INFO${NC}  Название уже про Amnezia Private, но backend пока ещё временно WireGuard."
+      say "${YELLOW}INFO${NC}  Amnezia Private использует AmneziaWG на интерфейсе awg0."
       ;;
     podkop_backup)
       say "${YELLOW}INFO${NC}  Режим резервного канала переведёт Podkop на URLTest с несколькими VLESS."

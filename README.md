@@ -25,7 +25,7 @@ English version is also available below: see [English](#english).
 Проект ориентирован на тех, кто не хочет:
 - ставить Homebrew, Python и дополнительные утилиты на компьютер,
 - вручную конфигурировать VPS и роутер по десяткам инструкций,
-- каждый раз вспоминать команды OpenWrt, WireGuard, firewall и UCI.
+- каждый раз вспоминать команды OpenWrt, AmneziaWG, firewall и UCI.
 
 ### Что уже есть сейчас
 Текущий скрипт уже умеет:
@@ -64,6 +64,7 @@ English version is also available below: see [English](#english).
 - При добавлении endpoint бот предлагает новые VPS-отчёты из `/etc/vps/reports`, которые создаёт режим `Настрой мне VPS`, или кнопку `Ввести свой`.
 - В IP-разделах кнопка с IP удаляет его из списка, а `Добавить новый` переводит бота в режим ввода IP или подсети одной строкой.
 - `Статус` показывает оба IP-списка: `IP без VPN` и `IP только с VPN`.
+- `Amnezia клиенты` — список, создание, QR/config и удаление AmneziaWG-клиентов.
 
 Текстовые команды тоже остаются:
 - `/black example.com` — добавить домен в пользовательский список `podkop.main.user_domains`, то есть в список проксирования.
@@ -71,6 +72,8 @@ English version is also available below: see [English](#english).
 - `/endpoints` — показать сохранённые VLESS/proxy endpoints.
 - `/use 1` — переключить `podkop.main` на endpoint по номеру.
 - `/add_endpoint vless://...` — добавить endpoint в список бота.
+- `/clients` — открыть управление AmneziaWG-клиентами.
+- `/amz_create phone` — создать AmneziaWG-клиента.
 - `/no_vpn 192.168.1.20` — добавить IP в `Routing Excluded IPs`.
 - `/vpn_only 192.168.1.30` — добавить IP в `Fully Routed IPs`.
 - `/status` — показать короткое состояние.
@@ -303,6 +306,8 @@ lib/basic.sh
 lib/podkop.sh
 lib/vps.sh
 lib/amnezia.sh
+lib/amneziawg.sh
+lib/tg_bot.sh
 lib/qos.sh
 lib/remote_admin.sh
 lib/usb_modem.sh
@@ -326,7 +331,11 @@ lib/usb_modem.sh
 - `lib/vps.sh`
   Remote VPS connection, probing, setup, and generated config extraction.
 - `lib/amnezia.sh`
-  AmneziaWG server and client management.
+  Amnezia Private orchestration.
+- `lib/amneziawg.sh`
+  AmneziaWG install, server setup, and console client management.
+- `lib/tg_bot.sh`
+  Telegram control bot for Podkop and AmneziaWG clients.
 - `lib/qos.sh`
   Traffic shaping and policy profiles.
 - `lib/remote_admin.sh`
@@ -353,7 +362,7 @@ Sensitive data rules:
 
 Near-term:
 - finish VPS provisioning for `3x-ui + VLESS + Reality`,
-- replace current WireGuard backend with AmneziaWG flows,
+- harden AmneziaWG flows and add LuCI/Lua surfaces,
 - add QoS profiles for private clients,
 - expand automatic mode into a full end-to-end setup.
 
