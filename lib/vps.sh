@@ -150,6 +150,10 @@ random_hex() {
   fi
 }
 
+vps_client_name() {
+  printf "%s" "${VPS_HOST:-warren}" | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//'
+}
+
 json_get_string() {
   key="$1"
   sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n1
@@ -588,7 +592,7 @@ generate_reality_materials() {
   [ -n "$CLIENT_UUID" ] || CLIENT_UUID="$(random_hex 8)-$(random_hex 4)-4$(random_hex 3)-a$(random_hex 3)-$(random_hex 12)"
   CLIENT_EMAIL="$(random_token 8)"
   CLIENT_SUBID="$(random_token 16)"
-  CLIENT_COMMENT="Warren"
+  CLIENT_COMMENT="$(vps_client_name)"
 
   SID_PRIMARY="$(random_hex 14)"
   SID_EXTRA_1="$(random_hex 16)"

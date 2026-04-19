@@ -128,7 +128,8 @@ menu() {
   say "7) Управление Amnezia клиентами"
   say "8) Remote Admin (WIP)"
   say "9) USB модем настрой (WIP)"
-  ask "Ввод (1-9)" MENU_CHOICE "4"
+  say "10) Telegram-бот для Podkop"
+  ask "Ввод (1-10)" MENU_CHOICE "4"
 
   case "$MENU_CHOICE" in
     1) MODE="auto" ;;
@@ -140,6 +141,7 @@ menu() {
     7) MODE="manage_private" ;;
     8) MODE="remote_admin" ;;
     9) MODE="usb_modem" ;;
+    10) MODE="tg_bot" ;;
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
 
@@ -153,7 +155,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    manage_private|vps|qos_private|remote_admin|usb_modem)
+    manage_private|vps|qos_private|remote_admin|usb_modem|tg_bot)
       load_conf_if_exists || true
       conf_set MODE "$MODE"
       say "${GREEN}DONE${NC}  Режим сохранён в $CONF"

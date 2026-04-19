@@ -1,3 +1,10 @@
+podkop_private_iface() {
+  case "${AMNEZIA_BACKEND:-wg}" in
+    awg) printf "awg0" ;;
+    *) printf "wg0" ;;
+  esac
+}
+
 install_podkop() {
   download_file "$PODKOP_INSTALL_URL" /tmp/podkop-install.sh "$PODKOP_INSTALL_SHA256" "PODKOP_INSTALL"
   chmod +x /tmp/podkop-install.sh
@@ -115,7 +122,7 @@ configure_podkop_common_settings() {
   uciq -q del podkop.settings.source_network_interfaces
   uciq add_list podkop.settings.source_network_interfaces='br-lan'
   if [ "$MODE" = "add_private" ]; then
-    uciq add_list podkop.settings.source_network_interfaces='wg0'
+    uciq add_list podkop.settings.source_network_interfaces="$(podkop_private_iface)"
   fi
 
   uciq get podkop.main >/dev/null || uciq set podkop.main='section'
@@ -314,12 +321,17 @@ add_podkop_backup_channel() {
   done
 }
 
-patch_podkop_add_wg0_only() {
+patch_podkop_add_private_iface_only() {
+  private_iface="${1:-$(podkop_private_iface)}"
   uciq get podkop.settings >/dev/null || uciq set podkop.settings='settings'
-  if ! uci -q get podkop.settings.source_network_interfaces 2>/dev/null | grep -q 'wg0'; then
-    uciq add_list podkop.settings.source_network_interfaces='wg0'
+  if ! uci -q get podkop.settings.source_network_interfaces 2>/dev/null | grep -qw "$private_iface"; then
+    uciq add_list podkop.settings.source_network_interfaces="$private_iface"
     uciq commit podkop
     /etc/init.d/podkop restart >/dev/null 2>&1 || true
   fi
-  done_ "Podkop: wg0 добавлен в source_network_interfaces"
+  done_ "Podkop: ${private_iface} добавлен в source_network_interfaces"
+}
+
+patch_podkop_add_wg0_only() {
+  patch_podkop_add_private_iface_only "wg0"
 }
