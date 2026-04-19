@@ -976,6 +976,6 @@ run_tg_bot_flow() {
   "$TG_BOT_INIT" enable >/dev/null 2>&1 || true
   "$TG_BOT_INIT" restart >/dev/null 2>&1 || fail "Не удалось запустить warren-tg-bot"
 
-  done_ "Telegram-бот установлен и запущен"
+  say "${GREEN}DONE${NC}  Telegram-бот установлен и запущен"
   say "Напиши боту /start. Дальше можно работать кнопками."
 }
