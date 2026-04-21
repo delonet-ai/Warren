@@ -459,12 +459,6 @@ configure_3xui_admin() {
     || fail "Не удалось настроить логин и пароль 3x-ui"
 
   vps_ssh "sh -lc '
-    if command -v timeout >/dev/null 2>&1 && command -v x-ui >/dev/null 2>&1; then
-      timeout 20 x-ui restart </dev/null && exit 0
-    fi
-    if command -v timeout >/dev/null 2>&1 && [ -x /usr/local/x-ui/x-ui ]; then
-      timeout 20 /usr/local/x-ui/x-ui restart </dev/null >/dev/null 2>&1 || true
-    fi
     if command -v systemctl >/dev/null 2>&1; then
       systemctl restart x-ui && exit 0
       systemctl restart x-ui.service && exit 0
@@ -472,8 +466,8 @@ configure_3xui_admin() {
     if command -v service >/dev/null 2>&1; then
       service x-ui restart && exit 0
     fi
-    if command -v x-ui >/dev/null 2>&1; then
-      x-ui restart </dev/null && exit 0
+    if command -v timeout >/dev/null 2>&1 && command -v x-ui >/dev/null 2>&1; then
+      timeout 20 x-ui restart </dev/null >/dev/null 2>&1 && exit 0
     fi
     exit 1
   '" \
