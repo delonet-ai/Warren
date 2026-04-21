@@ -388,7 +388,62 @@ upgrade_vps_packages() {
 
 install_3xui() {
   info "Установка 3x-ui может занять некоторое время. Процесс идёт, пожалуйста подождите..."
-  vps_ssh "bash -lc 'export DEBIAN_FRONTEND=noninteractive; bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh) < /dev/null'" \
+  vps_ssh "sh -lc '
+    log=/tmp/warren-3xui-install.log
+    rcfile=/tmp/warren-3xui-install.rc
+    rm -f \"\$log\" \"\$rcfile\"
+
+    (
+      export DEBIAN_FRONTEND=noninteractive
+      curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh | bash -s -- < /dev/null >\"\$log\" 2>&1
+      echo \$? > \"\$rcfile\"
+    ) &
+    installer_pid=\$!
+
+    elapsed=0
+    ready=0
+    while [ \"\$elapsed\" -lt 420 ]; do
+      if [ -f \"\$rcfile\" ]; then
+        break
+      fi
+
+      if [ -x /usr/local/x-ui/x-ui ]; then
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet x-ui >/dev/null 2>&1; then
+          ready=1
+          break
+        fi
+        if pgrep -f \"x-ui\" >/dev/null 2>&1; then
+          ready=1
+          break
+        fi
+      fi
+
+      sleep 2
+      elapsed=\$((elapsed + 2))
+    done
+
+    if [ \"\$ready\" = \"1\" ] && [ ! -f \"\$rcfile\" ]; then
+      echo \"Warren: 3x-ui is installed and running; stopping possibly stuck installer pid \$installer_pid\" >> \"\$log\"
+      kill \"\$installer_pid\" >/dev/null 2>&1 || true
+      sleep 1
+      kill -9 \"\$installer_pid\" >/dev/null 2>&1 || true
+    fi
+
+    if [ -f \"\$log\" ]; then
+      tail -n 120 \"\$log\"
+    fi
+
+    if [ -f \"\$rcfile\" ]; then
+      rc=\"\$(cat \"\$rcfile\" 2>/dev/null || echo 1)\"
+      [ \"\$rc\" = \"0\" ] || [ -x /usr/local/x-ui/x-ui ] || exit \"\$rc\"
+    fi
+
+    test -x /usr/local/x-ui/x-ui || exit 1
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl restart x-ui >/dev/null 2>&1 || systemctl restart x-ui.service >/dev/null 2>&1 || true
+    fi
+    exit 0
+  '" \
     || fail "Не удалось установить 3x-ui на VPS"
   vps_step_done "3x-ui установлен"
 }
