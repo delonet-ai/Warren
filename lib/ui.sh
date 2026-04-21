@@ -158,7 +158,9 @@ menu() {
 
   case "$MODE" in
     manage_private|vps|qos_private|remote_admin|usb_modem|tg_bot|diagnostics)
+      SELECTED_MODE="$MODE"
       load_conf_if_exists || true
+      MODE="$SELECTED_MODE"
       conf_set MODE "$MODE"
       say "${GREEN}DONE${NC}  Режим сохранён в $CONF"
       return 0
