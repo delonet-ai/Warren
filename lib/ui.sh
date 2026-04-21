@@ -1,9 +1,5 @@
 clear_terminal() {
-  if [ -r "$TTY" ]; then
-    printf '\033[2J\033[H' > "$TTY"
-  else
-    printf '\033[2J\033[H'
-  fi
+  { [ -w "$TTY" ] && printf '\033[2J\033[H' > "$TTY"; } 2>/dev/null || printf '\033[2J\033[H'
 }
 
 print_banner() {
@@ -80,9 +76,11 @@ ask() {
   var="$2"
   def="${3:-}"
 
-  if [ -r "$TTY" ]; then
+  if { [ -r "$TTY" ] && [ -w "$TTY" ] && : > "$TTY"; } 2>/dev/null; then
     [ -n "$def" ] && printf "%s [%s]: " "$prompt" "$def" > "$TTY" || printf "%s: " "$prompt" > "$TTY"
-    IFS= read -r ans < "$TTY" || ans=""
+    if ! IFS= read -r ans < "$TTY"; then
+      ans=""
+    fi
   else
     [ -n "$def" ] && printf "%s [%s]: " "$prompt" "$def" || printf "%s: " "$prompt"
     IFS= read -r ans || ans=""
