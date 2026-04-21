@@ -129,7 +129,8 @@ menu() {
   say "8) Remote Admin (WIP)"
   say "9) USB модем настрой (WIP)"
   say "10) Telegram-бот для Podkop"
-  ask "Ввод (1-10)" MENU_CHOICE "4"
+  say "11) Диагностика Podkop/VPS"
+  ask "Ввод (1-11)" MENU_CHOICE "4"
 
   case "$MENU_CHOICE" in
     1) MODE="auto" ;;
@@ -142,6 +143,7 @@ menu() {
     8) MODE="remote_admin" ;;
     9) MODE="usb_modem" ;;
     10) MODE="tg_bot" ;;
+    11) MODE="diagnostics" ;;
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
 
@@ -155,7 +157,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    manage_private|vps|qos_private|remote_admin|usb_modem|tg_bot)
+    manage_private|vps|qos_private|remote_admin|usb_modem|tg_bot|diagnostics)
       load_conf_if_exists || true
       conf_set MODE "$MODE"
       say "${GREEN}DONE${NC}  Режим сохранён в $CONF"
