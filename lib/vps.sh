@@ -415,7 +415,7 @@ install_3xui() {
           ready=1
           break
         fi
-        if pgrep -f \"x-ui\" >/dev/null 2>&1; then
+        if pgrep -f \"/usr/local/x-ui/x-ui\" >/dev/null 2>&1; then
           ready=1
           break
         fi
@@ -665,8 +665,11 @@ purge_3xui_installation() {
       systemctl stop x-ui.service >/dev/null 2>&1 || true
       systemctl disable x-ui.service >/dev/null 2>&1 || true
     fi
-    rm -rf /usr/local/x-ui /etc/x-ui /var/lib/x-ui /root/.warren
-    rm -f /etc/systemd/system/x-ui.service /usr/lib/systemd/system/x-ui.service
+    pkill -f /usr/local/x-ui/x-ui >/dev/null 2>&1 || true
+    pkill -f xray-linux >/dev/null 2>&1 || true
+    rm -rf /usr/local/x-ui /etc/x-ui /var/lib/x-ui /root/.warren /root/cert/ip
+    rm -f /usr/bin/x-ui /etc/systemd/system/x-ui.service /usr/lib/systemd/system/x-ui.service
+    rm -f /tmp/warren-3xui-install.log /tmp/warren-3xui-install.rc /tmp/warren-3xui-install.sh
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload >/dev/null 2>&1 || true
     fi
