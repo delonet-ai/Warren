@@ -226,14 +226,35 @@ collect_vps_inputs() {
   runtime_state_set "vps_root_password" "$VPS_ROOT_PASSWORD"
 }
 
-vps_ssh_password() {
+vps_ssh_local_timeout() {
+  timeout_seconds="$1"
+  shift
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$timeout_seconds" "$@"
+  else
+    "$@"
+  fi
+}
+
+vps_is_dropbear_ssh() {
   if ssh -V 2>&1 | grep -qi dropbear; then
-    sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+    return 0
+  fi
+  return 1
+}
+
+vps_ssh_password_timeout() {
+  timeout_seconds="$1"
+  shift
+
+  if vps_is_dropbear_ssh; then
+    vps_ssh_local_timeout "$timeout_seconds" sshpass -p "$VPS_ROOT_PASSWORD" ssh \
       -y \
       -p "$VPS_SSH_PORT" \
       "root@$VPS_HOST" "$@"
   else
-    sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+    vps_ssh_local_timeout "$timeout_seconds" sshpass -p "$VPS_ROOT_PASSWORD" ssh \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
       -o LogLevel=ERROR \
@@ -245,15 +266,22 @@ vps_ssh_password() {
   fi
 }
 
-vps_ssh_key() {
-  if ssh -V 2>&1 | grep -qi dropbear; then
-    ssh \
+vps_ssh_password() {
+  vps_ssh_password_timeout "${VPS_SSH_TIMEOUT:-120}" "$@"
+}
+
+vps_ssh_key_timeout() {
+  timeout_seconds="$1"
+  shift
+
+  if vps_is_dropbear_ssh; then
+    vps_ssh_local_timeout "$timeout_seconds" ssh \
       -y \
       -i "$VPS_KEY_PATH" \
       -p "$VPS_SSH_PORT" \
       "root@$VPS_HOST" "$@"
   else
-    ssh \
+    vps_ssh_local_timeout "$timeout_seconds" ssh \
       -i "$VPS_KEY_PATH" \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
@@ -266,12 +294,23 @@ vps_ssh_key() {
   fi
 }
 
-vps_ssh() {
+vps_ssh_key() {
+  vps_ssh_key_timeout "${VPS_SSH_TIMEOUT:-120}" "$@"
+}
+
+vps_ssh_timeout() {
+  timeout_seconds="$1"
+  shift
+
   if [ -n "${VPS_KEY_PATH:-}" ] && [ -r "$VPS_KEY_PATH" ]; then
-    vps_ssh_key "$@"
+    vps_ssh_key_timeout "$timeout_seconds" "$@"
   else
-    vps_ssh_password "$@"
+    vps_ssh_password_timeout "$timeout_seconds" "$@"
   fi
+}
+
+vps_ssh() {
+  vps_ssh_timeout "${VPS_SSH_TIMEOUT:-120}" "$@"
 }
 
 vps_write_remote_file() {
@@ -279,14 +318,14 @@ vps_write_remote_file() {
   remote_file="$2"
 
   if [ -n "${VPS_KEY_PATH:-}" ] && [ -r "$VPS_KEY_PATH" ]; then
-    if ssh -V 2>&1 | grep -qi dropbear; then
-      ssh \
+    if vps_is_dropbear_ssh; then
+      vps_ssh_local_timeout 90 ssh \
         -y \
         -i "$VPS_KEY_PATH" \
         -p "$VPS_SSH_PORT" \
         "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
     else
-      ssh \
+      vps_ssh_local_timeout 90 ssh \
         -i "$VPS_KEY_PATH" \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
@@ -298,13 +337,13 @@ vps_write_remote_file() {
         "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
     fi
   else
-    if ssh -V 2>&1 | grep -qi dropbear; then
-      sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+    if vps_is_dropbear_ssh; then
+      vps_ssh_local_timeout 90 sshpass -p "$VPS_ROOT_PASSWORD" ssh \
         -y \
         -p "$VPS_SSH_PORT" \
         "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
     else
-      sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+      vps_ssh_local_timeout 90 sshpass -p "$VPS_ROOT_PASSWORD" ssh \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o LogLevel=ERROR \
@@ -359,7 +398,7 @@ detect_vps_os() {
 upgrade_vps_packages() {
   case "$VPS_OS_ID" in
     ubuntu|debian|raspbian|armbian)
-      vps_ssh "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade -y && apt-get install -y curl ca-certificates'" \
+      vps_ssh_timeout 1800 "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade -y && apt-get install -y curl ca-certificates coreutils procps'" \
         || fail "Не удалось обновить пакеты на VPS (apt)"
       ;;
     centos|rhel|almalinux|rocky|fedora|ol)
@@ -388,34 +427,45 @@ upgrade_vps_packages() {
 
 install_3xui() {
   info "Установка 3x-ui может занять некоторое время. Процесс идёт, пожалуйста подождите..."
-  vps_ssh "sh -lc '
+  vps_ssh_timeout 1200 "sh -lc '
     log=/tmp/warren-3xui-install.log
     rcfile=/tmp/warren-3xui-install.rc
-    rm -f \"\$log\" \"\$rcfile\"
+    installer=/tmp/warren-3xui-install.sh
+    rm -f \"\$log\" \"\$rcfile\" \"\$installer\"
+
+    echo \"__WARREN_STEP__ download installer\" >\"\$log\"
+    curl -fsSL https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh -o \"\$installer\" >>\"\$log\" 2>&1
+    chmod +x \"\$installer\"
 
     (
+      echo \"__WARREN_STEP__ run installer\"
       export DEBIAN_FRONTEND=noninteractive
-      installer=/tmp/warren-3xui-install.sh
-      curl -fsSL https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh -o \"\$installer\" &&
-        chmod +x \"\$installer\" &&
+      if command -v timeout >/dev/null 2>&1; then
+        timeout 900 bash \"\$installer\" < /dev/null
+        install_rc=\$?
+      else
         bash \"\$installer\" < /dev/null
-      echo \$? > \"\$rcfile\"
-    ) >\"\$log\" 2>&1 &
+        install_rc=\$?
+      fi
+      echo \"\$install_rc\" > \"\$rcfile\"
+      echo \"__WARREN_INSTALL_RC__ \$install_rc\"
+    ) >>\"\$log\" 2>&1 &
     installer_pid=\$!
 
     elapsed=0
     ready=0
-    while [ \"\$elapsed\" -lt 420 ]; do
+    while [ \"\$elapsed\" -lt 900 ]; do
       if [ -f \"\$rcfile\" ]; then
         break
       fi
 
       if [ -x /usr/local/x-ui/x-ui ]; then
-        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet x-ui >/dev/null 2>&1; then
-          ready=1
-          break
-        fi
-        if pgrep -f \"/usr/local/x-ui/x-ui\" >/dev/null 2>&1; then
+        if command -v systemctl >/dev/null 2>&1; then
+          if [ -f /etc/systemd/system/x-ui.service ] && systemctl is-active --quiet x-ui >/dev/null 2>&1; then
+            ready=1
+            break
+          fi
+        elif pgrep -f /usr/local/x-ui/x-ui >/dev/null 2>&1; then
           ready=1
           break
         fi
@@ -426,28 +476,49 @@ install_3xui() {
     done
 
     if [ \"\$ready\" = \"1\" ] && [ ! -f \"\$rcfile\" ]; then
-      echo \"Warren: 3x-ui is installed and running; stopping possibly stuck installer pid \$installer_pid\" >> \"\$log\"
+      echo \"Warren: 3x-ui is installed and running; stopping possibly stuck installer pid \$installer_pid\" >>\"\$log\"
+      pkill -P \"\$installer_pid\" >/dev/null 2>&1 || true
       kill \"\$installer_pid\" >/dev/null 2>&1 || true
       sleep 1
+      pkill -9 -P \"\$installer_pid\" >/dev/null 2>&1 || true
       kill -9 \"\$installer_pid\" >/dev/null 2>&1 || true
     fi
 
-    if [ -f \"\$log\" ]; then
-      tail -n 120 \"\$log\"
-    fi
+    tail -n 180 \"\$log\" 2>/dev/null || true
 
     if [ -f \"\$rcfile\" ]; then
-      rc=\"\$(cat \"\$rcfile\" 2>/dev/null || echo 1)\"
-      [ \"\$rc\" = \"0\" ] || [ -x /usr/local/x-ui/x-ui ] || exit \"\$rc\"
+      install_rc=\"\$(cat \"\$rcfile\" 2>/dev/null || echo 1)\"
+      if [ \"\$install_rc\" != \"0\" ] && [ \"\$install_rc\" != \"124\" ]; then
+        echo \"Warren: 3x-ui installer failed with rc=\$install_rc\"
+        exit \"\$install_rc\"
+      fi
+    elif [ \"\$ready\" != \"1\" ]; then
+      echo \"Warren: 3x-ui installer timed out before service became ready\"
+      exit 124
     fi
 
     test -x /usr/local/x-ui/x-ui || exit 1
     if command -v systemctl >/dev/null 2>&1; then
-      systemctl restart x-ui >/dev/null 2>&1 || systemctl restart x-ui.service >/dev/null 2>&1 || true
+      systemctl daemon-reload >/dev/null 2>&1 || true
+      systemctl enable x-ui >/dev/null 2>&1 || true
+      systemctl restart x-ui >/dev/null 2>&1 || systemctl restart x-ui.service >/dev/null 2>&1 || exit 1
+      i=0
+      while [ \"\$i\" -lt 30 ]; do
+        systemctl is-active --quiet x-ui >/dev/null 2>&1 && exit 0
+        sleep 1
+        i=\$((i + 1))
+      done
+      systemctl status x-ui --no-pager -l 2>/dev/null | sed -n \"1,80p\" || true
+      exit 1
     fi
+
+    pgrep -f /usr/local/x-ui/x-ui >/dev/null 2>&1 || exit 1
     exit 0
   '" \
-    || fail "Не удалось установить 3x-ui на VPS"
+    || {
+      vps_ssh_timeout 60 "sh -lc 'echo __WARREN_3XUI_INSTALL_LOG__; tail -n 220 /tmp/warren-3xui-install.log 2>/dev/null || true; echo __WARREN_3XUI_STATUS__; systemctl status x-ui --no-pager -l 2>/dev/null | sed -n \"1,100p\" || true; echo __WARREN_3XUI_FILES__; ls -la /usr/local/x-ui /usr/bin/x-ui /etc/systemd/system/x-ui.service 2>/dev/null || true'" || true
+      fail "Не удалось установить 3x-ui на VPS"
+    }
   vps_step_done "3x-ui установлен"
 }
 
@@ -455,10 +526,10 @@ configure_3xui_admin() {
   PANEL_USERNAME="warren$(random_token 6)"
   PANEL_PASSWORD="$(random_token 18)"
 
-  vps_ssh "sh -lc '/usr/local/x-ui/x-ui setting -username $(quote_sh "$PANEL_USERNAME") -password $(quote_sh "$PANEL_PASSWORD") -resetTwoFactor true >/dev/null 2>&1'" \
+  vps_ssh_timeout 90 "sh -lc '/usr/local/x-ui/x-ui setting -username $(quote_sh "$PANEL_USERNAME") -password $(quote_sh "$PANEL_PASSWORD") -resetTwoFactor true >/dev/null 2>&1'" \
     || fail "Не удалось настроить логин и пароль 3x-ui"
 
-  vps_ssh "sh -lc '
+  vps_ssh_timeout 90 "sh -lc '
     if command -v systemctl >/dev/null 2>&1; then
       systemctl restart x-ui && exit 0
       systemctl restart x-ui.service && exit 0
@@ -472,6 +543,20 @@ configure_3xui_admin() {
     exit 1
   '" \
     || fail "Не удалось перезапустить 3x-ui после настройки учётных данных"
+
+  vps_ssh_timeout 90 "sh -lc '
+    if command -v systemctl >/dev/null 2>&1; then
+      i=0
+      while [ \"\$i\" -lt 30 ]; do
+        systemctl is-active --quiet x-ui >/dev/null 2>&1 && exit 0
+        sleep 1
+        i=\$((i + 1))
+      done
+      systemctl status x-ui --no-pager -l 2>/dev/null | sed -n \"1,80p\" || true
+      exit 1
+    fi
+    pgrep -f /usr/local/x-ui/x-ui >/dev/null 2>&1
+  '" || fail "3x-ui не стал active после перезапуска"
 }
 
 wait_for_3xui_panel() {
@@ -489,12 +574,12 @@ wait_for_3xui_panel() {
   i=1
   while [ "$i" -le 30 ]; do
     for panel_path in $panel_paths; do
-      if vps_ssh "sh -lc 'curl -kfsS https://127.0.0.1:${PANEL_PORT}${panel_path} >/dev/null 2>&1'"; then
+      if vps_ssh_timeout 20 "sh -lc 'curl -kfsS --connect-timeout 3 --max-time 8 https://127.0.0.1:${PANEL_PORT}${panel_path} >/dev/null 2>&1'"; then
         PANEL_SCHEME="https"
         PANEL_HEALTH_PATH="$panel_path"
         return 0
       fi
-      if vps_ssh "sh -lc 'curl -fsS http://127.0.0.1:${PANEL_PORT}${panel_path} >/dev/null 2>&1'"; then
+      if vps_ssh_timeout 20 "sh -lc 'curl -fsS --connect-timeout 3 --max-time 8 http://127.0.0.1:${PANEL_PORT}${panel_path} >/dev/null 2>&1'"; then
         PANEL_SCHEME="http"
         PANEL_HEALTH_PATH="$panel_path"
         return 0
@@ -505,7 +590,7 @@ wait_for_3xui_panel() {
   done
   say ""
   warn "3x-ui не ответил на локальную проверку панели. Ниже диагностика с VPS."
-  vps_ssh "sh -lc '
+  vps_ssh_timeout 60 "sh -lc '
     echo __XUI_SETTING__;
     /usr/local/x-ui/x-ui setting -show 2>&1 || true;
     echo __LISTEN__;
@@ -517,10 +602,10 @@ wait_for_3xui_panel() {
 }
 
 collect_3xui_access_info() {
-  panel_info="$(vps_ssh "sh -lc '/usr/local/x-ui/x-ui setting -show 2>/dev/null || true'")"
+  panel_info="$(vps_ssh_timeout 60 "sh -lc '/usr/local/x-ui/x-ui setting -show 2>/dev/null || true'")"
   PANEL_PORT="$(printf "%s\n" "$panel_info" | sed -n 's/.*[Pp]ort: *\([0-9][0-9]*\).*/\1/p' | head -n1)"
   PANEL_BASE_PATH="$(printf "%s\n" "$panel_info" | sed -n 's/.*webBasePath: \(.*\)$/\1/p' | head -n1)"
-  [ -z "$PANEL_PORT" ] && PANEL_PORT="2053"
+  [ -n "$PANEL_PORT" ] || fail "Не удалось определить порт панели 3x-ui через setting -show"
   PANEL_BASE_PATH="$(printf "%s" "$PANEL_BASE_PATH" | tr -d '[:space:]')"
   case "$PANEL_BASE_PATH" in
     ""|"/") PANEL_BASE_PATH="" ;;
@@ -565,7 +650,7 @@ login_3xui_api() {
   PANEL_CURL_FLAGS="$curl_tls_flag --http1.1"
   PANEL_API_BASE="${panel_scheme}://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}"
 
-  login_resp="$(vps_ssh "sh -lc 'curl $PANEL_CURL_FLAGS -fsS -c $PANEL_COOKIE_REMOTE -H \"Content-Type: application/json\" -X POST --data @$login_json_remote ${PANEL_API_BASE}/login'")" \
+  login_resp="$(vps_ssh_timeout 60 "sh -lc 'curl $PANEL_CURL_FLAGS -fsS --connect-timeout 5 --max-time 20 -c $PANEL_COOKIE_REMOTE -H \"Content-Type: application/json\" -X POST --data @$login_json_remote ${PANEL_API_BASE}/login'")" \
     || fail "Не удалось войти в API 3x-ui"
 
   printf "%s" "$login_resp" | grep -qi "success\|ok\|true" || fail "3x-ui login API вернул неожиданный ответ"
@@ -659,8 +744,8 @@ purge_3xui_installation() {
       systemctl stop x-ui.service >/dev/null 2>&1 || true
       systemctl disable x-ui.service >/dev/null 2>&1 || true
     fi
-    pkill -f /usr/local/x-ui/x-ui >/dev/null 2>&1 || true
-    pkill -f xray-linux >/dev/null 2>&1 || true
+    pkill -x x-ui >/dev/null 2>&1 || true
+    pkill -x xray-linux-amd64 >/dev/null 2>&1 || true
     rm -rf /usr/local/x-ui /etc/x-ui /var/lib/x-ui /root/.warren /root/cert/ip
     rm -f /usr/bin/x-ui /etc/systemd/system/x-ui.service /usr/lib/systemd/system/x-ui.service
     rm -f /tmp/warren-3xui-install.log /tmp/warren-3xui-install.rc /tmp/warren-3xui-install.sh
@@ -678,7 +763,7 @@ generate_reality_materials() {
   panel_curl_flags="${PANEL_CURL_FLAGS:---http1.1}"
   panel_api_base="${PANEL_API_BASE:-${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}}"
 
-  cert_resp="$(vps_ssh "sh -lc 'curl $panel_curl_flags -fsS -b $PANEL_COOKIE_REMOTE ${panel_api_base}/panel/api/server/getNewX25519Cert'")" \
+  cert_resp="$(vps_ssh_timeout 60 "sh -lc 'curl $panel_curl_flags -fsS --connect-timeout 5 --max-time 30 -b $PANEL_COOKIE_REMOTE ${panel_api_base}/panel/api/server/getNewX25519Cert'")" \
     || fail "Не удалось сгенерировать X25519 ключи через API 3x-ui"
 
   REALITY_PRIVATE_KEY="$(printf "%s" "$cert_resp" | json_get_string "privateKey")"
@@ -749,11 +834,11 @@ create_vless_reality_inbound() {
   panel_api_base="${PANEL_API_BASE:-${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}}"
 
   if [ -n "${INBOUND_ID:-}" ]; then
-    vps_ssh "sh -lc 'curl $panel_curl_flags -fsS -b $PANEL_COOKIE_REMOTE -X POST ${panel_api_base}/panel/api/inbounds/del/${INBOUND_ID} >/dev/null'" \
+    vps_ssh_timeout 60 "sh -lc 'curl $panel_curl_flags -fsS --connect-timeout 5 --max-time 30 -b $PANEL_COOKIE_REMOTE -X POST ${panel_api_base}/panel/api/inbounds/del/${INBOUND_ID} >/dev/null'" \
       || fail "Не удалось удалить предыдущий inbound перед пересозданием"
   fi
 
-  add_resp="$(vps_ssh "sh -lc 'curl $panel_curl_flags -fsS -b $PANEL_COOKIE_REMOTE -H \"Content-Type: application/json\" -X POST --data @$inbound_json_remote ${panel_api_base}/panel/api/inbounds/add'")" \
+  add_resp="$(vps_ssh_timeout 60 "sh -lc 'curl $panel_curl_flags -fsS --connect-timeout 5 --max-time 30 -b $PANEL_COOKIE_REMOTE -H \"Content-Type: application/json\" -X POST --data @$inbound_json_remote ${panel_api_base}/panel/api/inbounds/add'")" \
     || fail "Не удалось создать VLESS + Reality inbound через API 3x-ui"
 
   printf "%s" "$add_resp" | json_has_success_true || fail "API 3x-ui не подтвердил создание inbound"
@@ -841,8 +926,11 @@ run_vps_flow() {
   upgrade_vps_packages
   collect_vps_facts
 
-  handle_existing_vps_setup
-  existing_action_result=$?
+  if handle_existing_vps_setup; then
+    existing_action_result=0
+  else
+    existing_action_result=$?
+  fi
   case "$existing_action_result" in
     0)
       return 0
