@@ -129,6 +129,17 @@ mode_target_state() {
   esac
 }
 
+mode_is_one_shot_service() {
+  case "$MODE" in
+    vps|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 prepare_auto_vless() {
   [ "$MODE" = "auto" ] || return 0
 
@@ -237,6 +248,7 @@ run_service_mode() {
     *) return 1 ;;
   esac
 
+  conf_set MODE ""
   cleanup_runtime_state
   exit 0
 }
@@ -244,7 +256,7 @@ run_service_mode() {
 main() {
   if [ -f "$CONF" ]; then
     load_conf
-    if ! should_resume_current_mode; then
+    if mode_is_one_shot_service || ! should_resume_current_mode; then
       menu
       load_conf
     fi
