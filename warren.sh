@@ -5,7 +5,7 @@
 
 set -e
 
-TTY="/dev/tty"
+TTY="${TTY:-/dev/tty}"
 EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-https://openwrt.org/_export/code/docs/guide-user/advanced/expand_root?codeblock=0}"
 PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh}"
 EXPAND_ROOT_SHA256="${EXPAND_ROOT_SHA256:-}"

@@ -252,7 +252,7 @@ vps_ssh_password_timeout() {
     vps_ssh_local_timeout "$timeout_seconds" sshpass -p "$VPS_ROOT_PASSWORD" ssh \
       -y \
       -p "$VPS_SSH_PORT" \
-      "root@$VPS_HOST" "$@"
+      "root@$VPS_HOST" "$@" < /dev/null
   else
     vps_ssh_local_timeout "$timeout_seconds" sshpass -p "$VPS_ROOT_PASSWORD" ssh \
       -o StrictHostKeyChecking=no \
@@ -262,7 +262,7 @@ vps_ssh_password_timeout() {
       -o PubkeyAuthentication=no \
       -o ConnectTimeout=20 \
       -p "$VPS_SSH_PORT" \
-      "root@$VPS_HOST" "$@"
+      "root@$VPS_HOST" "$@" < /dev/null
   fi
 }
 
@@ -279,7 +279,7 @@ vps_ssh_key_timeout() {
       -y \
       -i "$VPS_KEY_PATH" \
       -p "$VPS_SSH_PORT" \
-      "root@$VPS_HOST" "$@"
+      "root@$VPS_HOST" "$@" < /dev/null
   else
     vps_ssh_local_timeout "$timeout_seconds" ssh \
       -i "$VPS_KEY_PATH" \
@@ -290,7 +290,7 @@ vps_ssh_key_timeout() {
       -o PasswordAuthentication=no \
       -o ConnectTimeout=20 \
       -p "$VPS_SSH_PORT" \
-      "root@$VPS_HOST" "$@"
+      "root@$VPS_HOST" "$@" < /dev/null
   fi
 }
 
