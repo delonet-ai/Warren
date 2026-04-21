@@ -526,13 +526,29 @@ configure_3xui_admin() {
   PANEL_USERNAME="warren$(random_token 6)"
   PANEL_PASSWORD="$(random_token 18)"
 
-  vps_ssh_timeout 90 "sh -lc '/usr/local/x-ui/x-ui setting -username $(quote_sh "$PANEL_USERNAME") -password $(quote_sh "$PANEL_PASSWORD") -resetTwoFactor true >/dev/null 2>&1'" \
-    || fail "Не удалось настроить логин и пароль 3x-ui"
+  info "Настраиваю логин и пароль 3x-ui..."
+  vps_ssh_timeout 120 "sh -lc '
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 45 /usr/local/x-ui/x-ui setting -username $(quote_sh "$PANEL_USERNAME") -password $(quote_sh "$PANEL_PASSWORD") -resetTwoFactor true >/tmp/warren-3xui-setting.log 2>&1
+    else
+      /usr/local/x-ui/x-ui setting -username $(quote_sh "$PANEL_USERNAME") -password $(quote_sh "$PANEL_PASSWORD") -resetTwoFactor true >/tmp/warren-3xui-setting.log 2>&1
+    fi
+  '" \
+    || {
+      vps_ssh_timeout 60 "sh -lc 'echo __WARREN_3XUI_SETTING_LOG__; cat /tmp/warren-3xui-setting.log 2>/dev/null || true; echo __WARREN_3XUI_STATUS__; systemctl status x-ui --no-pager -l 2>/dev/null | sed -n \"1,80p\" || true'" || true
+      fail "Не удалось настроить логин и пароль 3x-ui"
+    }
 
-  vps_ssh_timeout 90 "sh -lc '
+  info "Перезапускаю 3x-ui через systemd..."
+  vps_ssh_timeout 120 "sh -lc '
     if command -v systemctl >/dev/null 2>&1; then
-      systemctl restart x-ui && exit 0
-      systemctl restart x-ui.service && exit 0
+      if command -v timeout >/dev/null 2>&1; then
+        timeout 45 systemctl restart x-ui && exit 0
+        timeout 45 systemctl restart x-ui.service && exit 0
+      else
+        systemctl restart x-ui && exit 0
+        systemctl restart x-ui.service && exit 0
+      fi
     fi
     if command -v service >/dev/null 2>&1; then
       service x-ui restart && exit 0
@@ -542,8 +558,12 @@ configure_3xui_admin() {
     fi
     exit 1
   '" \
-    || fail "Не удалось перезапустить 3x-ui после настройки учётных данных"
+    || {
+      vps_ssh_timeout 60 "sh -lc 'echo __WARREN_3XUI_STATUS__; systemctl status x-ui --no-pager -l 2>/dev/null | sed -n \"1,100p\" || service x-ui status 2>/dev/null || true; echo __WARREN_3XUI_JOURNAL__; journalctl -u x-ui --no-pager -n 80 2>/dev/null || true'" || true
+      fail "Не удалось перезапустить 3x-ui после настройки учётных данных"
+    }
 
+  info "Проверяю, что 3x-ui active..."
   vps_ssh_timeout 90 "sh -lc '
     if command -v systemctl >/dev/null 2>&1; then
       i=0
