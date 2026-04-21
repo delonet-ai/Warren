@@ -395,9 +395,12 @@ install_3xui() {
 
     (
       export DEBIAN_FRONTEND=noninteractive
-      curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh | bash -s -- < /dev/null >\"\$log\" 2>&1
+      installer=/tmp/warren-3xui-install.sh
+      curl -fsSL https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh -o \"\$installer\" &&
+        chmod +x \"\$installer\" &&
+        bash \"\$installer\" < /dev/null
       echo \$? > \"\$rcfile\"
-    ) &
+    ) >\"\$log\" 2>&1 &
     installer_pid=\$!
 
     elapsed=0
