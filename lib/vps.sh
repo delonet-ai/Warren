@@ -227,28 +227,43 @@ collect_vps_inputs() {
 }
 
 vps_ssh_password() {
-  sshpass -p "$VPS_ROOT_PASSWORD" ssh \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    -o LogLevel=ERROR \
-    -o PreferredAuthentications=password \
-    -o PubkeyAuthentication=no \
-    -o ConnectTimeout=20 \
-    -p "$VPS_SSH_PORT" \
-    "root@$VPS_HOST" "$@"
+  if ssh -V 2>&1 | grep -qi dropbear; then
+    sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+      -y \
+      -p "$VPS_SSH_PORT" \
+      "root@$VPS_HOST" "$@"
+  else
+    sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      -o LogLevel=ERROR \
+      -o PreferredAuthentications=password \
+      -o PubkeyAuthentication=no \
+      -o ConnectTimeout=20 \
+      -p "$VPS_SSH_PORT" \
+      "root@$VPS_HOST" "$@"
+  fi
 }
 
 vps_ssh_key() {
-  ssh \
-    -i "$VPS_KEY_PATH" \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    -o LogLevel=ERROR \
-    -o PreferredAuthentications=publickey \
-    -o PasswordAuthentication=no \
-    -o ConnectTimeout=20 \
-    -p "$VPS_SSH_PORT" \
-    "root@$VPS_HOST" "$@"
+  if ssh -V 2>&1 | grep -qi dropbear; then
+    ssh \
+      -y \
+      -i "$VPS_KEY_PATH" \
+      -p "$VPS_SSH_PORT" \
+      "root@$VPS_HOST" "$@"
+  else
+    ssh \
+      -i "$VPS_KEY_PATH" \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      -o LogLevel=ERROR \
+      -o PreferredAuthentications=publickey \
+      -o PasswordAuthentication=no \
+      -o ConnectTimeout=20 \
+      -p "$VPS_SSH_PORT" \
+      "root@$VPS_HOST" "$@"
+  fi
 }
 
 vps_ssh() {
@@ -264,26 +279,41 @@ vps_write_remote_file() {
   remote_file="$2"
 
   if [ -n "${VPS_KEY_PATH:-}" ] && [ -r "$VPS_KEY_PATH" ]; then
-    ssh \
-      -i "$VPS_KEY_PATH" \
-      -o StrictHostKeyChecking=no \
-      -o UserKnownHostsFile=/dev/null \
-      -o LogLevel=ERROR \
-      -o PreferredAuthentications=publickey \
-      -o PasswordAuthentication=no \
-      -o ConnectTimeout=8 \
-      -p "$VPS_SSH_PORT" \
-      "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
+    if ssh -V 2>&1 | grep -qi dropbear; then
+      ssh \
+        -y \
+        -i "$VPS_KEY_PATH" \
+        -p "$VPS_SSH_PORT" \
+        "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
+    else
+      ssh \
+        -i "$VPS_KEY_PATH" \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o LogLevel=ERROR \
+        -o PreferredAuthentications=publickey \
+        -o PasswordAuthentication=no \
+        -o ConnectTimeout=8 \
+        -p "$VPS_SSH_PORT" \
+        "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
+    fi
   else
-    sshpass -p "$VPS_ROOT_PASSWORD" ssh \
-      -o StrictHostKeyChecking=no \
-      -o UserKnownHostsFile=/dev/null \
-      -o LogLevel=ERROR \
-      -o PreferredAuthentications=password \
-      -o PubkeyAuthentication=no \
-      -o ConnectTimeout=8 \
-      -p "$VPS_SSH_PORT" \
-      "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
+    if ssh -V 2>&1 | grep -qi dropbear; then
+      sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+        -y \
+        -p "$VPS_SSH_PORT" \
+        "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
+    else
+      sshpass -p "$VPS_ROOT_PASSWORD" ssh \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o LogLevel=ERROR \
+        -o PreferredAuthentications=password \
+        -o PubkeyAuthentication=no \
+        -o ConnectTimeout=8 \
+        -p "$VPS_SSH_PORT" \
+        "root@$VPS_HOST" "cat > $remote_file" < "$local_file"
+    fi
   fi
 }
 
@@ -418,12 +448,22 @@ wait_for_3xui_panel() {
     sleep 3
     i=$((i + 1))
   done
+  say ""
+  warn "3x-ui не ответил на локальную проверку панели. Ниже диагностика с VPS."
+  vps_ssh "sh -lc '
+    echo __XUI_SETTING__;
+    /usr/local/x-ui/x-ui setting -show 2>&1 || true;
+    echo __LISTEN__;
+    ss -lntup 2>/dev/null | grep -E \"x-ui|:${PANEL_PORT}[[:space:]]\" || ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null || true;
+    echo __SERVICE__;
+    systemctl status x-ui --no-pager -l 2>/dev/null | sed -n \"1,80p\" || service x-ui status 2>/dev/null || true;
+  '" || true
   fail "3x-ui не поднялся на локальном URL панели: https://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}"
 }
 
 collect_3xui_access_info() {
   panel_info="$(vps_ssh "sh -lc '/usr/local/x-ui/x-ui setting -show 2>/dev/null || true'")"
-  PANEL_PORT="$(printf "%s\n" "$panel_info" | sed -n 's/.*port: \([0-9][0-9]*\).*/\1/p' | head -n1)"
+  PANEL_PORT="$(printf "%s\n" "$panel_info" | sed -n 's/.*[Pp]ort: *\([0-9][0-9]*\).*/\1/p' | head -n1)"
   PANEL_BASE_PATH="$(printf "%s\n" "$panel_info" | sed -n 's/.*webBasePath: \(.*\)$/\1/p' | head -n1)"
   [ -z "$PANEL_PORT" ] && PANEL_PORT="2053"
   PANEL_BASE_PATH="$(printf "%s" "$PANEL_BASE_PATH" | tr -d '[:space:]')"
