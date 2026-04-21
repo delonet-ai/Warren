@@ -46,10 +46,19 @@ warren_die() {
 fetch_lib() {
   name="$1"
   local_path="$SCRIPT_DIR/lib/$name"
+  use_local_libs="${WARREN_USE_LOCAL_LIBS:-}"
 
-  if [ -r "$local_path" ]; then
-    echo "$local_path"
-    return 0
+  case "$SCRIPT_DIR" in
+    /tmp|/tmp/*)
+      [ "$use_local_libs" = "1" ] || local_path=""
+      ;;
+  esac
+
+  if [ -n "$local_path" ]; then
+    if [ -r "$local_path" ]; then
+      echo "$local_path"
+      return 0
+    fi
   fi
 
   mkdir -p "$LIB_CACHE_DIR" || warren_die "Не удалось создать каталог библиотек: $LIB_CACHE_DIR"
