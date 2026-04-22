@@ -155,7 +155,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    manage_private|vps|qos_private|remote_admin|usb_modem|tg_bot|diagnostics)
+    manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics)
       SELECTED_MODE="$MODE"
       load_conf_if_exists || true
       MODE="$SELECTED_MODE"

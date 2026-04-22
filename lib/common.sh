@@ -9,7 +9,13 @@ say() {
 
 done_() {
   say "${GREEN}DONE${NC}  $*"
-  print_progress
+  case "${MODE:-}" in
+    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private)
+      ;;
+    *)
+      print_progress
+      ;;
+  esac
   sleep 5
 }
 
