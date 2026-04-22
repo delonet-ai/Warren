@@ -162,7 +162,7 @@ podkop_current_proxy_links() {
 
   case "$current_type" in
     urltest)
-      uci show podkop.main 2>/dev/null | sed -n "s/^podkop\.main\.urltest_proxy_links='\(.*\)'$/\1/p"
+      uci -q get podkop.main.urltest_proxy_links 2>/dev/null | tr ' ' '\n'
       ;;
     url)
       uci -q get podkop.main.proxy_string 2>/dev/null
@@ -305,7 +305,7 @@ podkop_apply_urltest_links() {
 }
 
 podkop_print_active_urltest_links() {
-  active_links="$(uci show podkop.main 2>/dev/null | sed -n "s/^podkop\.main\.urltest_proxy_links='\(.*\)'$/\1/p")"
+  active_links="$(uci -q get podkop.main.urltest_proxy_links 2>/dev/null | tr ' ' '\n')"
   say ""
   say "Активные URLTest каналы Podkop:"
   if [ -n "$active_links" ]; then
