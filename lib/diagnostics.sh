@@ -50,15 +50,20 @@ warren_diag_first_wan_gateway() {
   ip route show default 2>/dev/null | awk 'NR==1 {for (i=1; i<=NF; i++) if ($i=="via") {print $(i+1); exit}}'
 }
 
-warren_diag_first_proxy_link() {
-  link="$(uci -q get podkop.main.proxy_string 2>/dev/null || true)"
-  if [ -z "$link" ]; then
-    link="$(uci -q get podkop.main.urltest_proxy_links 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | head -n1 || true)"
-  fi
-  if [ -z "$link" ]; then
-    link="$(uci -q get podkop.main.selector_proxy_links 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | head -n1 || true)"
-  fi
-  printf "%s\n" "$link"
+warren_diag_proxy_links() {
+  proxy_type="$(uci -q get podkop.main.proxy_config_type 2>/dev/null || true)"
+
+  case "$proxy_type" in
+    urltest)
+      uci -q get podkop.main.urltest_proxy_links 2>/dev/null | tr ' ' '\n' | sed '/^$/d'
+      ;;
+    selector)
+      uci -q get podkop.main.selector_proxy_links 2>/dev/null | tr ' ' '\n' | sed '/^$/d'
+      ;;
+    *)
+      uci -q get podkop.main.proxy_string 2>/dev/null | sed '/^$/d'
+      ;;
+  esac
 }
 
 warren_diag_parse_proxy_endpoint() {
@@ -79,27 +84,36 @@ warren_diag_tcp_check() {
   host="$1"
   port="$2"
   timeout="${3:-3}"
+  tmp="/tmp/warren-diag-curl.$$"
 
   [ -n "$host" ] && [ -n "$port" ] || return 2
 
-  if warren_diag_has_cmd nc; then
-    if nc -w "$timeout" -z "$host" "$port" >/dev/null 2>&1; then
-      return 0
-    elif printf "" | nc -w "$timeout" "$host" "$port" >/dev/null 2>&1; then
-      return 0
+  if warren_diag_has_cmd curl; then
+    if [ "$port" = "443" ]; then
+      scheme="https"
+      curl_tls="-k"
     else
-      rc="$?"
-      return "$rc"
+      scheme="http"
+      curl_tls=""
     fi
+
+    if curl $curl_tls -vIs --connect-timeout "$timeout" --max-time "$timeout" "${scheme}://${host}:${port}/" > "$tmp" 2>&1; then
+      rm -f "$tmp" 2>/dev/null || true
+      return 0
+    fi
+
+    if grep -Eqi 'Connected to|Received HTTP/0\.9|Empty reply from server|invalid SSL record|wrong version number|first record does not look like a TLS handshake' "$tmp" 2>/dev/null; then
+      rm -f "$tmp" 2>/dev/null || true
+      return 0
+    fi
+
+    rm -f "$tmp" 2>/dev/null || true
+    return 1
   fi
 
-  if warren_diag_has_cmd curl; then
-    if curl -fsS --connect-timeout "$timeout" "telnet://${host}:${port}" >/dev/null 2>&1; then
-      return 0
-    else
-      rc="$?"
-      return "$rc"
-    fi
+  if warren_diag_has_cmd nc && nc -h 2>&1 | grep -q -- '-z'; then
+    nc -w "$timeout" -z "$host" "$port" >/dev/null 2>&1
+    return "$?"
   fi
 
   return 127
@@ -167,6 +181,46 @@ warren_diag_check_service() {
   fi
 }
 
+warren_diag_check_proxy_engine() {
+  if [ -x /etc/init.d/sing-box ]; then
+    warren_diag_check_service sing-box
+    return 0
+  fi
+  if pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1; then
+    warren_diag_ok "proxy engine sing-box: процесс запущен"
+    return 0
+  fi
+  if [ -x /etc/init.d/xray ]; then
+    warren_diag_check_service xray
+    return 0
+  fi
+  if pgrep -x xray >/dev/null 2>&1 || pgrep -f '/usr/bin/xray' >/dev/null 2>&1; then
+    warren_diag_ok "proxy engine xray: процесс запущен"
+    return 0
+  fi
+  warren_diag_bad "proxy engine: не найден запущенный sing-box/xray"
+}
+
+warren_diag_check_podkop_runtime() {
+  if ! uci -q get podkop.main >/dev/null 2>&1; then
+    warren_diag_bad "Podkop: секция podkop.main не найдена"
+    return 0
+  fi
+
+  if [ -x /etc/init.d/podkop ] && /etc/init.d/podkop status >/dev/null 2>&1; then
+    warren_diag_ok "Podkop: init status запущен"
+    return 0
+  fi
+
+  if { pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1; } \
+    && ip rule show 2>/dev/null | grep -q 'lookup podkop'; then
+    warren_diag_ok "Podkop: UCI, sing-box и routing rule активны"
+    return 0
+  fi
+
+  warren_diag_bad "Podkop: runtime не выглядит активным"
+}
+
 warren_diag_capture_snapshot() {
   phase="$1"
   DIAG_OK_COUNT=0
@@ -178,11 +232,15 @@ warren_diag_capture_snapshot() {
   warren_diag_line "hostname=$(hostname 2>/dev/null || true)"
   warren_diag_line "mode=${MODE:-unknown}"
 
-  proxy_link="$(warren_diag_first_proxy_link)"
+  proxy_links_file="/tmp/warren-diag-proxies.$$"
+  warren_diag_proxy_links > "$proxy_links_file" 2>/dev/null || true
+  proxy_link="$(sed '/^$/d' "$proxy_links_file" 2>/dev/null | head -n1)"
+  proxy_count="$(sed '/^$/d' "$proxy_links_file" 2>/dev/null | wc -l | tr -d ' ')"
   warren_diag_parse_proxy_endpoint "$proxy_link"
   wan_gw="$(warren_diag_first_wan_gateway)"
 
   warren_diag_line "wan_gateway=${wan_gw:-unknown}"
+  warren_diag_line "proxy_count=${proxy_count:-0}"
   warren_diag_line "proxy_host=${DIAG_PROXY_HOST:-unknown}"
   warren_diag_line "proxy_port=${DIAG_PROXY_PORT:-unknown}"
   warren_diag_line "vps_host=${VPS_HOST:-unknown}"
@@ -202,14 +260,8 @@ warren_diag_capture_snapshot() {
   warren_diag_cmd "nft podkop/tproxy rules" sh -c 'nft list ruleset 2>&1 | grep -Ei "podkop|sing|tproxy|mark|dns|redirect" -C 3'
 
   warren_diag_section "ACTIVE CHECKS $phase"
-  warren_diag_check_service podkop
-  if [ -x /etc/init.d/sing-box ]; then
-    warren_diag_check_service sing-box
-  elif [ -x /etc/init.d/xray ]; then
-    warren_diag_check_service xray
-  else
-    warren_diag_bad "proxy engine: не найден init-скрипт sing-box/xray"
-  fi
+  warren_diag_check_podkop_runtime
+  warren_diag_check_proxy_engine
 
   warren_diag_check_ping "WAN gateway" "$wan_gw"
   warren_diag_check_ping "Public IP 1.1.1.1" "1.1.1.1"
@@ -219,12 +271,19 @@ warren_diag_capture_snapshot() {
   warren_diag_check_dns "External resolver" "1.1.1.1" "google.com"
   warren_diag_check_tcp "OpenWrt downloads HTTPS" "downloads.openwrt.org" "443"
 
-  if [ -n "${DIAG_PROXY_HOST:-}" ]; then
-    warren_diag_check_ping "VLESS host" "$DIAG_PROXY_HOST"
-    warren_diag_check_tcp "VLESS endpoint" "$DIAG_PROXY_HOST" "$DIAG_PROXY_PORT"
+  if [ "${proxy_count:-0}" -gt 0 ]; then
+    proxy_index=1
+    while IFS= read -r checked_proxy_link; do
+      [ -n "$checked_proxy_link" ] || continue
+      warren_diag_parse_proxy_endpoint "$checked_proxy_link"
+      warren_diag_check_ping "VLESS host #$proxy_index" "$DIAG_PROXY_HOST"
+      warren_diag_check_tcp "VLESS endpoint #$proxy_index" "$DIAG_PROXY_HOST" "$DIAG_PROXY_PORT"
+      proxy_index=$((proxy_index + 1))
+    done < "$proxy_links_file"
   else
     warren_diag_bad "VLESS endpoint: не удалось извлечь host из Podkop"
   fi
+  rm -f "$proxy_links_file" 2>/dev/null || true
 
   if [ -n "${VPS_HOST:-}" ]; then
     warren_diag_check_ping "Configured VPS_HOST" "$VPS_HOST"
