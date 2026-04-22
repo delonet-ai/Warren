@@ -62,7 +62,7 @@ vps_report_file() {
 vps_report_files() {
   reports_dir="$(vps_reports_dir)"
   [ -d "$reports_dir" ] || return 0
-  find "$reports_dir" -maxdepth 1 -type f -name '*.txt' | sort
+  ls -1t "$reports_dir"/*.txt 2>/dev/null || true
 }
 
 vps_report_vless_link() {

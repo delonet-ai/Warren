@@ -140,7 +140,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    vps|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private)
+    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private)
       return 0
       ;;
     *)
@@ -248,6 +248,7 @@ run_podkop_flow() {
 run_service_mode() {
   case "$MODE" in
     vps) run_vps_flow ;;
+    podkop_backup) add_podkop_backup_channel ;;
     qos_private) run_qos_flow ;;
     remote_admin) run_remote_admin_flow ;;
     usb_modem) run_usb_modem_flow ;;

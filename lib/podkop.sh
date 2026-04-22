@@ -213,7 +213,12 @@ podkop_backup_candidate_menu() {
   manual_option=$((candidate_count + 1))
   say "$manual_option) Ввести ссылку вручную"
   say "0) Назад"
-  ask "Выбор канала" PODKOP_BACKUP_CHOICE "$manual_option"
+  if [ "${candidate_count:-0}" -gt 0 ]; then
+    default_backup_choice="1"
+  else
+    default_backup_choice="$manual_option"
+  fi
+  ask "Выбор канала" PODKOP_BACKUP_CHOICE "$default_backup_choice"
 
   case "$PODKOP_BACKUP_CHOICE" in
     0)
