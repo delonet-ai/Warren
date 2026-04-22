@@ -1,0 +1,221 @@
+<%+header%>
+
+<style>
+.warren-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px}
+.warren-tabs input{display:none}
+.warren-tabs label{border:1px solid #ccd2d8;border-radius:6px;padding:8px 12px;background:#f7f9fb;cursor:pointer;font-weight:600}
+.warren-panel{display:none;width:100%;margin-top:10px}
+#wtab-quick:checked~label[for=wtab-quick],
+#wtab-vps:checked~label[for=wtab-vps],
+#wtab-amnezia:checked~label[for=wtab-amnezia],
+#wtab-extra:checked~label[for=wtab-extra]{background:#1f6feb;color:#fff;border-color:#1f6feb}
+#wtab-quick:checked~#panel-quick,
+#wtab-vps:checked~#panel-vps,
+#wtab-amnezia:checked~#panel-amnezia,
+#wtab-extra:checked~#panel-extra{display:block}
+.warren-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:14px 0}
+.warren-card{border:1px solid #ddd;border-radius:6px;padding:12px;background:#fff}
+.warren-card h3{margin:.1rem 0 .5rem 0;font-size:1.05rem}
+.warren-card p{margin:.35rem 0 .75rem}
+.warren-kv{display:grid;grid-template-columns:128px minmax(0,1fr);gap:4px 10px;font-size:.92rem}
+.warren-kv code{white-space:pre-wrap;word-break:break-all}
+.warren-log{white-space:pre-wrap;max-height:340px;overflow:auto;background:#111;color:#eee;border-radius:6px;padding:12px;font-size:.85rem}
+.warren-muted{color:#667}
+.warren-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:10px 0}
+.warren-form-grid label{display:block;font-weight:600;margin-bottom:4px}
+.warren-form-grid input{width:100%}
+.warren-lights{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.warren-light{display:flex;align-items:center;gap:6px;border:1px solid #ddd;border-radius:6px;padding:7px 9px;background:#fff}
+.warren-dot{width:12px;height:12px;border-radius:50%;background:#c8ced6;display:inline-block}
+.warren-light.done .warren-dot{background:#2da44e}
+.warren-light.active .warren-dot{background:#bf8700}
+.warren-light.fail .warren-dot{background:#cf222e}
+</style>
+
+<h2 name="content">Warren</h2>
+
+<%
+local log = job and job.log or ""
+local function has(s) return log:find(s, 1, true) ~= nil end
+local function light(label, done, active)
+  local class = done and "done" or active and "active" or ""
+%>
+  <div class="warren-light <%=class%>"><span class="warren-dot"></span><span><%=label%></span></div>
+<% end %>
+
+<div class="warren-card">
+  <h3>Статус задачи</h3>
+  <% if job and job.running then %>
+    <p><strong>Запущено</strong><% if job.mode ~= "" then %>: <code><%=job.mode%></code><% end %>, PID <code><%=job.pid%></code>.</p>
+  <% else %>
+    <p class="warren-muted">Сейчас фоновых задач Warren из LuCI нет.</p>
+  <% end %>
+  <div class="warren-log"><%=log ~= "" and log or "Лог появится после запуска действия."%></div>
+</div>
+
+<div class="warren-tabs">
+  <input id="wtab-quick" name="wtab" type="radio" checked="checked" />
+  <input id="wtab-vps" name="wtab" type="radio" />
+  <input id="wtab-amnezia" name="wtab" type="radio" />
+  <input id="wtab-extra" name="wtab" type="radio" />
+
+  <label for="wtab-quick">Быстрые действия</label>
+  <label for="wtab-vps">Настройки VPS</label>
+  <label for="wtab-amnezia">Amnezia + QoS</label>
+  <label for="wtab-extra">Дополнительно</label>
+
+  <section id="panel-quick" class="warren-panel">
+    <div class="warren-grid">
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Автоматический режим</h3>
+        <p>Проверит роутер, подготовит базовые пакеты, при необходимости расширит overlay, выберет или создаст VPS-конфиг и настроит Podkop.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="auto" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Запустить авто</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Сделать только базовые настройки</h3>
+        <p>Проверит OpenWrt, интернет и время, поставит базовые пакеты и подготовит место на overlay для дальнейшей настройки.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="basic" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Basic setup</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Доустановка Amnezia</h3>
+        <p>Поставит AmneziaWG, поднимет приватный интерфейс и добавит его в Podkop, чтобы клиенты могли ходить через приватный доступ.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="add_private" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Установить Amnezia</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Доустановка QoS для Amnezia</h3>
+        <p>Настроит QoS-политику для Amnezia-клиентов, чтобы приватный доступ не забивал основной канал и работал предсказуемее.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="qos_private" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Настроить QoS</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="panel-vps" class="warren-panel">
+    <h3>Уже настроенные VPS</h3>
+    <% if not reports or #reports == 0 then %>
+      <div class="warren-card">
+        <h3>VPS пока нет</h3>
+        <p class="warren-muted">После успешной установки здесь появится карточка с root-доступом, URL 3x-ui, логином, паролем и VLESS.</p>
+      </div>
+    <% else %>
+      <div class="warren-grid">
+      <% for _, r in ipairs(reports) do %>
+        <div class="warren-card">
+          <h3><%=r.host ~= "" and r.host or r.name%></h3>
+          <div class="warren-kv">
+            <div>root login</div><code>root</code>
+            <div>root password</div><code><%=r.root_password ~= "" and r.root_password or "не сохранён в старых отчётах"%></code>
+            <div>SSH</div><code><%=r.host%>:<%=r.ssh_port ~= "" and r.ssh_port or "22"%></code>
+            <div>OS</div><code><%=r.os%></code>
+            <div>3x-ui URL</div><code><%=r.ui_url%></code>
+            <div>3x-ui login</div><code><%=r.ui_username%></code>
+            <div>3x-ui password</div><code><%=r.ui_password%></code>
+            <div>VLESS</div><code><%=r.vless%></code>
+            <div>Report</div><code><%=r.path%></code>
+          </div>
+        </div>
+      <% end %>
+      </div>
+    <% end %>
+
+    <div class="warren-card">
+      <h3>Новый VPS</h3>
+      <p>Укажи IP, SSH-порт и root-пароль чистого VPS. Warren зайдёт по SSH, поставит 3x-ui, создаст VLESS + Reality и сохранит креды на роутере.</p>
+      <div class="warren-lights">
+        <% light("SSH", has("SSH доступ к VPS подтвержд"), job and job.mode == "vps" and has("Сбор кредов")) %>
+        <% light("Ключи", has("SSH-ключ установлен"), job and job.mode == "vps" and has("Проверка доступа по SSH")) %>
+        <% light("ОС", has("штатный апгрейд пакетов выполнен"), job and job.mode == "vps" and has("Обмен SSH-ключами")) %>
+        <% light("3x-ui", has("3x-ui установлен") or has("3x-ui переиспользуется"), job and job.mode == "vps" and has("Установка 3x-ui")) %>
+        <% light("VLESS", has("VLESS + Reality inbound создан"), job and job.mode == "vps" and has("Конфигурация VLESS")) %>
+      </div>
+      <form method="post" action="<%=url('admin/services/warren/run')%>">
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="vps" />
+        <div class="warren-form-grid">
+          <div><label>IP адрес VPS</label><input name="vps_host" type="text" placeholder="203.0.113.10" /></div>
+          <div><label>SSH порт</label><input name="vps_ssh_port" type="text" value="22" /></div>
+          <div><label>Root пароль</label><input name="vps_root_password" type="password" autocomplete="off" /></div>
+        </div>
+        <button class="btn cbi-button cbi-button-apply" type="submit">Залей новый VPS</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="panel-amnezia" class="warren-panel">
+    <div class="warren-card">
+      <h3>Управление Amnezia + QoS</h3>
+      <p class="warren-muted">Здесь будет управление клиентами, QR/config, удаление клиентов и QoS-профили. Пока оставил мост к существующему shell-меню.</p>
+      <form method="post" action="<%=url('admin/services/warren/run')%>">
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="manage_private" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Открыть текущий менеджер</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="panel-extra" class="warren-panel">
+    <div class="warren-grid">
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Telegram-бот для Podkop</h3>
+        <p>Укажи токен BotFather и, при желании, chat_id. Warren установит сервис бота на роутер.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="tg_bot" />
+        <div class="warren-form-grid">
+          <div><label>Bot token</label><input name="tg_bot_token" type="password" autocomplete="off" /></div>
+          <div><label>Chat ID</label><input name="tg_chat_id" type="text" placeholder="можно пустым" /></div>
+        </div>
+        <button class="btn cbi-button cbi-button-apply" type="submit">Установить TG</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Диагностика сети</h3>
+        <p>Соберёт состояние Podkop/VPS, DNS, маршрутов, портов и сервисов. Светофоры появятся в логе выполнения.</p>
+        <div class="warren-lights">
+          <% light("Связь", has("базовая связность") or has("WAN"), job and job.mode == "diagnostics") %>
+          <% light("DNS", has("DNS"), false) %>
+          <% light("Podkop", has("podkop"), false) %>
+          <% light("VPS", has("VLESS") or has("VPS"), false) %>
+        </div>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="diagnostics" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Старт диагностики сети</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Аварийный режим</h3>
+        <p>Переключит Podkop на диагностический DNS-fallback и запустит повторную проверку, как в текущем сценарии диагностики.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="diagnostics_emergency" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Переключить на аварийный режим</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Remote Admin (WIP)</h3>
+        <p class="warren-muted">Черновой раздел для будущего удалённого администрирования.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="remote_admin" />
+        <button class="btn cbi-button" type="submit">Открыть WIP</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>USB модем настрой (WIP)</h3>
+        <p class="warren-muted">Черновой раздел для будущей настройки резервного мобильного канала.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="usb_modem" />
+        <button class="btn cbi-button" type="submit">Открыть WIP</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<%+footer%>

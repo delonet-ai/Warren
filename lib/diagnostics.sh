@@ -385,12 +385,20 @@ run_diagnostics_flow() {
 
   say ""
   say "Диагностика: OK=$DIAG_LAST_OK, проблемы=$DIAG_LAST_BAD"
-  if [ "$DIAG_LAST_BAD" -gt 0 ]; then
+  if [ "${DIAG_FORCE_FALLBACK:-0}" = "1" ] || [ "$DIAG_LAST_BAD" -gt 0 ]; then
     say ""
-    say "Кратко по проблемам:"
-    printf "%s\n" "$DIAG_LAST_ISSUES" | sed '/^$/d' | sed 's/^/  /'
+    if [ "$DIAG_LAST_BAD" -gt 0 ]; then
+      say "Кратко по проблемам:"
+      printf "%s\n" "$DIAG_LAST_ISSUES" | sed '/^$/d' | sed 's/^/  /'
+    else
+      say "Аварийный режим запрошен вручную: применяю DNS-fallback и повторяю проверку."
+    fi
     say ""
-    ask "Применить диагностический DNS-fallback Podkop и повторить проверку? (y/n)" DIAG_FIX_CHOICE "y"
+    if [ "${DIAG_FORCE_FALLBACK:-0}" = "1" ]; then
+      DIAG_FIX_CHOICE="y"
+    else
+      ask "Применить диагностический DNS-fallback Podkop и повторить проверку? (y/n)" DIAG_FIX_CHOICE "y"
+    fi
     case "$DIAG_FIX_CHOICE" in
       y|Y)
         info "Меняю DNS Podkop на UDP 77.88.8.8, перезапускаю только Podkop и повторяю проверки."

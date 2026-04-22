@@ -216,8 +216,9 @@ collect_vps_inputs() {
   [ -n "$VPS_SSH_PORT" ] || fail "SSH порт VPS пустой"
   conf_set VPS_SSH_PORT "$VPS_SSH_PORT"
 
-  ask "Root пароль VPS" VPS_ROOT_PASSWORD ""
+  ask "Root пароль VPS" VPS_ROOT_PASSWORD "${VPS_ROOT_PASSWORD:-}"
   [ -n "$VPS_ROOT_PASSWORD" ] || fail "Root пароль VPS пустой"
+  conf_set VPS_ROOT_PASSWORD "$VPS_ROOT_PASSWORD"
 
   init_runtime_state
   runtime_state_set "mode" "${MODE:-vps}"
@@ -909,6 +910,8 @@ configure_vless_reality() {
     printf "VLESS inbound link: %s\n\n" "${VLESS_LINK:-unknown}"
     printf "Host: %s\n" "$VPS_HOST"
     printf "SSH port: %s\n" "$VPS_SSH_PORT"
+    printf "SSH root login: %s\n" "root"
+    printf "SSH root password: %s\n" "${VPS_ROOT_PASSWORD:-unknown}"
     printf "OS: %s\n" "${VPS_OS_PRETTY:-unknown}"
     printf "3x-ui URL: %s\n" "${PANEL_URL:-unknown}"
     printf "3x-ui username: %s\n" "${PANEL_USERNAME:-unknown}"
@@ -919,6 +922,7 @@ configure_vless_reality() {
     printf "Client uuid: %s\n" "${CLIENT_UUID:-unknown}"
     printf "Reality config status: %s\n" "created"
   } > "$REPORT_FILE" || fail "Не удалось записать локальный отчёт по VPS"
+  chmod 600 "$REPORT_FILE" 2>/dev/null || true
 
   save_remote_artifact
   vps_step_done "VLESS + Reality inbound создан, локальный отчёт записан: $REPORT_FILE"

@@ -38,8 +38,10 @@ save_conf() {
     printf "AWG_ENDPOINT=%s\n" "$(quote_sh "${AWG_ENDPOINT:-}")"
     printf "VPS_HOST=%s\n" "$(quote_sh "${VPS_HOST:-}")"
     printf "VPS_SSH_PORT=%s\n" "$(quote_sh "${VPS_SSH_PORT:-}")"
+    printf "VPS_ROOT_PASSWORD=%s\n" "$(quote_sh "${VPS_ROOT_PASSWORD:-}")"
     printf "SELECTED_VPS_REPORT=%s\n" "$(quote_sh "${SELECTED_VPS_REPORT:-}")"
   } > "$CONF"
+  chmod 600 "$CONF" 2>/dev/null || true
 }
 
 conf_set() {
@@ -47,7 +49,7 @@ conf_set() {
   val="$2"
 
   case "$key" in
-    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|AWG_ENDPOINT|VPS_HOST|VPS_SSH_PORT|SELECTED_VPS_REPORT) ;;
+    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|AWG_ENDPOINT|VPS_HOST|VPS_SSH_PORT|VPS_ROOT_PASSWORD|SELECTED_VPS_REPORT) ;;
     *) fail "Неизвестный ключ конфига: $key" ;;
   esac
 
@@ -99,6 +101,7 @@ capture_runtime_inputs() {
   runtime_state_set "awg_endpoint" "${AWG_ENDPOINT:-}"
   runtime_state_set "vps_host" "${VPS_HOST:-}"
   runtime_state_set "vps_ssh_port" "${VPS_SSH_PORT:-}"
+  runtime_state_set "vps_root_password" "${VPS_ROOT_PASSWORD:-}"
   runtime_state_set "selected_vps_report" "${SELECTED_VPS_REPORT:-}"
 }
 

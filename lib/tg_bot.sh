@@ -1338,13 +1338,13 @@ run_tg_bot_flow() {
 
   say ""
   say "Telegram-бот будет работать прямо на OpenWrt как сервис warren-tg-bot."
-  ask "TG bot token от BotFather" TG_BOT_TOKEN ""
+  ask "TG bot token от BotFather" TG_BOT_TOKEN "${TG_BOT_TOKEN:-}"
   [ -n "$TG_BOT_TOKEN" ] || fail "TG token пустой"
 
   say ""
   say "Можно заранее указать chat_id, чтобы бот отвечал только тебе."
   say "Если оставить пустым, первый чат, который напишет /start, будет привязан автоматически."
-  ask "Allowed Telegram chat_id (можно пусто)" TG_BOT_CHAT_ID ""
+  ask "Allowed Telegram chat_id (можно пусто)" TG_BOT_CHAT_ID "${TG_BOT_CHAT_ID:-}"
 
   tg_bot_install_prereqs
   tg_bot_write_runner

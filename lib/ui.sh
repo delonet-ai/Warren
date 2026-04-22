@@ -117,6 +117,7 @@ menu() {
 
   say ""
   say "Главное меню:"
+  say "0) Initialize (НАЖМИ МЕНЯ ПЕРВЫМ) — установить Warren UI в LuCI"
   say "1) Автоматический режим"
   say "2) Basic setup"
   say "3) Настрой мне VPS"
@@ -128,9 +129,10 @@ menu() {
   say "9) USB модем настрой (WIP)"
   say "10) Telegram-бот для Podkop"
   say "11) Диагностика Podkop/VPS"
-  ask "Ввод (1-11)" MENU_CHOICE "4"
+  ask "Ввод (0-11)" MENU_CHOICE "0"
 
   case "$MENU_CHOICE" in
+    0) MODE="initialize" ;;
     1) MODE="auto" ;;
     2) MODE="basic" ;;
     3) MODE="vps" ;;
@@ -155,7 +157,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics)
+    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics)
       SELECTED_MODE="$MODE"
       load_conf_if_exists || true
       MODE="$SELECTED_MODE"

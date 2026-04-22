@@ -46,6 +46,7 @@ warren_die() {
 fetch_lib() {
   name="$1"
   local_path="$SCRIPT_DIR/lib/$name"
+  system_path="/usr/lib/warren/lib/$name"
   use_local_libs="${WARREN_USE_LOCAL_LIBS:-}"
 
   case "$SCRIPT_DIR" in
@@ -59,6 +60,11 @@ fetch_lib() {
       echo "$local_path"
       return 0
     fi
+  fi
+
+  if [ -r "$system_path" ]; then
+    echo "$system_path"
+    return 0
   fi
 
   mkdir -p "$LIB_CACHE_DIR" || warren_die "Не удалось создать каталог библиотек: $LIB_CACHE_DIR"
@@ -86,6 +92,7 @@ source_lib remote_admin.sh
 source_lib usb_modem.sh
 source_lib tg_bot.sh
 source_lib diagnostics.sh
+source_lib luci.sh
 
 expand_root_prep() {
   cd /root
@@ -140,7 +147,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private)
+    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private)
       return 0
       ;;
     *)
@@ -247,6 +254,7 @@ run_podkop_flow() {
 
 run_service_mode() {
   case "$MODE" in
+    initialize) install_warren_luci_ui ;;
     vps) run_vps_flow ;;
     podkop_backup) add_podkop_backup_channel ;;
     qos_private) run_qos_flow ;;
@@ -254,6 +262,7 @@ run_service_mode() {
     usb_modem) run_usb_modem_flow ;;
     tg_bot) run_tg_bot_flow ;;
     diagnostics) run_diagnostics_flow ;;
+    diagnostics_emergency) DIAG_FORCE_FALLBACK=1 run_diagnostics_flow ;;
     manage_private) run_amnezia_manage_flow ;;
     *) return 1 ;;
   esac
@@ -264,7 +273,33 @@ run_service_mode() {
 }
 
 main() {
-  if [ -f "$CONF" ]; then
+  if [ "${1:-}" = "--install-luci" ]; then
+    MODE="initialize"
+    install_warren_luci_ui
+    exit 0
+  fi
+
+  if [ "${1:-}" = "--luci-run" ]; then
+    MODE="${2:-}"
+    [ -n "$MODE" ] || fail "Не задан режим Warren для LuCI"
+    LUCI_VPS_HOST="${VPS_HOST:-}"
+    LUCI_VPS_SSH_PORT="${VPS_SSH_PORT:-}"
+    LUCI_VPS_ROOT_PASSWORD="${VPS_ROOT_PASSWORD:-}"
+    LUCI_TG_BOT_TOKEN="${TG_BOT_TOKEN:-}"
+    LUCI_TG_BOT_CHAT_ID="${TG_BOT_CHAT_ID:-}"
+    load_conf_if_exists || true
+    [ -n "$LUCI_VPS_HOST" ] && VPS_HOST="$LUCI_VPS_HOST"
+    [ -n "$LUCI_VPS_SSH_PORT" ] && VPS_SSH_PORT="$LUCI_VPS_SSH_PORT"
+    [ -n "$LUCI_VPS_ROOT_PASSWORD" ] && VPS_ROOT_PASSWORD="$LUCI_VPS_ROOT_PASSWORD"
+    [ -n "$LUCI_TG_BOT_TOKEN" ] && TG_BOT_TOKEN="$LUCI_TG_BOT_TOKEN"
+    [ -n "$LUCI_TG_BOT_CHAT_ID" ] && TG_BOT_CHAT_ID="$LUCI_TG_BOT_CHAT_ID"
+    conf_set MODE "$MODE"
+    WARREN_LUCI_REQUEST=1
+  fi
+
+  if [ "${WARREN_LUCI_REQUEST:-}" = "1" ]; then
+    load_conf_if_exists || true
+  elif [ -f "$CONF" ]; then
     load_conf
     if mode_is_one_shot_service || ! should_resume_current_mode; then
       menu
