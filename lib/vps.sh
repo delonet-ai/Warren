@@ -579,20 +579,44 @@ configure_3xui_admin() {
   '" || fail "3x-ui не стал active после перезапуска"
 }
 
+normalize_panel_base_path() {
+  raw_base="$(printf "%s" "${1:-}" | tr -d '[:space:]')"
+  case "$raw_base" in
+    ""|"/") printf "" ;;
+    /*/) printf "%s" "${raw_base%/}" ;;
+    /*) printf "%s" "$raw_base" ;;
+    */) printf "/%s" "${raw_base%/}" ;;
+    *) printf "/%s" "$raw_base" ;;
+  esac
+}
+
+refresh_3xui_panel_settings() {
+  fresh_panel_info="$(vps_ssh_timeout 30 "sh -lc '/usr/local/x-ui/x-ui setting -show 2>/dev/null || true'")" || return 1
+  fresh_panel_port="$(printf "%s\n" "$fresh_panel_info" | sed -n 's/.*[Pp]ort: *\([0-9][0-9]*\).*/\1/p' | head -n1)"
+  fresh_panel_base="$(printf "%s\n" "$fresh_panel_info" | sed -n 's/.*webBasePath: \(.*\)$/\1/p' | head -n1)"
+  [ -n "$fresh_panel_port" ] && PANEL_PORT="$fresh_panel_port"
+  PANEL_BASE_PATH="$(normalize_panel_base_path "$fresh_panel_base")"
+  runtime_state_set "panel_port" "$PANEL_PORT"
+  runtime_state_set "panel_base_path" "$PANEL_BASE_PATH"
+}
+
 wait_for_3xui_panel() {
-  base="${PANEL_BASE_PATH:-}"
   PANEL_SCHEME=""
 
-  case "$base" in
-    "") panel_paths="/login /" ;;
-    /) panel_paths="/login /" ;;
-    *)
-      panel_paths="$base/login $base ${base}/ /login /"
-      ;;
-  esac
+  refresh_3xui_panel_settings || true
 
   i=1
   while [ "$i" -le 30 ]; do
+    [ "$i" -eq 1 ] || [ $((i % 5)) -ne 0 ] || refresh_3xui_panel_settings || true
+    base="${PANEL_BASE_PATH:-}"
+    case "$base" in
+      "") panel_paths="/login /" ;;
+      /) panel_paths="/login /" ;;
+      *)
+        panel_paths="$base/login $base ${base}/ /login /"
+        ;;
+    esac
+
     for panel_path in $panel_paths; do
       if vps_ssh_timeout 20 "sh -lc 'code=\"\$(curl -ksS -o /dev/null -w \"%{http_code}\" --connect-timeout 3 --max-time 8 https://127.0.0.1:${PANEL_PORT}${panel_path} 2>/dev/null || true)\"; case \"\$code\" in 2*|3*) exit 0 ;; *) exit 1 ;; esac'"; then
         PANEL_SCHEME="https"
@@ -626,20 +650,7 @@ collect_3xui_access_info() {
   PANEL_PORT="$(printf "%s\n" "$panel_info" | sed -n 's/.*[Pp]ort: *\([0-9][0-9]*\).*/\1/p' | head -n1)"
   PANEL_BASE_PATH="$(printf "%s\n" "$panel_info" | sed -n 's/.*webBasePath: \(.*\)$/\1/p' | head -n1)"
   [ -n "$PANEL_PORT" ] || fail "Не удалось определить порт панели 3x-ui через setting -show"
-  PANEL_BASE_PATH="$(printf "%s" "$PANEL_BASE_PATH" | tr -d '[:space:]')"
-  case "$PANEL_BASE_PATH" in
-    ""|"/") PANEL_BASE_PATH="" ;;
-    /*/)
-      PANEL_BASE_PATH="${PANEL_BASE_PATH%/}"
-      ;;
-    /*) ;;
-    */)
-      PANEL_BASE_PATH="/${PANEL_BASE_PATH%/}"
-      ;;
-    *)
-      PANEL_BASE_PATH="/$PANEL_BASE_PATH"
-      ;;
-  esac
+  PANEL_BASE_PATH="$(normalize_panel_base_path "$PANEL_BASE_PATH")"
 
   runtime_state_set "panel_username" "$PANEL_USERNAME"
   runtime_state_set "panel_password" "$PANEL_PASSWORD"
