@@ -594,6 +594,10 @@ refresh_3xui_panel_settings() {
   fresh_panel_info="$(vps_ssh_timeout 30 "sh -lc '/usr/local/x-ui/x-ui setting -show 2>/dev/null || true'")" || return 1
   fresh_panel_port="$(printf "%s\n" "$fresh_panel_info" | sed -n 's/.*[Pp]ort: *\([0-9][0-9]*\).*/\1/p' | head -n1)"
   fresh_panel_base="$(printf "%s\n" "$fresh_panel_info" | sed -n 's/.*webBasePath: \(.*\)$/\1/p' | head -n1)"
+  case "$fresh_panel_info" in
+    *"not secure with SSL"*) PANEL_HTTP_FIRST="1" ;;
+    *) PANEL_HTTP_FIRST="${PANEL_HTTP_FIRST:-0}" ;;
+  esac
   [ -n "$fresh_panel_port" ] && PANEL_PORT="$fresh_panel_port"
   PANEL_BASE_PATH="$(normalize_panel_base_path "$fresh_panel_base")"
   runtime_state_set "panel_port" "$PANEL_PORT"
@@ -618,12 +622,19 @@ wait_for_3xui_panel() {
     esac
 
     for panel_path in $panel_paths; do
-      if vps_ssh_timeout 20 "sh -lc 'code=\"\$(curl -ksS -o /dev/null -w \"%{http_code}\" --connect-timeout 3 --max-time 8 https://127.0.0.1:${PANEL_PORT}${panel_path} 2>/dev/null || true)\"; case \"\$code\" in 2*|3*) exit 0 ;; *) exit 1 ;; esac'"; then
+      if [ "${PANEL_HTTP_FIRST:-0}" = "1" ]; then
+        if vps_ssh_timeout 12 "sh -lc 'code=\"\$(curl -sS -o /dev/null -w \"%{http_code}\" --connect-timeout 2 --max-time 4 http://127.0.0.1:${PANEL_PORT}${panel_path} 2>/dev/null || true)\"; case \"\$code\" in 2*|3*) exit 0 ;; *) exit 1 ;; esac'"; then
+          PANEL_SCHEME="http"
+          PANEL_HEALTH_PATH="$panel_path"
+          return 0
+        fi
+      fi
+      if vps_ssh_timeout 12 "sh -lc 'code=\"\$(curl -ksS -o /dev/null -w \"%{http_code}\" --connect-timeout 2 --max-time 4 https://127.0.0.1:${PANEL_PORT}${panel_path} 2>/dev/null || true)\"; case \"\$code\" in 2*|3*) exit 0 ;; *) exit 1 ;; esac'"; then
         PANEL_SCHEME="https"
         PANEL_HEALTH_PATH="$panel_path"
         return 0
       fi
-      if vps_ssh_timeout 20 "sh -lc 'code=\"\$(curl -sS -o /dev/null -w \"%{http_code}\" --connect-timeout 3 --max-time 8 http://127.0.0.1:${PANEL_PORT}${panel_path} 2>/dev/null || true)\"; case \"\$code\" in 2*|3*) exit 0 ;; *) exit 1 ;; esac'"; then
+      if [ "${PANEL_HTTP_FIRST:-0}" != "1" ] && vps_ssh_timeout 12 "sh -lc 'code=\"\$(curl -sS -o /dev/null -w \"%{http_code}\" --connect-timeout 2 --max-time 4 http://127.0.0.1:${PANEL_PORT}${panel_path} 2>/dev/null || true)\"; case \"\$code\" in 2*|3*) exit 0 ;; *) exit 1 ;; esac'"; then
         PANEL_SCHEME="http"
         PANEL_HEALTH_PATH="$panel_path"
         return 0
