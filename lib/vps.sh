@@ -580,7 +580,7 @@ configure_3xui_admin() {
 }
 
 normalize_panel_base_path() {
-  raw_base="$(printf "%s" "${1:-}" | tr -d '[:space:]')"
+  raw_base="$(printf "%s" "${1:-}" | sed 's/[[:space:]]//g')"
   case "$raw_base" in
     ""|"/") printf "" ;;
     /*/) printf "%s" "${raw_base%/}" ;;
