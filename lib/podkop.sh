@@ -173,6 +173,39 @@ podkop_current_proxy_links() {
   esac
 }
 
+podkop_current_proxy_mode_label() {
+  current_type="$(uci -q get podkop.main.proxy_config_type 2>/dev/null || true)"
+
+  case "$current_type" in
+    urltest) printf "URLTest (несколько каналов)" ;;
+    url) printf "Одиночный VLESS" ;;
+    selector) printf "Selector" ;;
+    "") printf "Не задан" ;;
+    *) printf "%s" "$current_type" ;;
+  esac
+}
+
+podkop_print_backup_overview() {
+  current_mode_label="$1"
+  current_links="$2"
+
+  say ""
+  say "Резервные каналы Podkop"
+  say ""
+  say "Текущий режим: $current_mode_label"
+  say ""
+  say "Текущие каналы:"
+  current_index=1
+  if [ -n "$current_links" ]; then
+    printf "%s\n" "$current_links" | sed '/^$/d' | while IFS= read -r current_link; do
+      say "$current_index) $current_link"
+      current_index=$((current_index + 1))
+    done
+  else
+    say "нет каналов"
+  fi
+}
+
 podkop_link_in_list() {
   needle="$1"
   list_data="$2"
@@ -181,18 +214,13 @@ podkop_link_in_list() {
 
 podkop_backup_candidate_menu() {
   added_links="$1"
+  current_mode_label="$2"
   report_list="$(vps_report_files)"
 
-  say ""
-  say "Уже добавлены в Podkop:"
-  added_index=1
-  printf "%s\n" "$added_links" | sed '/^$/d' | while IFS= read -r added_link; do
-    say "$added_index) $added_link"
-    added_index=$((added_index + 1))
-  done
+  podkop_print_backup_overview "$current_mode_label" "$added_links"
 
   say ""
-  say "Доступные конфиги VPS:"
+  say "Доступные VPS-конфиги для добавления:"
   candidate_count=0
   : > /tmp/warren-podkop-candidates.$$ || true
   if [ -n "$report_list" ]; then
@@ -210,7 +238,13 @@ podkop_backup_candidate_menu() {
   fi
 
   candidate_count="$(wc -l < /tmp/warren-podkop-candidates.$$ 2>/dev/null | tr -d ' ')"
+  if [ "${candidate_count:-0}" -eq 0 ]; then
+    say "нет новых VPS-конфигов"
+  fi
+
   manual_option=$((candidate_count + 1))
+  say ""
+  say "Действия:"
   say "$manual_option) Ввести ссылку вручную"
   say "0) Назад"
   if [ "${candidate_count:-0}" -gt 0 ]; then
@@ -288,12 +322,13 @@ podkop_print_active_urltest_links() {
 add_podkop_backup_channel() {
   podkop_require_existing_config
 
+  current_mode_label="$(podkop_current_proxy_mode_label)"
   current_links="$(podkop_current_proxy_links | sed '/^$/d')"
   [ -n "$current_links" ] || fail "Не удалось определить текущий VLESS в Podkop."
 
   working_links="$current_links"
   while :; do
-    podkop_backup_candidate_menu "$working_links" || return 0
+    podkop_backup_candidate_menu "$working_links" "$current_mode_label" || return 0
 
     if podkop_link_in_list "$BACKUP_SOURCE_VLESS" "$working_links"; then
       warn "Этот VLESS уже есть в Podkop, выбери другой."
@@ -307,6 +342,7 @@ add_podkop_backup_channel() {
     fi
 
     podkop_apply_urltest_links "$working_links"
+    current_mode_label="URLTest (несколько каналов)"
     done_ "Резервный канал добавлен в Podkop через URLTest"
     podkop_print_active_urltest_links
 
