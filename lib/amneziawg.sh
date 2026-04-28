@@ -261,6 +261,13 @@ configure_awg_firewall() {
   uciq set firewall.awg_allow.dest_port="$AWG_LISTEN_PORT"
   uciq set firewall.awg_allow.target='ACCEPT'
 
+  has_fwd="$(uci show firewall | grep "=forwarding" | grep -q "src='lan'.*dest='wan'" && echo 1 || echo 0)"
+  if [ "$has_fwd" = "0" ]; then
+    f="$(uci add firewall forwarding)"
+    uciq set firewall."$f".src='lan'
+    uciq set firewall."$f".dest='wan'
+  fi
+
   uciq commit firewall
   /etc/init.d/firewall restart >/dev/null 2>&1 || true
 }

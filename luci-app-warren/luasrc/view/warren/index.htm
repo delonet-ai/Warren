@@ -42,6 +42,16 @@ local function light(label, done, active)
 %>
   <div class="warren-light <%=class%>"><span class="warren-dot"></span><span><%=label%></span></div>
 <% end %>
+<%
+local function render_tile_lights(tile)
+  if not tile or not tile.steps then return end
+  for _, step in ipairs(tile.steps) do
+%>
+  <div class="warren-light <%=step.status%>"><span class="warren-dot"></span><span><%=step.title%></span></div>
+<%
+  end
+end
+%>
 
 <div class="warren-card">
   <h3>Статус задачи</h3>
@@ -69,17 +79,29 @@ local function light(label, done, active)
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Автоматический режим</h3>
         <p>Проверит роутер, подготовит базовые пакеты, при необходимости расширит overlay, выберет или создаст VPS-конфиг и настроит Podkop.</p>
+        <div class="warren-lights">
+          <% render_tile_lights(auto_tile) %>
+        </div>
+        <% if auto_tile and auto_tile.resume then %>
+          <p class="warren-muted"><% if auto_tile.failed then %>Последний запуск завершился с ошибкой. Можно продолжить с текущего шага.<% else %>Найдена незавершённая автоматическая настройка. После перезагрузки просто нажми продолжение.<% end %></p>
+        <% end %>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="auto" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Запустить авто</button>
+        <button class="btn cbi-button cbi-button-apply" type="submit"><%=auto_tile and auto_tile.button_label or "Запустить Auto"%></button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Сделать только базовые настройки</h3>
         <p>Проверит OpenWrt, интернет и время, поставит базовые пакеты и подготовит место на overlay для дальнейшей настройки.</p>
+        <div class="warren-lights">
+          <% render_tile_lights(basic_tile) %>
+        </div>
+        <% if basic_tile and basic_tile.resume then %>
+          <p class="warren-muted"><% if basic_tile.failed then %>Последний запуск завершился с ошибкой. Можно продолжить с текущего шага.<% else %>Найдена незавершённая базовая настройка. После перезагрузки вернись сюда и нажми продолжение.<% end %></p>
+        <% end %>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="basic" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Basic setup</button>
+        <button class="btn cbi-button cbi-button-apply" type="submit"><%=basic_tile and basic_tile.button_label or "Запустить Basic setup"%></button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">

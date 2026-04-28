@@ -2,6 +2,10 @@ podkop_private_iface() {
   printf "awg0"
 }
 
+podkop_existing_private_source_interfaces() {
+  uci -q get podkop.settings.source_network_interfaces 2>/dev/null | tr ' ' '\n' | grep -E '^(wg0|awg0)$' || true
+}
+
 install_podkop() {
   download_file "$PODKOP_INSTALL_URL" /tmp/podkop-install.sh "$PODKOP_INSTALL_SHA256" "PODKOP_INSTALL"
   chmod +x /tmp/podkop-install.sh
@@ -116,11 +120,16 @@ configure_podkop_common_settings() {
   uciq set podkop.settings.exclude_ntp='0'
   uciq set podkop.settings.shutdown_correctly='0'
 
+  private_source_interfaces="$(podkop_existing_private_source_interfaces)"
+  if [ "$MODE" = "add_private" ]; then
+    private_source_interfaces="$(printf "%s\n%s\n" "$private_source_interfaces" "$(podkop_private_iface)" | sed '/^$/d' | sort -u)"
+  fi
+
   uciq -q del podkop.settings.source_network_interfaces
   uciq add_list podkop.settings.source_network_interfaces='br-lan'
-  if [ "$MODE" = "add_private" ]; then
-    uciq add_list podkop.settings.source_network_interfaces="$(podkop_private_iface)"
-  fi
+  printf "%s\n" "$private_source_interfaces" | sed '/^$/d' | while IFS= read -r private_iface; do
+    uciq add_list podkop.settings.source_network_interfaces="$private_iface"
+  done
 
   uciq get podkop.main >/dev/null || uciq set podkop.main='section'
   uciq set podkop.main.connection_type='proxy'
