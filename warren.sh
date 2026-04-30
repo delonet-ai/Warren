@@ -10,6 +10,7 @@ EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-https://openwrt.org/_export/code/docs/guide-
 PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh}"
 EXPAND_ROOT_SHA256="${EXPAND_ROOT_SHA256:-}"
 PODKOP_INSTALL_SHA256="${PODKOP_INSTALL_SHA256:-}"
+WARREN_RAW_BASE_URL="${WARREN_RAW_BASE_URL:-${BOOTSTRAP_RAW_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main}}"
 WARREN_LIB_BASE_URL="${WARREN_LIB_BASE_URL:-${BOOTSTRAP_LIB_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main/lib}}"
 WARREN_ASSET_BASE_URL="${WARREN_ASSET_BASE_URL:-${BOOTSTRAP_ASSET_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main/assets}}"
 
@@ -39,6 +40,7 @@ if [ "$(id -u 2>/dev/null || echo 1)" = "0" ] && [ -w /etc ] && [ -d /root ]; th
   WARREN_LEGACY_LOG_DIR="${WARREN_LEGACY_LOG_DIR:-/root}"
   WARREN_BASE_DIR="${WARREN_BASE_DIR:-/etc/warren}"
   WARREN_LOG_DIR="${WARREN_LOG_DIR:-/root/warren}"
+  WARREN_APP_DIR="${WARREN_APP_DIR:-${WARREN_LOG_DIR}/app}"
   STATE="${STATE:-${WARREN_BASE_DIR}/warren.state}"
   CONF="${CONF:-${WARREN_BASE_DIR}/warren.conf}"
   LOG="${LOG:-${WARREN_LOG_DIR}/warren.log}"
@@ -46,8 +48,8 @@ if [ "$(id -u 2>/dev/null || echo 1)" = "0" ] && [ -w /etc ] && [ -d /root ]; th
   ASSET_CACHE_DIR="${ASSET_CACHE_DIR:-/tmp/warren-assets}"
   AUTO_STATE_JSON="${AUTO_STATE_JSON:-/tmp/warren-runtime.json}"
   AUTO_STATE_STORE="${AUTO_STATE_STORE:-/tmp/warren-runtime.tsv}"
-  mkdir -p "$WARREN_BASE_DIR" "$WARREN_LOG_DIR" || {
-    printf "%s\n" "Не удалось создать каталоги Warren: $WARREN_BASE_DIR $WARREN_LOG_DIR" >&2
+  mkdir -p "$WARREN_BASE_DIR" "$WARREN_LOG_DIR" "$WARREN_APP_DIR" || {
+    printf "%s\n" "Не удалось создать каталоги Warren: $WARREN_BASE_DIR $WARREN_LOG_DIR $WARREN_APP_DIR" >&2
     exit 1
   }
   migrate_legacy_file_if_missing "${WARREN_LEGACY_BASE_DIR}/warren.state" "$STATE"
@@ -75,6 +77,129 @@ fi
 warren_die() {
   printf "%s\n" "$*" >&2
   exit 1
+}
+
+warren_persistent_lib_dir() {
+  printf "%s" "/usr/lib/warren/lib"
+}
+
+warren_persistent_asset_dir() {
+  printf "%s" "/usr/lib/warren/assets"
+}
+
+warren_persistent_version_path() {
+  printf "%s" "/usr/lib/warren/VERSION"
+}
+
+warren_launcher_path() {
+  printf "%s" "/usr/bin/warren"
+}
+
+warren_persistent_script_path() {
+  printf "%s/warren.sh" "${WARREN_APP_DIR:-/root/warren/app}"
+}
+
+warren_local_version_file() {
+  printf "%s/VERSION" "$SCRIPT_DIR"
+}
+
+warren_read_version_from_file() {
+  version_file="$1"
+  [ -r "$version_file" ] || return 1
+  sed -n '1p' "$version_file" | tr -d '\r'
+}
+
+warren_local_version() {
+  version="$(warren_read_version_from_file "$(warren_local_version_file)")" || true
+  [ -n "$version" ] || version="$(warren_read_version_from_file "$(warren_persistent_version_path)")" || true
+  [ -n "$version" ] || version="unknown"
+  printf "%s" "$version"
+}
+
+warren_install_bootstrap_file() {
+  src_path="$1"
+  dst_path="$2"
+  src_url="$3"
+
+  mkdir -p "$(dirname "$dst_path")" || warren_die "Не удалось создать каталог для $dst_path"
+  tmp_path="${dst_path}.tmp.$$"
+
+  if [ -r "$src_path" ]; then
+    cp "$src_path" "$tmp_path" || warren_die "Не удалось скопировать $src_path"
+  else
+    wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
+  fi
+
+  mv "$tmp_path" "$dst_path" || warren_die "Не удалось записать $dst_path"
+}
+
+warren_bootstrap_install_persistent_app() {
+  [ "$(id -u 2>/dev/null || echo 1)" = "0" ] || return 0
+  [ -n "${WARREN_APP_DIR:-}" ] || return 0
+
+  app_script="$(warren_persistent_script_path)"
+  launcher_path="$(warren_launcher_path)"
+  lib_dir="$(warren_persistent_lib_dir)"
+  asset_dir="$(warren_persistent_asset_dir)"
+  version_path="$(warren_persistent_version_path)"
+  force_remote="${1:-${WARREN_BOOTSTRAP_FORCE_REMOTE:-0}}"
+
+  mkdir -p "$WARREN_APP_DIR" "$lib_dir" "$asset_dir" || warren_die "Не удалось подготовить постоянный каталог Warren"
+
+  if [ "$force_remote" = "1" ]; then
+    warren_install_bootstrap_file "" "$app_script" "$WARREN_RAW_BASE_URL/warren.sh"
+  else
+    warren_install_bootstrap_file "$SCRIPT_DIR/warren.sh" "$app_script" "$WARREN_RAW_BASE_URL/warren.sh"
+  fi
+  chmod 700 "$app_script" 2>/dev/null || true
+
+  for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
+    if [ "$force_remote" = "1" ]; then
+      warren_install_bootstrap_file "" "$lib_dir/$lib" "$WARREN_LIB_BASE_URL/$lib"
+    else
+      warren_install_bootstrap_file "$SCRIPT_DIR/lib/$lib" "$lib_dir/$lib" "$WARREN_LIB_BASE_URL/$lib"
+    fi
+    chmod 644 "$lib_dir/$lib" 2>/dev/null || true
+  done
+
+  for asset in sni-candidates.txt; do
+    if [ "$force_remote" = "1" ]; then
+      warren_install_bootstrap_file "" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset"
+    else
+      warren_install_bootstrap_file "$SCRIPT_DIR/assets/$asset" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset"
+    fi
+    chmod 644 "$asset_dir/$asset" 2>/dev/null || true
+  done
+
+  if [ "$force_remote" = "1" ]; then
+    warren_install_bootstrap_file "" "$version_path" "$WARREN_RAW_BASE_URL/VERSION"
+  else
+    warren_install_bootstrap_file "$SCRIPT_DIR/VERSION" "$version_path" "$WARREN_RAW_BASE_URL/VERSION"
+  fi
+  chmod 644 "$version_path" 2>/dev/null || true
+
+  cat > "${launcher_path}.tmp.$$" <<EOF
+#!/bin/sh
+exec "$app_script" "\$@"
+EOF
+  mv "${launcher_path}.tmp.$$" "$launcher_path" || warren_die "Не удалось установить $launcher_path"
+  chmod 755 "$launcher_path" 2>/dev/null || true
+
+  WARREN_BOOTSTRAP_READY=1
+}
+
+warren_bootstrap_install_persistent_app
+
+warren_should_check_updates() {
+  [ "$(id -u 2>/dev/null || echo 1)" = "0" ] || return 1
+  [ "${WARREN_LUCI_REQUEST:-0}" != "1" ] || return 1
+  [ -t 0 ] || [ -r "$TTY" ] || return 1
+  [ "${WARREN_SKIP_UPDATE_CHECK:-0}" != "1" ] || return 1
+  return 0
+}
+
+warren_remote_version() {
+  wget -qO - "$WARREN_RAW_BASE_URL/VERSION" 2>/dev/null | sed -n '1p' | tr -d '\r'
 }
 
 fetch_lib() {
@@ -156,6 +281,36 @@ source_lib tg_bot.sh
 source_lib diagnostics.sh
 source_lib sni_checker.sh
 source_lib luci.sh
+
+WARREN_VERSION="$(warren_local_version)"
+
+warren_maybe_offer_update() {
+  warren_should_check_updates || return 0
+
+  remote_version="$(warren_remote_version)"
+  [ -n "$remote_version" ] || return 0
+  [ "$remote_version" != "$WARREN_VERSION" ] || return 0
+
+  say ""
+  say "${YELLOW}INFO${NC}  Доступна новая версия Warren."
+  say "Текущая версия: $WARREN_VERSION"
+  say "Версия в репозитории: $remote_version"
+  ask "Обновить Warren сейчас и перезапустить? (y/n)" WARREN_UPDATE_CHOICE "y"
+
+  case "$WARREN_UPDATE_CHOICE" in
+    y|Y)
+      info "Обновляю Warren из GitHub и перезапускаю через постоянный launcher..."
+      warren_bootstrap_install_persistent_app 1
+      exec "$(warren_launcher_path)" "$@"
+      ;;
+    n|N)
+      warn "Продолжаю без обновления Warren."
+      ;;
+    *)
+      fail "Введи y или n"
+      ;;
+  esac
+}
 
 expand_root_prep() {
   cd /root
@@ -427,6 +582,8 @@ run_service_mode() {
 }
 
 main() {
+  warren_maybe_offer_update "$@"
+
   if [ "${1:-}" = "--install-luci" ]; then
     MODE="initialize"
     install_warren_luci_ui

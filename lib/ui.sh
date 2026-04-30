@@ -11,6 +11,11 @@ print_banner() {
   say "║ Просто следуй шагам. Если что-то пошло не так —               ║"
   say "║ перезапускай скрипт. У тебя все получится 💪                  ║"
   say "╚══════════════════════════════════════════════════════════════╝"
+  say "Версия Warren: ${GREEN}${WARREN_VERSION:-unknown}${NC}"
+  say ""
+  say "${YELLOW}ВАЖНО${NC}  Warren сразу ставит постоянный launcher и каталог на роутер."
+  say "После любого ребута или обрыва просто запусти одной командой: ${GREEN}warren${NC}"
+  say "Постоянные пути: /usr/bin/warren, /root/warren/app, /etc/warren, /root/warren"
   say ""
 }
 

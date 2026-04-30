@@ -32,13 +32,35 @@ luci_write_file() {
   chmod "$mode" "$path" 2>/dev/null || true
 }
 
+luci_persistent_source() {
+  rel_path="$1"
+  case "$rel_path" in
+    warren.sh)
+      candidate="${WARREN_APP_DIR:-/root/warren/app}/warren.sh"
+      ;;
+    lib/*)
+      candidate="/usr/lib/warren/${rel_path}"
+      ;;
+    assets/*)
+      candidate="/usr/lib/warren/${rel_path}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  [ -r "$candidate" ] || return 1
+  printf "%s" "$candidate"
+}
+
 install_warren_binary() {
   target="/usr/bin/warren"
   tmp="/tmp/warren-bin.$$.tmp"
-  if [ -r "$SCRIPT_DIR/warren.sh" ]; then
+  if source_path="$(luci_persistent_source "warren.sh")"; then
+    cp "$source_path" "$tmp" || fail "Не удалось подготовить /usr/bin/warren"
+  elif [ -r "$SCRIPT_DIR/warren.sh" ]; then
     cp "$SCRIPT_DIR/warren.sh" "$tmp" || fail "Не удалось подготовить /usr/bin/warren"
   else
-    wget -qO "$tmp" "https://raw.githubusercontent.com/delonet-ai/Warren/main/warren.sh" || fail "Не удалось скачать warren.sh"
+    wget -qO "$tmp" "$WARREN_RAW_BASE_URL/warren.sh" || fail "Не удалось скачать warren.sh"
   fi
   mv "$tmp" "$target" || fail "Не удалось установить $target"
   chmod +x "$target" 2>/dev/null || true
@@ -49,7 +71,9 @@ install_warren_libs() {
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
   for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
-    if [ -r "$SCRIPT_DIR/lib/$lib" ]; then
+    if source_path="$(luci_persistent_source "lib/$lib")"; then
+      cp "$source_path" "$target_dir/$lib" || fail "Не удалось установить библиотеку: $lib"
+    elif [ -r "$SCRIPT_DIR/lib/$lib" ]; then
       cp "$SCRIPT_DIR/lib/$lib" "$target_dir/$lib" || fail "Не удалось установить библиотеку: $lib"
     else
       wget -qO "$target_dir/$lib" "$WARREN_LIB_BASE_URL/$lib" || fail "Не удалось скачать библиотеку: $lib"
@@ -62,12 +86,26 @@ install_warren_assets() {
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
   for asset in sni-candidates.txt; do
-    if [ -r "$SCRIPT_DIR/assets/$asset" ]; then
+    if source_path="$(luci_persistent_source "assets/$asset")"; then
+      cp "$source_path" "$target_dir/$asset" || fail "Не удалось установить ассет: $asset"
+    elif [ -r "$SCRIPT_DIR/assets/$asset" ]; then
       cp "$SCRIPT_DIR/assets/$asset" "$target_dir/$asset" || fail "Не удалось установить ассет: $asset"
     else
       wget -qO "$target_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset" || fail "Не удалось скачать ассет: $asset"
     fi
   done
+}
+
+install_warren_version_file() {
+  target="/usr/lib/warren/VERSION"
+  mkdir -p "$(dirname "$target")" || fail "Не удалось создать каталог для $target"
+
+  if [ -r "$SCRIPT_DIR/VERSION" ]; then
+    cp "$SCRIPT_DIR/VERSION" "$target" || fail "Не удалось установить VERSION"
+  else
+    wget -qO "$target" "$WARREN_RAW_BASE_URL/VERSION" || fail "Не удалось скачать VERSION"
+  fi
+  chmod 644 "$target" 2>/dev/null || true
 }
 
 install_warren_luci_runner() {
@@ -121,10 +159,12 @@ install_warren_luci_asset() {
   raw_path="$4"
 
   mkdir -p "$(dirname "$target_path")" || fail "Не удалось создать каталог для $target_path"
-  if [ -r "$SCRIPT_DIR/$source_path" ]; then
+  if persistent_path="$(luci_persistent_source "$source_path")"; then
+    cp "$persistent_path" "$target_path" || fail "Не удалось установить $target_path"
+  elif [ -r "$SCRIPT_DIR/$source_path" ]; then
     cp "$SCRIPT_DIR/$source_path" "$target_path" || fail "Не удалось установить $target_path"
   else
-    wget -qO "$target_path" "https://raw.githubusercontent.com/delonet-ai/Warren/main/$raw_path" || fail "Не удалось скачать $target_path"
+    wget -qO "$target_path" "$WARREN_RAW_BASE_URL/$raw_path" || fail "Не удалось скачать $target_path"
   fi
   chmod "$mode" "$target_path" 2>/dev/null || true
 }
@@ -151,6 +191,7 @@ install_warren_luci_ui() {
   install_warren_binary
   install_warren_libs
   install_warren_assets
+  install_warren_version_file
   install_warren_luci_runner
   install_warren_luci_controller
   install_warren_luci_view
