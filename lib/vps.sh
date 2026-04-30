@@ -213,10 +213,10 @@ ensure_vps_prereqs() {
   command -v curl >/dev/null 2>&1 || missing="$missing curl"
 
   if [ -n "$missing" ]; then
-    if command -v opkg >/dev/null 2>&1; then
+    if pkg_manager >/dev/null 2>&1; then
       info "Для работы с VPS нужны пакеты:$missing"
-      opkg update
-      opkg install $missing || fail "Не удалось установить пакеты для VPS-модуля:$missing"
+      # shellcheck disable=SC2086
+      pkg_ensure_installed $missing
     else
       fail "Не хватает локальных утилит:$missing. Установите их вручную и запустите снова."
     fi

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Warren main entrypoint: packages -> expand-root (reboot) -> podkop -> private access
-# Designed for OpenWrt 24.10.x on NanoPi R5S/R5C
+# Designed for OpenWrt 24.10.x / 25.12.x on NanoPi R5S/R5C
 # Usage (GitHub): wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/warren.sh" && sh /tmp/warren.sh
 
 set -e

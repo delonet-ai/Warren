@@ -10,8 +10,8 @@ tg_bot_install_prereqs() {
   command -v jq >/dev/null 2>&1 || missing="$missing jq"
 
   if [ -n "$missing" ]; then
-    opkg update
-    opkg install ca-bundle ca-certificates $missing || fail "Не удалось установить пакеты для TG-бота:$missing"
+    # shellcheck disable=SC2086
+    pkg_ensure_installed ca-bundle ca-certificates $missing
   fi
 }
 

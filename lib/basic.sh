@@ -1,7 +1,11 @@
 check_openwrt() {
-  rel="$(. /etc/openwrt_release 2>/dev/null; echo "$DISTRIB_RELEASE" 2>/dev/null || true)"
-  echo "$rel" | grep -q "^24\.10" || fail "Нужен OpenWrt 24.10.x (сейчас: ${rel:-unknown})."
-  done_ "OpenWrt версия: $rel"
+  rel="$(openwrt_release_version)"
+  [ -n "$rel" ] || fail "Не удалось определить версию OpenWrt."
+  openwrt_release_supported || fail "Нужен OpenWrt 24.10.x или 25.12.x (сейчас: ${rel:-unknown})."
+
+  pm="$(pkg_manager 2>/dev/null || true)"
+  [ -n "$pm" ] || fail "Не удалось определить пакетный менеджер OpenWrt."
+  done_ "OpenWrt версия: $rel, пакетный менеджер: $pm"
 }
 
 check_inet() {
@@ -16,10 +20,32 @@ sync_time() {
 }
 
 install_full_pkg_list() {
-  opkg update
-  opkg install \
-    parted losetup resize2fs blkid e2fsprogs block-mount fstrim tune2fs \
-    ca-bundle ca-certificates wget-ssl curl nano-full tcpdump kmod-nft-tproxy ss
+  common_pkgs="parted losetup resize2fs blkid e2fsprogs block-mount fstrim tune2fs ca-bundle ca-certificates curl tcpdump kmod-nft-tproxy"
+
+  if pkg_manager_is_apk; then
+    essential_pkgs="$common_pkgs ip-full"
+    optional_pkgs="nano-full wget-ssl"
+  else
+    essential_pkgs="$common_pkgs ss wget-ssl"
+    optional_pkgs="nano-full"
+  fi
+
+  # shellcheck disable=SC2086
+  pkg_ensure_installed $essential_pkgs
+
+  optional_missing=""
+  for pkg in $optional_pkgs; do
+    pkg_is_installed "$pkg" || optional_missing="$optional_missing $pkg"
+  done
+
+  if [ -n "$optional_missing" ]; then
+    pkg_update_indexes || true
+    # shellcheck disable=SC2086
+    if ! pkg_install_packages $optional_missing; then
+      warn "Не все необязательные пакеты удалось поставить:$optional_missing"
+    fi
+  fi
+
   done_ "Установлен полный список пакетов"
 }
 

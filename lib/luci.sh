@@ -5,17 +5,19 @@ luci_install_dir() {
 }
 
 luci_install_prereqs() {
-  command -v opkg >/dev/null 2>&1 || fail "LuCI UI installer поддерживает OpenWrt/opkg."
+  pkg_manager >/dev/null 2>&1 || fail "LuCI UI installer не нашёл поддерживаемый пакетный менеджер OpenWrt."
 
   missing=""
   [ -d /usr/lib/lua/luci ] || missing="$missing luci-base"
-  opkg list-installed 2>/dev/null | grep -q '^luci-compat ' || missing="$missing luci-compat"
   [ -d /www ] || missing="$missing uhttpd"
+  if pkg_manager_is_opkg && ! pkg_is_installed luci-compat; then
+    missing="$missing luci-compat"
+  fi
 
   if [ -n "$missing" ]; then
     info "Ставлю зависимости Warren UI:$missing"
-    opkg update
-    opkg install $missing || fail "Не удалось установить зависимости Warren UI:$missing"
+    # shellcheck disable=SC2086
+    pkg_ensure_installed $missing
   fi
 }
 
