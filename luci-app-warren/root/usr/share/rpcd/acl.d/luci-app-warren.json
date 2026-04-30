@@ -1,0 +1,16 @@
+{
+  "luci-app-warren": {
+    "description": "Grant access to Warren LuCI app",
+    "read": {
+      "file": {
+        "/usr/bin/warren": [ "exec" ],
+        "/usr/libexec/warren/warren-luci-run": [ "exec" ]
+      }
+    },
+    "write": {
+      "file": {
+        "/usr/libexec/warren/warren-luci-run": [ "exec" ]
+      }
+    }
+  }
+}

@@ -26,6 +26,10 @@ define Package/luci-app-warren/install
 	$(INSTALL_DATA) ./luasrc/controller/warren.lua $(1)/usr/lib/lua/luci/controller/warren.lua
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/view/warren
 	$(INSTALL_DATA) ./luasrc/view/warren/index.htm $(1)/usr/lib/lua/luci/view/warren/index.htm
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-warren.json $(1)/usr/share/luci/menu.d/luci-app-warren.json
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./root/usr/share/rpcd/acl.d/luci-app-warren.json $(1)/usr/share/rpcd/acl.d/luci-app-warren.json
 	$(INSTALL_DIR) $(1)/usr/libexec/warren
 	$(INSTALL_BIN) ./root/usr/libexec/warren/warren-luci-run $(1)/usr/libexec/warren/warren-luci-run
 endef
