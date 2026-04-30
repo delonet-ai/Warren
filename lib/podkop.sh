@@ -148,8 +148,13 @@ configure_podkop_community_lists() {
 }
 
 configure_podkop_full() {
-  podkop_standard_choose_vless || return 1
-  podkop_prompt_lists
+  if [ "${MODE:-}" = "auto" ]; then
+    [ -n "${VLESS:-}" ] || fail "В авторежиме не подготовлена ссылка конфигурации для Podkop."
+    proxy_link_supported "${VLESS:-}" || fail "В авторежиме подготовлена неподдерживаемая ссылка конфигурации для Podkop."
+  else
+    podkop_standard_choose_vless || return 1
+    podkop_prompt_lists
+  fi
 
   [ -n "${VLESS:-}" ] || fail "VLESS пустой."
 

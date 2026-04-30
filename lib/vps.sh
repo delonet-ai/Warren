@@ -230,19 +230,25 @@ is_3xui_installed() {
 collect_vps_inputs() {
   mkdir -p "$(vps_workspace_dir)" "$(vps_keys_dir)" "$(vps_reports_dir)" || fail "Не удалось создать локальные каталоги для VPS-модуля"
 
-  ask "IP адрес VPS" VPS_HOST "${VPS_HOST:-}"
-  [ -n "$VPS_HOST" ] || fail "IP адрес VPS пустой"
-  conf_set VPS_HOST "$VPS_HOST"
+  if [ "${MODE:-}" = "auto" ] && [ -n "${VPS_HOST:-}" ] && [ -n "${VPS_ROOT_PASSWORD:-}" ]; then
+    [ -n "${VPS_SSH_PORT:-}" ] || VPS_SSH_PORT="22"
+    say "${GREEN}DONE${NC}  Использую заранее сохранённые данные VPS для авторежима: ${VPS_HOST}:${VPS_SSH_PORT}"
+  else
+    ask "IP адрес VPS" VPS_HOST "${VPS_HOST:-}"
+    [ -n "$VPS_HOST" ] || fail "IP адрес VPS пустой"
 
-  if [ -z "${VPS_SSH_PORT:-}" ]; then
-    VPS_SSH_PORT="22"
+    if [ -z "${VPS_SSH_PORT:-}" ]; then
+      VPS_SSH_PORT="22"
+    fi
+    ask "SSH порт VPS" VPS_SSH_PORT "${VPS_SSH_PORT:-22}"
+    [ -n "$VPS_SSH_PORT" ] || fail "SSH порт VPS пустой"
+
+    ask "Root пароль VPS" VPS_ROOT_PASSWORD "${VPS_ROOT_PASSWORD:-}"
+    [ -n "$VPS_ROOT_PASSWORD" ] || fail "Root пароль VPS пустой"
   fi
-  ask "SSH порт VPS" VPS_SSH_PORT "${VPS_SSH_PORT:-22}"
-  [ -n "$VPS_SSH_PORT" ] || fail "SSH порт VPS пустой"
-  conf_set VPS_SSH_PORT "$VPS_SSH_PORT"
 
-  ask "Root пароль VPS" VPS_ROOT_PASSWORD "${VPS_ROOT_PASSWORD:-}"
-  [ -n "$VPS_ROOT_PASSWORD" ] || fail "Root пароль VPS пустой"
+  conf_set VPS_HOST "$VPS_HOST"
+  conf_set VPS_SSH_PORT "$VPS_SSH_PORT"
   conf_set VPS_ROOT_PASSWORD "$VPS_ROOT_PASSWORD"
 
   init_runtime_state

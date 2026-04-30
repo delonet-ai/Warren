@@ -187,8 +187,8 @@ show_mode_banner() {
   say ""
   case "$MODE" in
     auto)
-      say "${YELLOW}INFO${NC}  Автоматический режим доводит маршрут до Podkop под ключ."
-      say "Если есть готовые VPS-конфиги, предложу выбрать один. Если нет — можно сразу пройти через настройку VPS."
+      say "${YELLOW}INFO${NC}  Полный авторежим ведёт роутер от базовой подготовки до готового Podkop."
+      say "Если на одном из шагов потребуется ребут, после загрузки просто снова запусти 'warren' — сценарий продолжится."
       ;;
     add_private|manage_private)
       say "${YELLOW}INFO${NC}  Amnezia Private использует AmneziaWG на интерфейсе awg0."
@@ -200,13 +200,16 @@ show_mode_banner() {
       say "${YELLOW}INFO${NC}  SNI-checker подготовит и запустит на VPS read-only проверку кандидатов для Reality."
       say "3x-ui, Xray, firewall и конфиги трогаться не будут."
       ;;
+    rf_bundle_wip)
+      say "${YELLOW}INFO${NC}  Здесь будет сценарий установки Warren из локального пакета внутри РФ-сегмента."
+      ;;
   esac
 }
 
 mode_target_state() {
   case "$MODE" in
     basic) echo 75 ;;
-    podkop_setup|auto) echo 90 ;;
+    podkop_setup|auto) echo 95 ;;
     add_private) echo 120 ;;
     *) echo 0 ;;
   esac
@@ -214,7 +217,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker)
+    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip)
       return 0
       ;;
     *)
@@ -223,20 +226,41 @@ mode_is_one_shot_service() {
   esac
 }
 
-prepare_auto_vless() {
+auto_require_saved_inputs() {
   [ "$MODE" = "auto" ] || return 0
 
-  if select_vps_report_for_podkop; then
-    return 0
+  if [ -z "${AUTO_VPS_SOURCE:-}" ]; then
+    if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+      fail "Полный авторежим теперь требует предварительный сбор всех данных и пока запускается из SSH-меню Warren, а не из LuCI."
+    fi
+    fail "Для полного авторежима не сохранён источник proxy-конфига. Запусти пункт 0 заново."
   fi
 
-  warn "Не нашёл готовых VPS-отчётов в $(vps_reports_dir)."
-  say "1) Настроить VPS сейчас и продолжить авторежим"
-  say "2) Вставить VLESS вручную"
-  ask "Выбор (1-2)" AUTO_VLESS_CHOICE "1"
+  case "$AUTO_VPS_SOURCE" in
+    new_vps)
+      [ -n "${VPS_HOST:-}" ] || fail "Для полного авторежима не сохранён IP адрес VPS."
+      [ -n "${VPS_SSH_PORT:-}" ] || fail "Для полного авторежима не сохранён SSH порт VPS."
+      [ -n "${VPS_ROOT_PASSWORD:-}" ] || fail "Для полного авторежима не сохранён root пароль VPS."
+      ;;
+    report)
+      [ -n "${SELECTED_VPS_REPORT:-}" ] || fail "Для полного авторежима не сохранён выбранный VPS-отчёт."
+      [ -r "${SELECTED_VPS_REPORT:-}" ] || fail "Не найден выбранный VPS-отчёт: ${SELECTED_VPS_REPORT:-}"
+      ;;
+    link)
+      [ -n "${VLESS:-}" ] || fail "Для полного авторежима не сохранена ссылка конфигурации."
+      proxy_link_supported "${VLESS:-}" || fail "Сохранённая ссылка конфигурации не поддерживается Podkop."
+      ;;
+    *)
+      fail "Неизвестный источник proxy-конфига для авторежима: $AUTO_VPS_SOURCE"
+      ;;
+  esac
+}
 
-  case "$AUTO_VLESS_CHOICE" in
-    1)
+prepare_auto_proxy_source() {
+  [ "$MODE" = "auto" ] || return 0
+
+  case "${AUTO_VPS_SOURCE:-}" in
+    new_vps)
       run_vps_flow
       REPORT_FILE="${REPORT_FILE:-$(vps_report_file)}"
       if [ -r "$REPORT_FILE" ]; then
@@ -245,23 +269,84 @@ prepare_auto_vless() {
         runtime_state_set "selected_vps_report" "$SELECTED_VPS_REPORT"
       fi
       [ -n "${VLESS:-}" ] || VLESS="$(vps_report_vless_link "${SELECTED_VPS_REPORT:-}")"
-      [ -n "${VLESS:-}" ] || fail "После настройки VPS не удалось получить VLESS для Podkop."
+      [ -n "${VLESS:-}" ] || fail "После настройки VPS не удалось получить proxy-ссылку для Podkop."
+      proxy_link_supported "${VLESS:-}" || fail "После настройки VPS получена неподдерживаемая ссылка конфигурации."
       conf_set VLESS "$VLESS"
       runtime_state_set "vless" "$VLESS"
       ;;
-    2)
-      ask "Вставь строку VLESS для Podkop (одной строкой)" VLESS "${VLESS:-}"
-      [ -n "${VLESS:-}" ] || fail "VLESS пустой. Сначала настрой VPS или вставь ссылку вручную."
+    report)
+      VLESS="$(vps_report_vless_link "${SELECTED_VPS_REPORT:-}")"
+      [ -n "${VLESS:-}" ] || fail "Не удалось получить proxy-ссылку из выбранного VPS-отчёта."
+      proxy_link_supported "${VLESS:-}" || fail "Ссылка из выбранного VPS-отчёта не поддерживается Podkop."
       conf_set VLESS "$VLESS"
+      runtime_state_set "vless" "$VLESS"
+      runtime_state_set "selected_vps_report" "${SELECTED_VPS_REPORT:-}"
+      ;;
+    link)
+      [ -n "${VLESS:-}" ] || fail "Ссылка конфигурации пуста."
+      proxy_link_supported "${VLESS:-}" || fail "Ссылка конфигурации не поддерживается Podkop."
       SELECTED_VPS_REPORT=""
       conf_set SELECTED_VPS_REPORT ""
       runtime_state_set "vless" "$VLESS"
       runtime_state_set "selected_vps_report" ""
       ;;
-    *)
-      fail "Введи 1 или 2"
-      ;;
   esac
+
+  st="$(get_state)"
+  [ "$st" -lt 85 ] && set_state 85
+}
+
+ensure_warren_ui_for_auto() {
+  [ "$MODE" = "auto" ] || return 0
+
+  if [ -x /usr/bin/warren ] && [ -r /usr/libexec/warren/warren-luci-run ] \
+    && [ -r /usr/lib/lua/luci/controller/warren.lua ] && [ -r /usr/lib/lua/luci/view/warren/index.htm ]; then
+    st="$(get_state)"
+    [ "$st" -lt 80 ] && set_state 80
+    done_ "UI Warren уже установлен"
+    return 0
+  fi
+
+  install_warren_luci_ui
+  set_state 80
+}
+
+print_auto_final_summary() {
+  [ "$MODE" = "auto" ] || return 0
+
+  st="$(get_state)"
+  [ "$st" -lt 95 ] && set_state 95
+
+  say ""
+  say "=== Итог полного авторежима ==="
+  say "OpenWrt: $(openwrt_release_version)"
+  say "UI Warren: /usr/bin/warren"
+  say "Podkop mode: $(uci -q get podkop.main.proxy_config_type 2>/dev/null || echo unknown)"
+  say "Proxy link: ${VLESS:-unknown}"
+
+  if [ -r "${SELECTED_VPS_REPORT:-}" ]; then
+    say ""
+    say "Доступы к VPS / 3x-ui:"
+    sed -n '/^Host:/p;/^SSH port:/p;/^SSH root password:/p;/^3x-ui URL:/p;/^3x-ui username:/p;/^3x-ui password:/p;/^VLESS inbound link:/p' "$SELECTED_VPS_REPORT"
+  fi
+
+  say ""
+  say "=== Текущий Warren config ($CONF) ==="
+  cat "$CONF" 2>/dev/null || true
+  say ""
+
+  if uci -q get podkop.main >/dev/null 2>&1; then
+    say "=== Текущий UCI config Podkop ==="
+    uci show podkop 2>/dev/null || true
+    say ""
+  fi
+}
+
+run_rf_bundle_wip_flow() {
+  say ""
+  say "${YELLOW}WIP${NC}  Здесь будет режим установки Warren из локального архива внутри РФ-сегмента."
+  say "План: один bundle с warren.sh, lib и assets, который роутер сможет скачать и распаковать без GitHub raw."
+  done_ "Режим РФ-сегмента пока в разработке"
 }
 
 should_resume_current_mode() {
@@ -313,8 +398,8 @@ run_podkop_flow() {
       ;;
     *)
       st="$(get_state)"
-      [ "$st" -lt 80 ] && install_podkop && set_state 80
-      [ "$st" -lt 90 ] && configure_podkop_full && set_state 90
+      [ "$st" -lt 90 ] && install_podkop && set_state 90
+      [ "$st" -lt 95 ] && configure_podkop_full && [ "$MODE" != "auto" ] && set_state 95
       ;;
   esac
 }
@@ -325,6 +410,7 @@ run_service_mode() {
     vps) run_vps_flow ;;
     podkop_backup) add_podkop_backup_channel ;;
     sni_checker) run_sni_checker_flow ;;
+    rf_bundle_wip) run_rf_bundle_wip_flow ;;
     qos_private) run_qos_flow ;;
     remote_admin) run_remote_admin_flow ;;
     usb_modem) run_usb_modem_flow ;;
@@ -382,13 +468,16 @@ main() {
   print_banner
   show_mode_banner
 
-  prepare_auto_vless
+  auto_require_saved_inputs
 
   run_service_mode || true
 
   if [ "$MODE" != "podkop_backup" ]; then
     run_basic_flow
   fi
+
+  ensure_warren_ui_for_auto
+  prepare_auto_proxy_source
 
   if mode_is_podkop; then
     run_podkop_flow
@@ -398,6 +487,7 @@ main() {
     run_amnezia_private_flow
   fi
 
+  print_auto_final_summary
   cleanup_runtime_state
   done_ "Готово. State=$(get_state). Логи: $LOG"
   say "Если был ребут — просто запусти тот же скрипт снова, он продолжит."

@@ -10,7 +10,7 @@ say() {
 done_() {
   say "${GREEN}DONE${NC}  $*"
   case "${MODE:-}" in
-    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private|sni_checker)
+    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private|sni_checker|rf_bundle_wip)
       ;;
     *)
       print_progress
@@ -59,6 +59,10 @@ download_file() {
 
 uciq() {
   uci -q "$@"
+}
+
+proxy_link_supported() {
+  printf "%s" "$1" | grep -Eq '^(vless|ss|trojan|socks4|socks5|hy2|hysteria2)://'
 }
 
 detect_pkg_manager() {

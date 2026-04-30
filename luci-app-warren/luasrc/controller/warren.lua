@@ -146,11 +146,10 @@ local function step_list_with_status(state, mode, tile_mode, failed)
       { key = "packages", title = "Базовые пакеты", start = 30, done = 40 },
       { key = "expand_root", title = "Подготовка expand-root", start = 40, done = 50 },
       { key = "post_reboot", title = "Post-reboot setup", start = 50, done = 75 },
-      { key = "podkop_install", title = "Установка Podkop", start = 75, done = 80 },
-      { key = "podkop_config", title = "Настройка Podkop", start = 80, done = 90 },
-      { key = "awg_install", title = "Установка AWG", start = 90, done = 100 },
-      { key = "awg_setup", title = "Настройка AWG", start = 100, done = 110 },
-      { key = "clients", title = "Клиенты и QR", start = 110, done = 120 }
+      { key = "warren_ui", title = "Установка UI Warren", start = 75, done = 80 },
+      { key = "proxy_source", title = "Источник proxy-конфига", start = 80, done = 85 },
+      { key = "podkop_install", title = "Установка Podkop", start = 85, done = 90 },
+      { key = "podkop_config", title = "Настройка Podkop", start = 90, done = 95 }
     }
   end
 
@@ -171,7 +170,7 @@ local function step_list_with_status(state, mode, tile_mode, failed)
 end
 
 local function tile_state(tile_mode, state, conf_mode, job)
-  local target = (tile_mode == "basic") and 75 or 120
+  local target = (tile_mode == "basic") and 75 or 95
   local resume = conf_mode == tile_mode and state > 0 and state < target
   local failed = resume and not (job and job.running) and job and job.mode == tile_mode and job.exit_code ~= "" and job.exit_code ~= "0"
 
