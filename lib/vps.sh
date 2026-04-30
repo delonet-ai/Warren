@@ -71,6 +71,31 @@ vps_report_vless_link() {
   sed -n 's/^VLESS inbound link: //p' "$report_file" | head -n1
 }
 
+vps_report_field() {
+  report_file="$1"
+  field_name="$2"
+  [ -r "$report_file" ] || return 1
+  sed -n "s/^${field_name}: //p" "$report_file" | head -n1
+}
+
+vps_report_host() {
+  vps_report_field "$1" "Host"
+}
+
+vps_report_ssh_port() {
+  vps_report_field "$1" "SSH port"
+}
+
+vps_report_root_password() {
+  vps_report_field "$1" "SSH root password"
+}
+
+vps_report_vless_sni() {
+  report_file="$1"
+  vless_link="$(vps_report_vless_link "$report_file")" || return 1
+  printf "%s\n" "$vless_link" | sed -n 's/.*[?&]sni=\([^&]*\).*/\1/p' | head -n1
+}
+
 select_vps_report_for_podkop() {
   report_list="$(vps_report_files)"
   report_count="$(printf "%s\n" "$report_list" | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -399,7 +424,7 @@ detect_vps_os() {
 upgrade_vps_packages() {
   case "$VPS_OS_ID" in
     ubuntu|debian|raspbian|armbian)
-      vps_ssh_timeout 1800 "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade -y && apt-get install -y curl ca-certificates coreutils procps'" \
+      vps_ssh_timeout 1800 "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade -y && apt-get install -y bash curl ca-certificates coreutils procps openssl dnsutils iproute2'" \
         || fail "Не удалось обновить пакеты на VPS (apt)"
       ;;
     centos|rhel|almalinux|rocky|fedora|ol)

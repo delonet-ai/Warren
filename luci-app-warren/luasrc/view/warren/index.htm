@@ -214,6 +214,14 @@ end
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Проверка SNI-кандидатов</h3>
+        <p>Подготовит на VPS read-only проверку доменов для VLESS + Reality, покажет таблицу, сохранит отчёты и предложит лучший SNI-кандидат.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="sni_checker" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Запустить SNI-checker</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Аварийный режим</h3>
         <p>Переключит Podkop на диагностический DNS-fallback и запустит повторную проверку, как в текущем сценарии диагностики.</p>
         <input type="hidden" name="token" value="<%=token%>" />

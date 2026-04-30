@@ -1,8 +1,8 @@
-TG_BOT_CONFIG="/etc/warren-tg-bot.conf"
+TG_BOT_CONFIG="${WARREN_BASE_DIR:-/etc/warren}/warren-tg-bot.conf"
 TG_BOT_BIN="/usr/bin/warren-tg-bot"
 TG_BOT_INIT="/etc/init.d/warren-tg-bot"
-TG_BOT_ENDPOINTS="/etc/warren-vless-endpoints"
-TG_BOT_REPORTS_DIR="/etc/vps/reports"
+TG_BOT_ENDPOINTS="${WARREN_BASE_DIR:-/etc/warren}/warren-vless-endpoints"
+TG_BOT_REPORTS_DIR="${WARREN_BASE_DIR:-/etc/warren}/vps/reports"
 
 tg_bot_install_prereqs() {
   missing=""
@@ -19,10 +19,10 @@ tg_bot_write_runner() {
   cat > "$TG_BOT_BIN" <<'BOT_EOF'
 #!/bin/sh
 
-CONFIG="${WARREN_TG_BOT_CONFIG:-/etc/warren-tg-bot.conf}"
-ENDPOINTS="${WARREN_TG_BOT_ENDPOINTS:-/etc/warren-vless-endpoints}"
-REPORTS_DIR="${WARREN_TG_BOT_REPORTS_DIR:-/etc/vps/reports}"
-WARREN_CONF="${WARREN_TG_BOT_WARREN_CONF:-/etc/warren.conf}"
+CONFIG="${WARREN_TG_BOT_CONFIG:-/etc/warren/warren-tg-bot.conf}"
+ENDPOINTS="${WARREN_TG_BOT_ENDPOINTS:-/etc/warren/warren-vless-endpoints}"
+REPORTS_DIR="${WARREN_TG_BOT_REPORTS_DIR:-/etc/warren/vps/reports}"
+WARREN_CONF="${WARREN_TG_BOT_WARREN_CONF:-/etc/warren/warren.conf}"
 OFFSET_FILE="${WARREN_TG_BOT_OFFSET:-/tmp/warren-tg-bot.offset}"
 PENDING_DIR="${WARREN_TG_BOT_PENDING_DIR:-/tmp/warren-tg-bot-pending}"
 REPORT_CACHE="${WARREN_TG_BOT_REPORT_CACHE:-/tmp/warren-tg-bot-reports.tsv}"
@@ -69,8 +69,8 @@ save_bound_chat() {
   {
     printf "TG_TOKEN=%s\n" "$(shell_quote_value "$TG_TOKEN")"
     printf "ALLOWED_CHAT_ID=%s\n" "$(shell_quote_value "$chat_id")"
-    printf "REPORTS_DIR=%s\n" "$(shell_quote_value "${REPORTS_DIR:-/etc/vps/reports}")"
-    printf "WARREN_CONF=%s\n" "$(shell_quote_value "${WARREN_CONF:-/etc/warren.conf}")"
+    printf "REPORTS_DIR=%s\n" "$(shell_quote_value "${REPORTS_DIR:-/etc/warren/vps/reports}")"
+    printf "WARREN_CONF=%s\n" "$(shell_quote_value "${WARREN_CONF:-/etc/warren/warren.conf}")"
   } > "$tmp" && mv "$tmp" "$CONFIG"
   chmod 600 "$CONFIG" 2>/dev/null || true
   ALLOWED_CHAT_ID="$chat_id"
@@ -1325,6 +1325,7 @@ INIT_EOF
 }
 
 tg_bot_seed_endpoints() {
+  mkdir -p "$(dirname "$TG_BOT_ENDPOINTS")" || fail "Не удалось создать каталог для endpoints TG-бота"
   {
     uci -q get podkop.main.proxy_string 2>/dev/null || true
     uci -q get podkop.main.urltest_proxy_links 2>/dev/null | tr ' ' '\n' || true
@@ -1349,6 +1350,7 @@ run_tg_bot_flow() {
   tg_bot_install_prereqs
   tg_bot_write_runner
   tg_bot_write_init
+  mkdir -p "$(dirname "$TG_BOT_CONFIG")" || fail "Не удалось создать каталог конфигурации TG-бота"
 
   {
     printf "TG_TOKEN=%s\n" "$(quote_sh "$TG_BOT_TOKEN")"

@@ -1,5 +1,30 @@
 module("luci.controller.warren", package.seeall)
 
+local WARREN_ETC_DIR = "/etc/warren"
+local LEGACY_WARREN_ETC_DIR = "/etc"
+
+local function existing_path(primary, legacy)
+  local f = io.open(primary, "r")
+  if f then
+    f:close()
+    return primary
+  end
+  return legacy
+end
+
+local function reports_dir()
+  local primary = WARREN_ETC_DIR .. "/vps/reports"
+  local p = io.popen("[ -d " .. primary .. " ] && echo yes")
+  if p then
+    local out = (p:read("*a") or ""):gsub("%s+$", "")
+    p:close()
+    if out == "yes" then
+      return primary
+    end
+  end
+  return LEGACY_WARREN_ETC_DIR .. "/vps/reports"
+end
+
 function index()
   entry({"admin", "services", "warren"}, call("action_index"), _("Warren"), 60).dependent = true
   entry({"admin", "services", "warren", "run"}, post("action_run")).leaf = true
@@ -44,7 +69,7 @@ end
 
 local function list_reports()
   local reports = {}
-  local p = io.popen("find /etc/vps/reports -maxdepth 1 -type f -name '*.txt' 2>/dev/null | sort")
+  local p = io.popen("find " .. shellquote(reports_dir()) .. " -maxdepth 1 -type f -name '*.txt' 2>/dev/null | sort")
   if p then
     for path in p:lines() do
       local text = read_file(path) or ""
@@ -85,12 +110,14 @@ local function job_status()
 end
 
 local function read_state()
-  local state = tonumber(trim(read_file("/etc/warren.state") or "0")) or 0
+  local state_path = existing_path(WARREN_ETC_DIR .. "/warren.state", LEGACY_WARREN_ETC_DIR .. "/warren.state")
+  local state = tonumber(trim(read_file(state_path) or "0")) or 0
   return state
 end
 
 local function read_conf_mode()
-  local conf = read_file("/etc/warren.conf") or ""
+  local conf_path = existing_path(WARREN_ETC_DIR .. "/warren.conf", LEGACY_WARREN_ETC_DIR .. "/warren.conf")
+  local conf = read_file(conf_path) or ""
   return first_match(conf, "\nMODE='([^']*)'") or first_match(conf, "^MODE='([^']*)'") or ""
 end
 
