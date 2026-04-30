@@ -7,6 +7,11 @@ luci_install_dir() {
 luci_install_prereqs() {
   pkg_manager >/dev/null 2>&1 || fail "LuCI UI installer не нашёл поддерживаемый пакетный менеджер OpenWrt."
 
+  if pkg_manager_is_apk && ! pkg_is_installed luci; then
+    info "OpenWrt 25.12.x: сначала ставлю базовый LuCI через apk -U add luci"
+    apk -U add luci || fail "Не удалось установить базовый пакет LuCI через apk."
+  fi
+
   missing=""
   [ -d /usr/lib/lua/luci ] || missing="$missing luci-base"
   [ -d /www ] || missing="$missing uhttpd"
@@ -71,12 +76,15 @@ install_warren_libs() {
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
   for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
+    target_path="$target_dir/$lib"
     if source_path="$(luci_persistent_source "lib/$lib")"; then
-      cp "$source_path" "$target_dir/$lib" || fail "Не удалось установить библиотеку: $lib"
+      if [ "$source_path" != "$target_path" ]; then
+        cp "$source_path" "$target_path" || fail "Не удалось установить библиотеку: $lib"
+      fi
     elif [ -r "$SCRIPT_DIR/lib/$lib" ]; then
-      cp "$SCRIPT_DIR/lib/$lib" "$target_dir/$lib" || fail "Не удалось установить библиотеку: $lib"
+      cp "$SCRIPT_DIR/lib/$lib" "$target_path" || fail "Не удалось установить библиотеку: $lib"
     else
-      wget -qO "$target_dir/$lib" "$WARREN_LIB_BASE_URL/$lib" || fail "Не удалось скачать библиотеку: $lib"
+      wget -qO "$target_path" "$WARREN_LIB_BASE_URL/$lib" || fail "Не удалось скачать библиотеку: $lib"
     fi
   done
 }
@@ -86,12 +94,15 @@ install_warren_assets() {
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
   for asset in sni-candidates.txt; do
+    target_path="$target_dir/$asset"
     if source_path="$(luci_persistent_source "assets/$asset")"; then
-      cp "$source_path" "$target_dir/$asset" || fail "Не удалось установить ассет: $asset"
+      if [ "$source_path" != "$target_path" ]; then
+        cp "$source_path" "$target_path" || fail "Не удалось установить ассет: $asset"
+      fi
     elif [ -r "$SCRIPT_DIR/assets/$asset" ]; then
-      cp "$SCRIPT_DIR/assets/$asset" "$target_dir/$asset" || fail "Не удалось установить ассет: $asset"
+      cp "$SCRIPT_DIR/assets/$asset" "$target_path" || fail "Не удалось установить ассет: $asset"
     else
-      wget -qO "$target_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset" || fail "Не удалось скачать ассет: $asset"
+      wget -qO "$target_path" "$WARREN_ASSET_BASE_URL/$asset" || fail "Не удалось скачать ассет: $asset"
     fi
   done
 }

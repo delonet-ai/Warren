@@ -125,7 +125,7 @@ configure_podkop_common_settings() {
     private_source_interfaces="$(printf "%s\n%s\n" "$private_source_interfaces" "$(podkop_private_iface)" | sed '/^$/d' | sort -u)"
   fi
 
-  uciq -q del podkop.settings.source_network_interfaces
+  uciq -q del podkop.settings.source_network_interfaces || true
   uciq add_list podkop.settings.source_network_interfaces='br-lan'
   printf "%s\n" "$private_source_interfaces" | sed '/^$/d' | while IFS= read -r private_iface; do
     uciq add_list podkop.settings.source_network_interfaces="$private_iface"
@@ -140,11 +140,19 @@ configure_podkop_common_settings() {
 }
 
 configure_podkop_community_lists() {
-  uciq -q del podkop.main.community_lists
-  [ "${LIST_RU:-0}" = "1" ] && uciq add_list podkop.main.community_lists='russia_inside'
-  [ "${LIST_CF:-0}" = "1" ] && uciq add_list podkop.main.community_lists='cloudflare'
-  [ "${LIST_META:-0}" = "1" ] && uciq add_list podkop.main.community_lists='meta'
-  [ "${LIST_GOOGLE_AI:-0}" = "1" ] && uciq add_list podkop.main.community_lists='google_ai'
+  uciq -q del podkop.main.community_lists || true
+  if [ "${LIST_RU:-0}" = "1" ]; then
+    uciq add_list podkop.main.community_lists='russia_inside'
+  fi
+  if [ "${LIST_CF:-0}" = "1" ]; then
+    uciq add_list podkop.main.community_lists='cloudflare'
+  fi
+  if [ "${LIST_META:-0}" = "1" ]; then
+    uciq add_list podkop.main.community_lists='meta'
+  fi
+  if [ "${LIST_GOOGLE_AI:-0}" = "1" ]; then
+    uciq add_list podkop.main.community_lists='google_ai'
+  fi
 }
 
 configure_podkop_full() {
@@ -161,8 +169,8 @@ configure_podkop_full() {
   configure_podkop_common_settings
   uciq set podkop.main.proxy_config_type='url'
   uciq set podkop.main.proxy_string="$VLESS"
-  uciq -q del podkop.main.urltest_proxy_links
-  uciq -q del podkop.main.selector_proxy_links
+  uciq -q del podkop.main.urltest_proxy_links || true
+  uciq -q del podkop.main.selector_proxy_links || true
   configure_podkop_community_lists
 
   uciq commit podkop

@@ -448,7 +448,9 @@ prepare_auto_proxy_source() {
   esac
 
   st="$(get_state)"
-  [ "$st" -lt 85 ] && set_state 85
+  if [ "$st" -lt 85 ]; then
+    set_state 85
+  fi
 }
 
 ensure_warren_ui_for_auto() {
@@ -457,7 +459,9 @@ ensure_warren_ui_for_auto() {
   if [ -x /usr/bin/warren ] && [ -r /usr/libexec/warren/warren-luci-run ] \
     && [ -r /usr/lib/lua/luci/controller/warren.lua ] && [ -r /usr/lib/lua/luci/view/warren/index.htm ]; then
     st="$(get_state)"
-    [ "$st" -lt 80 ] && set_state 80
+    if [ "$st" -lt 80 ]; then
+      set_state 80
+    fi
     done_ "UI Warren уже установлен"
     return 0
   fi
@@ -470,7 +474,9 @@ print_auto_final_summary() {
   [ "$MODE" = "auto" ] || return 0
 
   st="$(get_state)"
-  [ "$st" -lt 95 ] && set_state 95
+  if [ "$st" -lt 95 ]; then
+    set_state 95
+  fi
 
   say ""
   say "=== Итог полного авторежима ==="
@@ -520,13 +526,22 @@ run_basic_flow() {
 
   st="$(get_state)"
   log "state=$st mode=$MODE"
-  [ "$st" -lt 10 ] && check_openwrt && set_state 10
+  if [ "$st" -lt 10 ]; then
+    check_openwrt
+    set_state 10
+  fi
 
   st="$(get_state)"
-  [ "$st" -lt 20 ] && check_inet && set_state 20
+  if [ "$st" -lt 20 ]; then
+    check_inet
+    set_state 20
+  fi
 
   st="$(get_state)"
-  [ "$st" -lt 30 ] && sync_time && set_state 30
+  if [ "$st" -lt 30 ]; then
+    sync_time
+    set_state 30
+  fi
 
   st="$(get_state)"
   if [ "$st" -lt 40 ]; then
@@ -539,7 +554,10 @@ run_basic_flow() {
   fi
 
   st="$(get_state)"
-  [ "$st" -lt 45 ] && check_space_overlay && set_state 45
+  if [ "$st" -lt 45 ]; then
+    check_space_overlay
+    set_state 45
+  fi
 
   st="$(get_state)"
   if [ "$st" -lt 50 ]; then
@@ -553,13 +571,21 @@ run_basic_flow() {
   fi
 
   st="$(get_state)"
-  [ "$st" -lt 60 ] && expand_root_run_and_reboot
+  if [ "$st" -lt 60 ]; then
+    expand_root_run_and_reboot
+  fi
 
   st="$(get_state)"
-  [ "$st" -lt 70 ] && install_full_pkg_list && set_state 70
+  if [ "$st" -lt 70 ]; then
+    install_full_pkg_list
+    set_state 70
+  fi
 
   st="$(get_state)"
-  [ "$st" -lt 75 ] && check_space_overlay && set_state 75
+  if [ "$st" -lt 75 ]; then
+    check_space_overlay
+    set_state 75
+  fi
 }
 
 run_podkop_flow() {
@@ -569,8 +595,16 @@ run_podkop_flow() {
       ;;
     *)
       st="$(get_state)"
-      [ "$st" -lt 90 ] && install_podkop && set_state 90
-      [ "$st" -lt 95 ] && configure_podkop_full && [ "$MODE" != "auto" ] && set_state 95
+      if [ "$st" -lt 90 ]; then
+        install_podkop
+        set_state 90
+      fi
+      if [ "$st" -lt 95 ]; then
+        configure_podkop_full
+        if [ "$MODE" != "auto" ]; then
+          set_state 95
+        fi
+      fi
       ;;
   esac
 }
