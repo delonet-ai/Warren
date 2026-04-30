@@ -26,7 +26,7 @@ fi
       # shellcheck disable=SC1090
       . "$form_env"
     fi
-    WARREN_LUCI=1 WARREN_USE_LOCAL_LIBS=1 WARREN_BASE_DIR=/etc WARREN_LOG_DIR=/root /usr/bin/warren --luci-run "$mode"
+    WARREN_LUCI=1 WARREN_USE_LOCAL_LIBS=1 WARREN_BASE_DIR=/etc/warren WARREN_LOG_DIR=/root/warren /usr/bin/warren --luci-run "$mode"
     rc=$?
     echo
     echo "=== exit code: $rc ==="

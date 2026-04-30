@@ -129,7 +129,8 @@ menu() {
   say "9) USB модем настрой (WIP)"
   say "10) Telegram-бот для Podkop"
   say "11) Диагностика Podkop/VPS"
-  ask "Ввод (0-11)" MENU_CHOICE "0"
+  say "12) Проверка SNI-кандидатов Reality"
+  ask "Ввод (0-12)" MENU_CHOICE "0"
 
   case "$MENU_CHOICE" in
     0) MODE="initialize" ;;
@@ -144,6 +145,7 @@ menu() {
     9) MODE="usb_modem" ;;
     10) MODE="tg_bot" ;;
     11) MODE="diagnostics" ;;
+    12) MODE="sni_checker" ;;
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
 
@@ -157,7 +159,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics)
+    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|sni_checker)
       SELECTED_MODE="$MODE"
       load_conf_if_exists || true
       MODE="$SELECTED_MODE"

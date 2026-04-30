@@ -5,17 +5,19 @@ luci_install_dir() {
 }
 
 luci_install_prereqs() {
-  command -v opkg >/dev/null 2>&1 || fail "LuCI UI installer поддерживает OpenWrt/opkg."
+  pkg_manager >/dev/null 2>&1 || fail "LuCI UI installer не нашёл поддерживаемый пакетный менеджер OpenWrt."
 
   missing=""
   [ -d /usr/lib/lua/luci ] || missing="$missing luci-base"
-  opkg list-installed 2>/dev/null | grep -q '^luci-compat ' || missing="$missing luci-compat"
   [ -d /www ] || missing="$missing uhttpd"
+  if pkg_manager_is_opkg && ! pkg_is_installed luci-compat; then
+    missing="$missing luci-compat"
+  fi
 
   if [ -n "$missing" ]; then
     info "Ставлю зависимости Warren UI:$missing"
-    opkg update
-    opkg install $missing || fail "Не удалось установить зависимости Warren UI:$missing"
+    # shellcheck disable=SC2086
+    pkg_ensure_installed $missing
   fi
 }
 
@@ -46,11 +48,24 @@ install_warren_libs() {
   target_dir="/usr/lib/warren/lib"
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
-  for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh luci.sh; do
+  for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
     if [ -r "$SCRIPT_DIR/lib/$lib" ]; then
       cp "$SCRIPT_DIR/lib/$lib" "$target_dir/$lib" || fail "Не удалось установить библиотеку: $lib"
     else
       wget -qO "$target_dir/$lib" "$WARREN_LIB_BASE_URL/$lib" || fail "Не удалось скачать библиотеку: $lib"
+    fi
+  done
+}
+
+install_warren_assets() {
+  target_dir="/usr/lib/warren/assets"
+  mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
+
+  for asset in sni-candidates.txt; do
+    if [ -r "$SCRIPT_DIR/assets/$asset" ]; then
+      cp "$SCRIPT_DIR/assets/$asset" "$target_dir/$asset" || fail "Не удалось установить ассет: $asset"
+    else
+      wget -qO "$target_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset" || fail "Не удалось скачать ассет: $asset"
     fi
   done
 }
@@ -85,7 +100,7 @@ fi
       # shellcheck disable=SC1090
       . "$form_env"
     fi
-    WARREN_LUCI=1 WARREN_USE_LOCAL_LIBS=1 WARREN_BASE_DIR=/etc WARREN_LOG_DIR=/root /usr/bin/warren --luci-run "$mode"
+    WARREN_LUCI=1 WARREN_USE_LOCAL_LIBS=1 WARREN_BASE_DIR=/etc/warren WARREN_LOG_DIR=/root/warren /usr/bin/warren --luci-run "$mode"
     rc=$?
     echo
     echo "=== exit code: $rc ==="
@@ -135,6 +150,7 @@ install_warren_luci_ui() {
   luci_install_prereqs
   install_warren_binary
   install_warren_libs
+  install_warren_assets
   install_warren_luci_runner
   install_warren_luci_controller
   install_warren_luci_view

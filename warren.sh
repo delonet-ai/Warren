@@ -1,6 +1,6 @@
 #!/bin/sh
 # Warren main entrypoint: packages -> expand-root (reboot) -> podkop -> private access
-# Designed for OpenWrt 24.10.x on NanoPi R5S/R5C
+# Designed for OpenWrt 24.10.x / 25.12.x on NanoPi R5S/R5C
 # Usage (GitHub): wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main/warren.sh" && sh /tmp/warren.sh
 
 set -e
@@ -11,19 +11,52 @@ PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-https://raw.githubusercontent.com/itdo
 EXPAND_ROOT_SHA256="${EXPAND_ROOT_SHA256:-}"
 PODKOP_INSTALL_SHA256="${PODKOP_INSTALL_SHA256:-}"
 WARREN_LIB_BASE_URL="${WARREN_LIB_BASE_URL:-${BOOTSTRAP_LIB_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main/lib}}"
+WARREN_ASSET_BASE_URL="${WARREN_ASSET_BASE_URL:-${BOOTSTRAP_ASSET_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main/assets}}"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || echo ".")"
 WARREN_DEV_DIR_DEFAULT="${SCRIPT_DIR}/.warren-dev"
 
+migrate_legacy_file_if_missing() {
+  legacy_path="$1"
+  target_path="$2"
+  [ -f "$legacy_path" ] || return 0
+  [ -e "$target_path" ] && return 0
+  mkdir -p "$(dirname "$target_path")" 2>/dev/null || true
+  mv "$legacy_path" "$target_path" 2>/dev/null || cp "$legacy_path" "$target_path" 2>/dev/null || true
+}
+
+migrate_legacy_dir_if_missing() {
+  legacy_path="$1"
+  target_path="$2"
+  [ -d "$legacy_path" ] || return 0
+  [ -e "$target_path" ] && return 0
+  mkdir -p "$(dirname "$target_path")" 2>/dev/null || true
+  mv "$legacy_path" "$target_path" 2>/dev/null || cp -R "$legacy_path" "$target_path" 2>/dev/null || true
+}
+
 if [ "$(id -u 2>/dev/null || echo 1)" = "0" ] && [ -w /etc ] && [ -d /root ]; then
-  WARREN_BASE_DIR="${WARREN_BASE_DIR:-/etc}"
-  WARREN_LOG_DIR="${WARREN_LOG_DIR:-/root}"
+  WARREN_LEGACY_BASE_DIR="${WARREN_LEGACY_BASE_DIR:-/etc}"
+  WARREN_LEGACY_LOG_DIR="${WARREN_LEGACY_LOG_DIR:-/root}"
+  WARREN_BASE_DIR="${WARREN_BASE_DIR:-/etc/warren}"
+  WARREN_LOG_DIR="${WARREN_LOG_DIR:-/root/warren}"
   STATE="${STATE:-${WARREN_BASE_DIR}/warren.state}"
   CONF="${CONF:-${WARREN_BASE_DIR}/warren.conf}"
   LOG="${LOG:-${WARREN_LOG_DIR}/warren.log}"
   LIB_CACHE_DIR="${LIB_CACHE_DIR:-/tmp/warren-lib}"
+  ASSET_CACHE_DIR="${ASSET_CACHE_DIR:-/tmp/warren-assets}"
   AUTO_STATE_JSON="${AUTO_STATE_JSON:-/tmp/warren-runtime.json}"
   AUTO_STATE_STORE="${AUTO_STATE_STORE:-/tmp/warren-runtime.tsv}"
+  mkdir -p "$WARREN_BASE_DIR" "$WARREN_LOG_DIR" || {
+    printf "%s\n" "Не удалось создать каталоги Warren: $WARREN_BASE_DIR $WARREN_LOG_DIR" >&2
+    exit 1
+  }
+  migrate_legacy_file_if_missing "${WARREN_LEGACY_BASE_DIR}/warren.state" "$STATE"
+  migrate_legacy_file_if_missing "${WARREN_LEGACY_BASE_DIR}/warren.conf" "$CONF"
+  migrate_legacy_file_if_missing "${WARREN_LEGACY_BASE_DIR}/warren-tg-bot.conf" "${WARREN_BASE_DIR}/warren-tg-bot.conf"
+  migrate_legacy_file_if_missing "${WARREN_LEGACY_BASE_DIR}/warren-vless-endpoints" "${WARREN_BASE_DIR}/warren-vless-endpoints"
+  migrate_legacy_dir_if_missing "${WARREN_LEGACY_BASE_DIR}/vps" "${WARREN_BASE_DIR}/vps"
+  migrate_legacy_file_if_missing "${WARREN_LEGACY_LOG_DIR}/warren.log" "$LOG"
+  migrate_legacy_dir_if_missing "${WARREN_LEGACY_LOG_DIR}/warren-diagnostics" "${WARREN_LOG_DIR}/warren-diagnostics"
 else
   WARREN_DEV_DIR="${WARREN_DEV_DIR:-$WARREN_DEV_DIR_DEFAULT}"
   mkdir -p "$WARREN_DEV_DIR" || {
@@ -34,6 +67,7 @@ else
   CONF="${CONF:-${WARREN_DEV_DIR}/warren.conf}"
   LOG="${LOG:-${WARREN_DEV_DIR}/warren.log}"
   LIB_CACHE_DIR="${LIB_CACHE_DIR:-${WARREN_DEV_DIR}/lib-cache}"
+  ASSET_CACHE_DIR="${ASSET_CACHE_DIR:-${WARREN_DEV_DIR}/asset-cache}"
   AUTO_STATE_JSON="${AUTO_STATE_JSON:-${WARREN_DEV_DIR}/warren-runtime.json}"
   AUTO_STATE_STORE="${AUTO_STATE_STORE:-${WARREN_DEV_DIR}/warren-runtime.tsv}"
 fi
@@ -73,6 +107,34 @@ fetch_lib() {
   echo "$cached_path"
 }
 
+fetch_asset() {
+  name="$1"
+  local_path="$SCRIPT_DIR/assets/$name"
+  system_path="/usr/lib/warren/assets/$name"
+  use_local_libs="${WARREN_USE_LOCAL_LIBS:-}"
+
+  case "$SCRIPT_DIR" in
+    /tmp|/tmp/*)
+      [ "$use_local_libs" = "1" ] || local_path=""
+      ;;
+  esac
+
+  if [ -n "$local_path" ] && [ -r "$local_path" ]; then
+    echo "$local_path"
+    return 0
+  fi
+
+  if [ -r "$system_path" ]; then
+    echo "$system_path"
+    return 0
+  fi
+
+  mkdir -p "$ASSET_CACHE_DIR" || warren_die "Не удалось создать каталог ассетов: $ASSET_CACHE_DIR"
+  cached_path="$ASSET_CACHE_DIR/$name"
+  wget -qO "$cached_path" "$WARREN_ASSET_BASE_URL/$name" || warren_die "Не удалось скачать ассет: $name"
+  echo "$cached_path"
+}
+
 source_lib() {
   lib_path="$(fetch_lib "$1")"
   # shellcheck disable=SC1090
@@ -92,6 +154,7 @@ source_lib remote_admin.sh
 source_lib usb_modem.sh
 source_lib tg_bot.sh
 source_lib diagnostics.sh
+source_lib sni_checker.sh
 source_lib luci.sh
 
 expand_root_prep() {
@@ -133,6 +196,10 @@ show_mode_banner() {
     podkop_backup)
       say "${YELLOW}INFO${NC}  Режим резервного канала переведёт Podkop на URLTest с несколькими VLESS."
       ;;
+    sni_checker)
+      say "${YELLOW}INFO${NC}  SNI-checker подготовит и запустит на VPS read-only проверку кандидатов для Reality."
+      say "3x-ui, Xray, firewall и конфиги трогаться не будут."
+      ;;
   esac
 }
 
@@ -147,7 +214,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private)
+    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker)
       return 0
       ;;
     *)
@@ -257,6 +324,7 @@ run_service_mode() {
     initialize) install_warren_luci_ui ;;
     vps) run_vps_flow ;;
     podkop_backup) add_podkop_backup_channel ;;
+    sni_checker) run_sni_checker_flow ;;
     qos_private) run_qos_flow ;;
     remote_admin) run_remote_admin_flow ;;
     usb_modem) run_usb_modem_flow ;;

@@ -76,7 +76,7 @@ verify_awg_prereqs() {
   command -v ubus >/dev/null 2>&1 || fail "Для установки AmneziaWG нужен ubus"
   command -v jsonfilter >/dev/null 2>&1 || fail "Для установки AmneziaWG нужен jsonfilter"
   command -v wget >/dev/null 2>&1 || fail "Для установки AmneziaWG нужен wget"
-  command -v opkg >/dev/null 2>&1 || fail "AmneziaWG install flow сейчас поддержан только на OpenWrt/opkg"
+  pkg_manager_is_opkg || fail "AmneziaWG install flow пока поддержан только на OpenWrt 24.10.x с opkg. Для 25.12.x нужна отдельная адаптация пакетов под apk."
 }
 
 awg_pkg_postfix() {
@@ -101,7 +101,7 @@ download_awg_package() {
 
 install_awg_local_package() {
   pkg_path="$1"
-  opkg install "$pkg_path" || fail "Не удалось установить пакет AmneziaWG: $pkg_path"
+  pkg_install_local_file "$pkg_path" || fail "Не удалось установить пакет AmneziaWG: $pkg_path"
 }
 
 verify_awg_install() {
@@ -122,9 +122,9 @@ download_and_install_awg_package() {
 }
 
 ensure_qrencode_installed() {
-  if ! opkg list-installed 2>/dev/null | grep -q '^qrencode '; then
-    opkg update >/dev/null 2>&1 || true
-    opkg install qrencode || fail "Не удалось установить qrencode для AWG-клиентов"
+  if ! pkg_is_installed qrencode; then
+    pkg_update_indexes >/dev/null 2>&1 || true
+    pkg_install_packages qrencode || fail "Не удалось установить qrencode для AWG-клиентов"
   fi
 }
 
@@ -260,6 +260,13 @@ configure_awg_firewall() {
   uciq set firewall.awg_allow.proto='udp'
   uciq set firewall.awg_allow.dest_port="$AWG_LISTEN_PORT"
   uciq set firewall.awg_allow.target='ACCEPT'
+
+  has_fwd="$(uci show firewall | grep "=forwarding" | grep -q "src='lan'.*dest='wan'" && echo 1 || echo 0)"
+  if [ "$has_fwd" = "0" ]; then
+    f="$(uci add firewall forwarding)"
+    uciq set firewall."$f".src='lan'
+    uciq set firewall."$f".dest='wan'
+  fi
 
   uciq commit firewall
   /etc/init.d/firewall restart >/dev/null 2>&1 || true

@@ -36,6 +36,10 @@ English version is also available below: see [English](#english).
 - поднимать приватный туннель,
 - управлять клиентами приватного доступа.
 - ставить Telegram-бота на OpenWrt для быстрых правок Podkop.
+- проверять SNI-кандидаты для `VLESS + Reality` на стороне VPS без изменения `3x-ui` и firewall.
+
+Сейчас Warren рассчитан на OpenWrt `24.10.x` и `25.12.x`.
+При этом базовые сценарии и Podkop/LuCI/TG-бот приводятся к общей логике, а установка `AmneziaWG` пока остаётся привязанной к ветке `24.10.x`, где ещё используется `opkg`.
 
 ### Что планируется
 В проекте будет главное меню с такими режимами:
@@ -50,6 +54,20 @@ English version is also available below: see [English](#english).
 - `USB модем настрой` (`WIP`)
 - `Telegram-бот для Podkop`
 - `Диагностика Podkop/VPS`
+- `Проверка SNI-кандидатов Reality`
+
+### Где Warren хранит данные
+
+Постоянные данные Warren на роутере теперь лежат в двух каталогах:
+- `/etc/warren` — конфиги, state и VPS-отчёты,
+- `/root/warren` — логи и диагностические файлы.
+
+Важные пути:
+- VPS-отчёты: `/etc/warren/vps/reports`
+- SSH-ключи для VPS: `/etc/warren/vps/keys`
+- Диагностика: `/root/warren/warren-diagnostics`
+- SNI-кандидаты на роутере: `/etc/warren/sni-checker/sni-candidates.txt`
+- SNI-отчёты на роутере: `/etc/warren/sni-checker/reports`
 
 ### Telegram-бот для Podkop
 
@@ -62,7 +80,7 @@ English version is also available below: see [English](#english).
 - `IP только с VPN` — управление `Fully Routed IPs`: весь трафик таких клиентов принудительно идёт через выбранную секцию.
 - `Выбор Endpoint` — кнопка `Auto` включает URLTest по всем сохранённым endpoints, ниже идут кнопки с IP/host текущих endpoints.
 - `Редактор Endpoint` — добавление и удаление endpoints.
-- При добавлении endpoint бот предлагает новые VPS-отчёты из `/etc/vps/reports`, которые создаёт режим `Настрой мне VPS`, или кнопку `Ввести свой`.
+- При добавлении endpoint бот предлагает новые VPS-отчёты из `/etc/warren/vps/reports`, которые создаёт режим `Настрой мне VPS`, или кнопку `Ввести свой`.
 - В IP-разделах кнопка с IP удаляет его из списка, а `Добавить новый` переводит бота в режим ввода IP или подсети одной строкой.
 - `Статус` показывает оба IP-списка: `IP без VPN` и `IP только с VPN`.
 - `Amnezia клиенты` — список, создание, QR/config и удаление AmneziaWG-клиентов.
@@ -93,7 +111,19 @@ English version is also available below: see [English](#english).
 - SSH-порт VPS, если известен `VPS_HOST`, иначе SSH-порт на host из VLESS,
 - маршруты, policy rules, слушающие порты, релевантные `nft`-правила и логи.
 
-Если проверка нашла проблемы, скрипт предлагает применить диагностический DNS-fallback для Podkop: `udp` DNS через `77.88.8.8`, затем перезапускает только Podkop и повторяет диагностику. После повторной проверки DNS-настройки Podkop возвращаются как были до диагностики, Podkop перезапускается ещё раз. Оба снимка и шаг восстановления сохраняются в один файл `/root/warren-diagnostics/warren-diagnostics-*.log`.
+Если проверка нашла проблемы, скрипт предлагает применить диагностический DNS-fallback для Podkop: `udp` DNS через `77.88.8.8`, затем перезапускает только Podkop и повторяет диагностику. После повторной проверки DNS-настройки Podkop возвращаются как были до диагностики, Podkop перезапускается ещё раз. Оба снимка и шаг восстановления сохраняются в один файл `/root/warren/warren-diagnostics/warren-diagnostics-*.log`.
+
+### Проверка SNI-кандидатов Reality
+
+Пункт `12) Проверка SNI-кандидатов Reality` берёт список доменов из `assets/sni-candidates.txt`, копирует его на роутер в `/etc/warren/sni-checker/sni-candidates.txt`, а затем на выбранный VPS в `/root/sni-checker/`.
+
+Проверка на VPS:
+- показывает hostname, OS, public IP, `ss -tulpn` и снимок firewall,
+- не перезапускает `3x-ui` или `xray`,
+- не меняет конфиги, порты и правила firewall,
+- проверяет DNS, TCP `443`, TLS `1.3`, verify code, ALPN `h2`, HTTP/2 и время ответа,
+- сохраняет отчёты в `txt` и `csv`,
+- в конце предлагает лучший SNI-кандидат для `dest`, `serverNames` и клиентского `sni`.
 
 ### Как будет работать автоматический режим
 `Автоматический режим` должен стать основным сценарием.
