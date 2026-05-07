@@ -1,0 +1,14 @@
+{
+  "admin/services/warren": {
+    "title": "Warren",
+    "order": 60,
+    "action": {
+      "type": "call",
+      "module": "luci.controller.warren",
+      "function": "action_index"
+    },
+    "depends": {
+      "acl": [ "luci-app-warren" ]
+    }
+  }
+}

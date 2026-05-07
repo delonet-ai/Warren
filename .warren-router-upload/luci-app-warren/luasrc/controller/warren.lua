@@ -36,7 +36,7 @@ local function shellquote(value)
 end
 
 local function trim(value)
-  return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  return ((value or ""):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
 local function read_file(path)

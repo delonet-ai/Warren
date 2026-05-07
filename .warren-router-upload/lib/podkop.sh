@@ -105,7 +105,7 @@ podkop_prompt_lists() {
 configure_podkop_common_settings() {
   uciq get podkop.settings >/dev/null || uciq set podkop.settings='settings'
   uciq set podkop.settings.dns_type='doh'
-  uciq set podkop.settings.dns_server='1.1.1.1'
+  uciq set podkop.settings.dns_server='9.9.9.9'
   uciq set podkop.settings.bootstrap_dns_server='77.88.8.8'
   uciq set podkop.settings.dns_rewrite_ttl='60'
   uciq set podkop.settings.enable_output_network_interface='0'

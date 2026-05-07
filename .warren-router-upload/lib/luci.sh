@@ -15,8 +15,18 @@ luci_install_prereqs() {
   missing=""
   [ -d /usr/lib/lua/luci ] || missing="$missing luci-base"
   [ -d /www ] || missing="$missing uhttpd"
-  if pkg_manager_is_opkg && ! pkg_is_installed luci-compat; then
-    missing="$missing luci-compat"
+  if pkg_manager_is_opkg; then
+    if ! pkg_is_installed luci-compat; then
+      missing="$missing luci-compat"
+    fi
+  fi
+  if pkg_manager_is_apk; then
+    if ! pkg_is_installed luci-lua-runtime; then
+      missing="$missing luci-lua-runtime"
+    fi
+    if ! pkg_is_installed luci-compat; then
+      missing="$missing luci-compat"
+    fi
   fi
 
   if [ -n "$missing" ]; then
@@ -196,6 +206,22 @@ install_warren_luci_view() {
     "luci-app-warren/luasrc/view/warren/index.htm"
 }
 
+install_warren_luci_menu() {
+  install_warren_luci_asset \
+    "luci-app-warren/root/usr/share/luci/menu.d/luci-app-warren.json" \
+    "/usr/share/luci/menu.d/luci-app-warren.json" \
+    0644 \
+    "luci-app-warren/root/usr/share/luci/menu.d/luci-app-warren.json"
+}
+
+install_warren_luci_acl() {
+  install_warren_luci_asset \
+    "luci-app-warren/root/usr/share/rpcd/acl.d/luci-app-warren.json" \
+    "/usr/share/rpcd/acl.d/luci-app-warren.json" \
+    0644 \
+    "luci-app-warren/root/usr/share/rpcd/acl.d/luci-app-warren.json"
+}
+
 install_warren_luci_ui() {
   luci_install_dir
   luci_install_prereqs
@@ -206,9 +232,14 @@ install_warren_luci_ui() {
   install_warren_luci_runner
   install_warren_luci_controller
   install_warren_luci_view
+  install_warren_luci_menu
+  install_warren_luci_acl
 
   if [ -x /etc/init.d/uhttpd ]; then
     /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+  fi
+  if [ -x /etc/init.d/rpcd ]; then
+    /etc/init.d/rpcd restart >/dev/null 2>&1 || true
   fi
 
   done_ "Warren UI установлен. Открой LuCI: Services -> Warren."
