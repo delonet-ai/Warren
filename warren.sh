@@ -312,6 +312,42 @@ warren_maybe_offer_update() {
   esac
 }
 
+luci_apply_form_overrides() {
+  [ "${WARREN_LUCI_REQUEST:-0}" = "1" ] || return 0
+
+  case "${MODE:-}" in
+    auto|podkop_setup|vps)
+      AUTO_VPS_SOURCE="${LUCI_AUTO_VPS_SOURCE:-}"
+      SELECTED_VPS_REPORT="${LUCI_SELECTED_VPS_REPORT:-}"
+      VLESS="${LUCI_VLESS:-}"
+      VPS_HOST="${LUCI_VPS_HOST:-}"
+      VPS_SSH_PORT="${LUCI_VPS_SSH_PORT:-22}"
+      VPS_ROOT_PASSWORD="${LUCI_VPS_ROOT_PASSWORD:-}"
+      ;;
+  esac
+
+  case "${MODE:-}" in
+    tg_bot)
+      TG_BOT_TOKEN="${LUCI_TG_BOT_TOKEN:-}"
+      TG_BOT_CHAT_ID="${LUCI_TG_BOT_CHAT_ID:-}"
+      ;;
+  esac
+
+  case "${MODE:-}" in
+    auto|podkop_setup)
+      LIST_RU="${LIST_RU:-1}"
+      LIST_CF="${LIST_CF:-1}"
+      LIST_META="${LIST_META:-1}"
+      LIST_GOOGLE_AI="${LIST_GOOGLE_AI:-1}"
+      ;;
+  esac
+
+  save_conf
+  if [ "${MODE:-}" = "auto" ]; then
+    capture_runtime_inputs
+  fi
+}
+
 expand_root_prep() {
   cd /root
   rm -f /root/expand-root.sh 2>/dev/null || true
@@ -351,9 +387,18 @@ show_mode_banner() {
     podkop_backup)
       say "${YELLOW}INFO${NC}  Режим резервного канала переведёт Podkop на URLTest с несколькими VLESS."
       ;;
+    qos_private)
+      say "${YELLOW}WIP${NC}  QoS для Amnezia пока в разработке."
+      ;;
     sni_checker)
       say "${YELLOW}INFO${NC}  SNI-checker подготовит и запустит на VPS read-only проверку кандидатов для Reality."
       say "3x-ui, Xray, firewall и конфиги трогаться не будут."
+      ;;
+    naiveproxy_wip)
+      say "${YELLOW}INFO${NC}  Здесь будет сценарий настройки NaiveProxy."
+      ;;
+    shadowsocks_fallback_wip)
+      say "${YELLOW}INFO${NC}  Здесь будет сценарий fallback на Shadowsocks."
       ;;
     rf_bundle_wip)
       say "${YELLOW}INFO${NC}  Здесь будет сценарий установки Warren из локального пакета внутри РФ-сегмента."
@@ -372,7 +417,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip)
+    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       return 0
       ;;
     *)
@@ -386,7 +431,7 @@ auto_require_saved_inputs() {
 
   if [ -z "${AUTO_VPS_SOURCE:-}" ]; then
     if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
-      fail "Полный авторежим теперь требует предварительный сбор всех данных и пока запускается из SSH-меню Warren, а не из LuCI."
+      fail "Для полного авторежима из LuCI не сохранён источник proxy-конфига. Заполни форму авторежима и запусти снова."
     fi
     fail "Для полного авторежима не сохранён источник proxy-конфига. Запусти пункт 0 заново."
   fi
@@ -510,6 +555,20 @@ run_rf_bundle_wip_flow() {
   done_ "Режим РФ-сегмента пока в разработке"
 }
 
+run_naiveproxy_wip_flow() {
+  say ""
+  say "${YELLOW}WIP${NC}  Здесь будет сценарий настройки NaiveProxy."
+  say "Пока оставляем раздел как placeholder, без детальной логики."
+  done_ "NaiveProxy пока в разработке"
+}
+
+run_shadowsocks_fallback_wip_flow() {
+  say ""
+  say "${YELLOW}WIP${NC}  Здесь будет fallback-сценарий на Shadowsocks."
+  say "Пока оставляем раздел как placeholder, без детальной логики."
+  done_ "Shadowsocks fallback пока в разработке"
+}
+
 should_resume_current_mode() {
   target="$(mode_target_state)"
   st="$(get_state)"
@@ -561,13 +620,9 @@ run_basic_flow() {
 
   st="$(get_state)"
   if [ "$st" -lt 50 ]; then
-    if overlay_report_and_ask_expand; then
-      expand_root_prep
-      set_state 50
-    else
-      done_ "Пропускаю expand-root по выбору пользователя"
-      set_state 75
-    fi
+    overlay_report_and_prepare_expand
+    expand_root_prep
+    set_state 50
   fi
 
   st="$(get_state)"
@@ -615,6 +670,8 @@ run_service_mode() {
     vps) run_vps_flow ;;
     podkop_backup) add_podkop_backup_channel ;;
     sni_checker) run_sni_checker_flow ;;
+    naiveproxy_wip) run_naiveproxy_wip_flow ;;
+    shadowsocks_fallback_wip) run_shadowsocks_fallback_wip_flow ;;
     rf_bundle_wip) run_rf_bundle_wip_flow ;;
     qos_private) run_qos_flow ;;
     remote_admin) run_remote_admin_flow ;;
@@ -643,19 +700,18 @@ main() {
   if [ "${1:-}" = "--luci-run" ]; then
     MODE="${2:-}"
     [ -n "$MODE" ] || fail "Не задан режим Warren для LuCI"
+    LUCI_AUTO_VPS_SOURCE="${AUTO_VPS_SOURCE:-}"
+    LUCI_SELECTED_VPS_REPORT="${SELECTED_VPS_REPORT:-}"
+    LUCI_VLESS="${VLESS:-}"
     LUCI_VPS_HOST="${VPS_HOST:-}"
     LUCI_VPS_SSH_PORT="${VPS_SSH_PORT:-}"
     LUCI_VPS_ROOT_PASSWORD="${VPS_ROOT_PASSWORD:-}"
     LUCI_TG_BOT_TOKEN="${TG_BOT_TOKEN:-}"
     LUCI_TG_BOT_CHAT_ID="${TG_BOT_CHAT_ID:-}"
     load_conf_if_exists || true
-    [ -n "$LUCI_VPS_HOST" ] && VPS_HOST="$LUCI_VPS_HOST"
-    [ -n "$LUCI_VPS_SSH_PORT" ] && VPS_SSH_PORT="$LUCI_VPS_SSH_PORT"
-    [ -n "$LUCI_VPS_ROOT_PASSWORD" ] && VPS_ROOT_PASSWORD="$LUCI_VPS_ROOT_PASSWORD"
-    [ -n "$LUCI_TG_BOT_TOKEN" ] && TG_BOT_TOKEN="$LUCI_TG_BOT_TOKEN"
-    [ -n "$LUCI_TG_BOT_CHAT_ID" ] && TG_BOT_CHAT_ID="$LUCI_TG_BOT_CHAT_ID"
-    conf_set MODE "$MODE"
     WARREN_LUCI_REQUEST=1
+    conf_set MODE "$MODE"
+    luci_apply_form_overrides
   fi
 
   if [ "${WARREN_LUCI_REQUEST:-}" = "1" ]; then

@@ -49,7 +49,7 @@ install_full_pkg_list() {
   done_ "Установлен полный список пакетов"
 }
 
-overlay_report_and_ask_expand() {
+overlay_report_and_prepare_expand() {
   set -- $(df -k /overlay 2>/dev/null | awk 'NR==2 {print $2, $3, $4}')
   total_kb="${1:-0}"
   used_kb="${2:-0}"
@@ -61,17 +61,9 @@ overlay_report_and_ask_expand() {
 
   say ""
   say "Overlay (место под пакеты): всего ${total_mb}MB, занято ${used_mb}MB, свободно ${avail_mb}MB"
+  say "Продолжаю с автоматическим expand-root."
   say ""
-
-  def="y"
-  [ "$total_mb" -ge 1024 ] && def="n"
-
-  ask "Делать expand-root? (y/n)" DO_EXPAND "$def"
-  case "$DO_EXPAND" in
-    y|Y) return 0 ;;
-    n|N) return 1 ;;
-    *) fail "Введи y или n" ;;
-  esac
+  return 0
 }
 
 check_space_overlay() {

@@ -24,12 +24,14 @@
 .warren-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:10px 0}
 .warren-form-grid label{display:block;font-weight:600;margin-bottom:4px}
 .warren-form-grid input{width:100%}
+.warren-form-grid select{width:100%}
 .warren-lights{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
 .warren-light{display:flex;align-items:center;gap:6px;border:1px solid #ddd;border-radius:6px;padding:7px 9px;background:#fff}
 .warren-dot{width:12px;height:12px;border-radius:50%;background:#c8ced6;display:inline-block}
 .warren-light.done .warren-dot{background:#2da44e}
 .warren-light.active .warren-dot{background:#bf8700}
 .warren-light.fail .warren-dot{background:#cf222e}
+.warren-note{font-size:.92rem;color:#445;line-height:1.45}
 </style>
 
 <h2 name="content">Warren</h2>
@@ -60,6 +62,7 @@ end
   <% else %>
     <p class="warren-muted">Сейчас фоновых задач Warren из LuCI нет.</p>
   <% end %>
+  <p class="warren-note"><strong>Важно:</strong> после любого ребута или обрыва Warren можно снова запустить одной командой: <code>warren</code>. Путь конфигов VPS: <code>/etc/warren/vps/reports</code>.</p>
   <div class="warren-log"><%=log ~= "" and log or "Лог появится после запуска действия."%></div>
 </div>
 
@@ -69,29 +72,65 @@ end
   <input id="wtab-amnezia" name="wtab" type="radio" />
   <input id="wtab-extra" name="wtab" type="radio" />
 
-  <label for="wtab-quick">Быстрые действия</label>
+  <label for="wtab-quick">Настройка</label>
   <label for="wtab-vps">Настройки VPS</label>
-  <label for="wtab-amnezia">Amnezia + QoS</label>
-  <label for="wtab-extra">Дополнительно</label>
+  <label for="wtab-amnezia">Podkop</label>
+  <label for="wtab-extra">Инструменты</label>
 
   <section id="panel-quick" class="warren-panel">
     <div class="warren-grid">
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>Автоматический режим</h3>
-        <p>Проверит роутер, подготовит базовые пакеты, при необходимости расширит overlay, выберет или создаст VPS-конфиг и настроит Podkop.</p>
+        <h3>0) Полный авторежим</h3>
+        <p>Полный сценарий: база, UI Warren, источник proxy-конфига, установка Podkop, финальный отчёт. Community lists включаются автоматически.</p>
         <div class="warren-lights">
           <% render_tile_lights(auto_tile) %>
         </div>
         <% if auto_tile and auto_tile.resume then %>
           <p class="warren-muted"><% if auto_tile.failed then %>Последний запуск завершился с ошибкой. Можно продолжить с текущего шага.<% else %>Найдена незавершённая автоматическая настройка. После перезагрузки просто нажми продолжение.<% end %></p>
         <% end %>
+        <div class="warren-form-grid">
+          <div>
+            <label>Источник proxy-конфига</label>
+            <select name="auto_vps_source">
+              <option value="link" <% if (conf and conf.AUTO_VPS_SOURCE or "") == "link" then %>selected="selected"<% end %>>У меня уже есть ссылка</option>
+              <option value="report" <% if (conf and conf.AUTO_VPS_SOURCE or "") == "report" then %>selected="selected"<% end %>>Использовать VPS-отчёт Warren</option>
+              <option value="new_vps" <% if (conf and conf.AUTO_VPS_SOURCE or "") == "new_vps" then %>selected="selected"<% end %>>Настроить новый VPS</option>
+            </select>
+          </div>
+          <div>
+            <label>Готовый VPS-отчёт</label>
+            <select name="selected_vps_report">
+              <option value="">не выбирать</option>
+              <% for _, r in ipairs(reports or {}) do %>
+                <option value="<%=r.path%>" <% if conf and conf.SELECTED_VPS_REPORT == r.path then %>selected="selected"<% end %>><%=r.host ~= "" and r.host or r.name%></option>
+              <% end %>
+            </select>
+          </div>
+          <div>
+            <label>Готовая VLESS ссылка</label>
+            <input name="vless" type="text" value="<%=conf and conf.VLESS or ""%>" placeholder="vless://..." />
+          </div>
+          <div>
+            <label>IP адрес VPS</label>
+            <input name="vps_host" type="text" value="<%=conf and conf.VPS_HOST or ""%>" placeholder="203.0.113.10" />
+          </div>
+          <div>
+            <label>SSH порт VPS</label>
+            <input name="vps_ssh_port" type="text" value="<%=conf and conf.VPS_SSH_PORT or "22"%>" />
+          </div>
+          <div>
+            <label>Root пароль VPS</label>
+            <input name="vps_root_password" type="password" autocomplete="off" value="<%=conf and conf.VPS_ROOT_PASSWORD or ""%>" />
+          </div>
+        </div>
+        <p class="warren-note">Во время базовой настройки Warren автоматически выполнит expand-root и перезагрузит роутер. После загрузки просто снова открой Warren или запусти <code>warren</code>.</p>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="auto" />
-        <button class="btn cbi-button cbi-button-apply" type="submit"><%=auto_tile and auto_tile.button_label or "Запустить Auto"%></button>
+        <button class="btn cbi-button cbi-button-apply" type="submit"><%=auto_tile and auto_tile.button_label or "Запустить Полный авторежим"%></button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>Сделать только базовые настройки</h3>
+        <h3>1) Базовые настройки</h3>
         <p>Проверит OpenWrt, интернет и время, поставит базовые пакеты и подготовит место на overlay для дальнейшей настройки.</p>
         <div class="warren-lights">
           <% render_tile_lights(basic_tile) %>
@@ -99,25 +138,26 @@ end
         <% if basic_tile and basic_tile.resume then %>
           <p class="warren-muted"><% if basic_tile.failed then %>Последний запуск завершился с ошибкой. Можно продолжить с текущего шага.<% else %>Найдена незавершённая базовая настройка. После перезагрузки вернись сюда и нажми продолжение.<% end %></p>
         <% end %>
+        <p class="warren-note">Expand-root в базовом сценарии выполняется автоматически. После ребута просто снова открой Warren или запусти <code>warren</code>.</p>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="basic" />
-        <button class="btn cbi-button cbi-button-apply" type="submit"><%=basic_tile and basic_tile.button_label or "Запустить Basic setup"%></button>
+        <button class="btn cbi-button cbi-button-apply" type="submit"><%=basic_tile and basic_tile.button_label or "Запустить Базовые настройки"%></button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>Доустановка Amnezia</h3>
+        <h3>2) Добавить UI Warren в роутер</h3>
+        <p>Переустановит или обновит LuCI-компоненты Warren, runtime-зависимости, меню и ACL для текущей версии OpenWrt.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="initialize" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Установить / обновить UI</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>5) Доустановить Amnezia в Podkop</h3>
         <p>Поставит AmneziaWG, поднимет приватный интерфейс и добавит его в Podkop, чтобы клиенты могли ходить через приватный доступ.</p>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="add_private" />
         <button class="btn cbi-button cbi-button-apply" type="submit">Установить Amnezia</button>
-      </form>
-
-      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>Доустановка QoS для Amnezia</h3>
-        <p>Настроит QoS-политику для Amnezia-клиентов, чтобы приватный доступ не забивал основной канал и работал предсказуемее.</p>
-        <input type="hidden" name="token" value="<%=token%>" />
-        <input type="hidden" name="mode" value="qos_private" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Настроить QoS</button>
       </form>
     </div>
   </section>
@@ -151,7 +191,7 @@ end
     <% end %>
 
     <div class="warren-card">
-      <h3>Новый VPS</h3>
+      <h3>3) Настрой мне VPS</h3>
       <p>Укажи IP, SSH-порт и root-пароль чистого VPS. Warren зайдёт по SSH, поставит 3x-ui, создаст VLESS + Reality и сохранит креды на роутере.</p>
       <div class="warren-lights">
         <% light("SSH", has("SSH доступ к VPS подтвержд"), job and job.mode == "vps" and has("Сбор кредов")) %>
@@ -174,19 +214,55 @@ end
   </section>
 
   <section id="panel-amnezia" class="warren-panel">
-    <div class="warren-card">
-      <h3>Управление Amnezia + QoS</h3>
-      <p class="warren-muted">Здесь будет управление клиентами, QR/config, удаление клиентов и QoS-профили. Пока оставил мост к существующему shell-меню.</p>
-      <form method="post" action="<%=url('admin/services/warren/run')%>">
+    <div class="warren-grid">
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>4) Стандартная настройка Podkop</h3>
+        <p>Настроит Podkop на готовую VLESS-ссылку или выбранный VPS-отчёт. В LuCI для стандартной настройки community lists тоже включаются автоматически.</p>
+        <div class="warren-form-grid">
+          <div>
+            <label>VPS-отчёт Warren</label>
+            <select name="selected_vps_report">
+              <option value="">не выбирать</option>
+              <% for _, r in ipairs(reports or {}) do %>
+                <option value="<%=r.path%>" <% if conf and conf.SELECTED_VPS_REPORT == r.path then %>selected="selected"<% end %>><%=r.host ~= "" and r.host or r.name%></option>
+              <% end %>
+            </select>
+          </div>
+          <div>
+            <label>Или VLESS ссылка</label>
+            <input name="vless" type="text" value="<%=conf and conf.VLESS or ""%>" placeholder="vless://..." />
+          </div>
+        </div>
         <input type="hidden" name="token" value="<%=token%>" />
-        <input type="hidden" name="mode" value="manage_private" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Открыть текущий менеджер</button>
+        <input type="hidden" name="mode" value="podkop_setup" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Настроить Podkop</button>
       </form>
+
+      <div class="warren-card">
+        <h3>Резервные каналы Podkop</h3>
+        <p class="warren-note">Логика резервных каналов уже есть в shell-режиме Warren. Следующий шаг для UI — отдельная форма с показом текущих каналов, выбором VPS-отчётов и ручным вводом ссылки без ухода в SSH.</p>
+      </div>
     </div>
   </section>
 
   <section id="panel-extra" class="warren-panel">
     <div class="warren-grid">
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>6) QoS для Amnezia (WIP)</h3>
+        <p class="warren-muted">Пока оставляем этот раздел честной заглушкой. Следующим этапом сюда добавим профили клиентов, лимиты и приоритеты.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="qos_private" />
+        <button class="btn cbi-button" type="submit">Открыть WIP</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>7) Управление Amnezia клиентами</h3>
+        <p>Открывает текущий рабочий менеджер клиентов: выдача конфигов, QR, удаление клиентов и базовое управление приватным доступом.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="manage_private" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Открыть текущий менеджер</button>
+      </form>
+
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Telegram-бот для Podkop</h3>
         <p>Укажи токен BotFather и, при желании, chat_id. Warren установит сервис бота на роутер.</p>
@@ -242,6 +318,30 @@ end
         <p class="warren-muted">Черновой раздел для будущей настройки резервного мобильного канала.</p>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="usb_modem" />
+        <button class="btn cbi-button" type="submit">Открыть WIP</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>NaiveProxy (WIP)</h3>
+        <p class="warren-muted">Placeholder для будущего сценария настройки NaiveProxy.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="naiveproxy_wip" />
+        <button class="btn cbi-button" type="submit">Открыть WIP</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Shadowsocks fallback (WIP)</h3>
+        <p class="warren-muted">Placeholder для будущего fallback-сценария на Shadowsocks.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="shadowsocks_fallback_wip" />
+        <button class="btn cbi-button" type="submit">Открыть WIP</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>99) Установить всё из РФ сегмента (WIP)</h3>
+        <p class="warren-muted">Здесь будет сценарий установки Warren из локального bundle или другого доступного ресурса внутри РФ-сегмента.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="rf_bundle_wip" />
         <button class="btn cbi-button" type="submit">Открыть WIP</button>
       </form>
     </div>

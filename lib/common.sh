@@ -10,7 +10,7 @@ say() {
 done_() {
   say "${GREEN}DONE${NC}  $*"
   case "${MODE:-}" in
-    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private|sni_checker|rf_bundle_wip)
+    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       ;;
     *)
       print_progress

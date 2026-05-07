@@ -10,7 +10,9 @@ install_podkop() {
   download_file "$PODKOP_INSTALL_URL" /tmp/podkop-install.sh "$PODKOP_INSTALL_SHA256" "PODKOP_INSTALL"
   chmod +x /tmp/podkop-install.sh
 
-  if [ -r /dev/tty ]; then
+  if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+    printf 'y\n' | sh /tmp/podkop-install.sh || fail "Установка Podkop через LuCI завершилась с ошибкой"
+  elif [ -r /dev/tty ]; then
     sh /tmp/podkop-install.sh </dev/tty >/dev/tty 2>&1
   else
     fail "Нет /dev/tty. Запусти через интерактивный SSH или: ssh -t root@ip 'sh /tmp/warren.sh'"
@@ -21,6 +23,18 @@ install_podkop() {
 
 podkop_require_existing_config() {
   uciq get podkop.main >/dev/null || fail "Podkop ещё не настроен. Сначала выполни стандартную настройку."
+}
+
+podkop_use_preseeded_vless() {
+  if [ -n "${SELECTED_VPS_REPORT:-}" ]; then
+    [ -r "${SELECTED_VPS_REPORT:-}" ] || fail "Не найден выбранный VPS-отчёт: ${SELECTED_VPS_REPORT:-}"
+    VLESS="$(vps_report_vless_link "$SELECTED_VPS_REPORT")"
+    [ -n "${VLESS:-}" ] || fail "Не удалось прочитать VLESS из выбранного VPS-отчёта."
+  fi
+
+  [ -n "${VLESS:-}" ] || return 1
+  proxy_link_supported "${VLESS:-}" || fail "Ссылка конфигурации для Podkop не поддерживается."
+  return 0
 }
 
 podkop_standard_choose_vless() {
@@ -160,8 +174,15 @@ configure_podkop_full() {
     [ -n "${VLESS:-}" ] || fail "В авторежиме не подготовлена ссылка конфигурации для Podkop."
     proxy_link_supported "${VLESS:-}" || fail "В авторежиме подготовлена неподдерживаемая ссылка конфигурации для Podkop."
   else
-    podkop_standard_choose_vless || return 1
-    podkop_prompt_lists
+    if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ] && podkop_use_preseeded_vless; then
+      LIST_RU="${LIST_RU:-1}"
+      LIST_CF="${LIST_CF:-1}"
+      LIST_META="${LIST_META:-1}"
+      LIST_GOOGLE_AI="${LIST_GOOGLE_AI:-1}"
+    else
+      podkop_standard_choose_vless || return 1
+      podkop_prompt_lists
+    fi
   fi
 
   [ -n "${VLESS:-}" ] || fail "VLESS пустой."

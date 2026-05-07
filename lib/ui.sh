@@ -70,7 +70,7 @@ print_progress() {
   say "┌──────────────────────── Прогресс ────────────────────────────┐"
   _stage_line 0 "$cur" "Preflight (версия / интернет / время)"
   _stage_line 1 "$cur" "Установка пакетов (полный список)"
-  _stage_line 2 "$cur" "Проверка/выбор expand-root"
+  _stage_line 2 "$cur" "Проверка места / подготовка expand-root"
   _stage_line 3 "$cur" "Expand-root (resize → reboot)"
   _stage_line 4 "$cur" "Пакеты после resize + проверка места"
 
@@ -156,7 +156,7 @@ auto_show_requirements() {
   say "5) Финальный отчёт с текущим конфигом"
   say ""
   say "Что важно заранее:"
-  say "- Если потребуется expand-root, роутер уйдёт в ребут."
+  say "- Во время базовой настройки Warren автоматически выполнит expand-root и перезагрузит роутер."
   say "- После ребута просто снова запусти 'warren' — сценарий продолжится."
   say "- До старта нужно сразу подготовить все данные, которые понадобятся дальше."
   say ""
@@ -296,15 +296,17 @@ menu() {
   say "3) Настрой мне VPS"
   say "4) Podkop"
   say "5) Доустановить Amnezia в Podkop"
-  say "6) QoS для Amnezia"
+  say "6) QoS для Amnezia (WIP)"
   say "7) Управление Amnezia клиентами"
   say "8) Remote Admin (WIP)"
   say "9) USB модем настрой (WIP)"
   say "10) Telegram-бот для Podkop"
   say "11) Диагностика Podkop/VPS"
   say "12) Проверка SNI-кандидатов Reality"
+  say "13) NaiveProxy (WIP)"
+  say "14) Shadowsocks fallback (WIP)"
   say "99) Установить всё из РФ сегмента (WIP)"
-  ask "Ввод (0-12, 99)" MENU_CHOICE "0"
+  ask "Ввод (0-14, 99)" MENU_CHOICE "0"
 
   case "$MENU_CHOICE" in
     0) MODE="auto" ;;
@@ -320,6 +322,8 @@ menu() {
     10) MODE="tg_bot" ;;
     11) MODE="diagnostics" ;;
     12) MODE="sni_checker" ;;
+    13) MODE="naiveproxy_wip" ;;
+    14) MODE="shadowsocks_fallback_wip" ;;
     99) MODE="rf_bundle_wip" ;;
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
@@ -334,7 +338,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|sni_checker|rf_bundle_wip)
+    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       SELECTED_MODE="$MODE"
       load_conf_if_exists || true
       MODE="$SELECTED_MODE"

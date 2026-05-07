@@ -47,6 +47,16 @@ local function read_file(path)
   return data
 end
 
+local function read_conf_table()
+  local conf_path = existing_path(WARREN_ETC_DIR .. "/warren.conf", LEGACY_WARREN_ETC_DIR .. "/warren.conf")
+  local raw = read_file(conf_path) or ""
+  local conf = {}
+  for key, value in raw:gmatch("([A-Z_]+)='([^']*)'") do
+    conf[key] = value
+  end
+  return conf
+end
+
 local function write_file(path, data, mode)
   local f = io.open(path, "w")
   if not f then return false end
@@ -137,14 +147,14 @@ local function step_list_with_status(state, mode, tile_mode, failed)
     steps = {
       { key = "preflight", title = "Preflight", start = 0, done = 30 },
       { key = "packages", title = "Базовые пакеты", start = 30, done = 40 },
-      { key = "expand_root", title = "Подготовка expand-root", start = 40, done = 50 },
+      { key = "expand_root", title = "Проверка места / подготовка expand-root", start = 40, done = 50 },
       { key = "post_reboot", title = "Post-reboot setup", start = 50, done = 75 }
     }
   else
     steps = {
       { key = "preflight", title = "Preflight", start = 0, done = 30 },
       { key = "packages", title = "Базовые пакеты", start = 30, done = 40 },
-      { key = "expand_root", title = "Подготовка expand-root", start = 40, done = 50 },
+      { key = "expand_root", title = "Проверка места / подготовка expand-root", start = 40, done = 50 },
       { key = "post_reboot", title = "Post-reboot setup", start = 50, done = 75 },
       { key = "warren_ui", title = "Установка UI Warren", start = 75, done = 80 },
       { key = "proxy_source", title = "Источник proxy-конфига", start = 80, done = 85 },
@@ -178,7 +188,9 @@ local function tile_state(tile_mode, state, conf_mode, job)
     mode = tile_mode,
     state = state,
     resume = resume,
-    button_label = resume and ("Продолжить " .. (tile_mode == "basic" and "Basic setup" or "Auto")) or ("Запустить " .. (tile_mode == "basic" and "Basic setup" or "Auto")),
+    button_label = resume
+      and (tile_mode == "basic" and "Продолжить Базовые настройки" or "Продолжить Полный авторежим")
+      or (tile_mode == "basic" and "Запустить Базовые настройки" or "Запустить Полный авторежим"),
     steps = step_list_with_status(state, conf_mode, tile_mode, failed),
     failed = failed
   }
@@ -187,6 +199,9 @@ end
 local function write_form_env()
   local http = require "luci.http"
   local allowed = {
+    AUTO_VPS_SOURCE = "auto_vps_source",
+    SELECTED_VPS_REPORT = "selected_vps_report",
+    VLESS = "vless",
     VPS_HOST = "vps_host",
     VPS_SSH_PORT = "vps_ssh_port",
     VPS_ROOT_PASSWORD = "vps_root_password",
@@ -196,9 +211,7 @@ local function write_form_env()
   local lines = {}
   for env_name, form_name in pairs(allowed) do
     local value = http.formvalue(form_name)
-    if value and value ~= "" then
-      lines[#lines + 1] = env_name .. "=" .. shellquote(value)
-    end
+    lines[#lines + 1] = env_name .. "=" .. shellquote(value or "")
   end
   write_file("/tmp/warren-luci-job.env", table.concat(lines, "\n") .. "\n", "600")
 end
@@ -208,7 +221,9 @@ function action_index()
   local job = job_status()
   local state = read_state()
   local conf_mode = read_conf_mode()
+  local conf = read_conf_table()
   tpl.render("warren/index", {
+    conf = conf,
     reports = list_reports(),
     job = job,
     warren_state = state,
