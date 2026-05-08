@@ -34,6 +34,22 @@
 .warren-note{font-size:.92rem;color:#445;line-height:1.45}
 </style>
 
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  function updateBrowserEpoch() {
+    var epoch = String(Math.floor(Date.now() / 1000));
+    var fields = document.querySelectorAll('input[name="browser_epoch"]');
+    for (var i = 0; i < fields.length; i++) fields[i].value = epoch;
+  }
+
+  updateBrowserEpoch();
+  var forms = document.querySelectorAll("form");
+  for (var i = 0; i < forms.length; i++) {
+    forms[i].addEventListener("submit", updateBrowserEpoch);
+  }
+});
+</script>
+
 <h2 name="content">Warren</h2>
 
 <%
@@ -124,6 +140,7 @@ end
           </div>
         </div>
         <p class="warren-note">Во время базовой настройки Warren автоматически выполнит expand-root и перезагрузит роутер. После загрузки просто снова открой Warren или запусти <code>warren</code>.</p>
+        <input type="hidden" name="browser_epoch" value="" />
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="auto" />
         <button class="btn cbi-button cbi-button-apply" type="submit"><%=auto_tile and auto_tile.button_label or "Запустить Полный авторежим"%></button>
@@ -139,6 +156,7 @@ end
           <p class="warren-muted"><% if basic_tile.failed then %>Последний запуск завершился с ошибкой. Можно продолжить с текущего шага.<% else %>Найдена незавершённая базовая настройка. После перезагрузки вернись сюда и нажми продолжение.<% end %></p>
         <% end %>
         <p class="warren-note">Expand-root в базовом сценарии выполняется автоматически. После ребута просто снова открой Warren или запусти <code>warren</code>.</p>
+        <input type="hidden" name="browser_epoch" value="" />
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="basic" />
         <button class="btn cbi-button cbi-button-apply" type="submit"><%=basic_tile and basic_tile.button_label or "Запустить Базовые настройки"%></button>

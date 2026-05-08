@@ -156,8 +156,10 @@ fi
     date
     echo
     if [ -r "$form_env" ]; then
+      set -a
       # shellcheck disable=SC1090
       . "$form_env"
+      set +a
     fi
     WARREN_LUCI=1 WARREN_USE_LOCAL_LIBS=1 WARREN_BASE_DIR=/etc/warren WARREN_LOG_DIR=/root/warren /usr/bin/warren --luci-run "$mode"
     rc=$?

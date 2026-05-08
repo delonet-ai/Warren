@@ -202,6 +202,7 @@ local function write_form_env()
     AUTO_VPS_SOURCE = "auto_vps_source",
     SELECTED_VPS_REPORT = "selected_vps_report",
     VLESS = "vless",
+    BROWSER_EPOCH = "browser_epoch",
     VPS_HOST = "vps_host",
     VPS_SSH_PORT = "vps_ssh_port",
     VPS_ROOT_PASSWORD = "vps_root_password",

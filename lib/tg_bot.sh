@@ -721,6 +721,35 @@ refresh_report_cache() {
   done
 }
 
+latest_vps_report() {
+  [ -d "$REPORTS_DIR" ] || return 1
+  ls -1t "$REPORTS_DIR"/*.txt 2>/dev/null | head -n1
+}
+
+vps_report_value() {
+  report_file="$1"
+  label="$2"
+  [ -r "$report_file" ] || return 1
+  sed -n "s/^${label}: //p" "$report_file" | head -n1
+}
+
+tg_vps_report_summary_text() {
+  report_file="$1"
+  [ -r "$report_file" ] || return 1
+  host="$(vps_report_value "$report_file" "Host")"
+  ssh_port="$(vps_report_value "$report_file" "SSH port")"
+  root_password="$(vps_report_value "$report_file" "SSH root password")"
+  panel_url="$(vps_report_value "$report_file" "3x-ui URL")"
+  panel_user="$(vps_report_value "$report_file" "3x-ui username")"
+  panel_pass="$(vps_report_value "$report_file" "3x-ui password")"
+  vless_link="$(vps_report_value "$report_file" "VLESS inbound link")"
+  report_path="$report_file"
+  printf "Последний VPS\n\nHost: %s\nSSH: root@%s:%s\nRoot password: %s\n3x-ui URL: %s\n3x-ui login: %s\n3x-ui password: %s\nVLESS: %s\nReport: %s" \
+    "${host:-unknown}" "${host:-unknown}" "${ssh_port:-22}" "${root_password:-unknown}" \
+    "${panel_url:-unknown}" "${panel_user:-unknown}" "${panel_pass:-unknown}" \
+    "${vless_link:-unknown}" "${report_path:-unknown}"
+}
+
 endpoint_add_keyboard() {
   refresh_report_cache
   tmp="/tmp/warren-tg-add-keyboard.$$"
@@ -781,6 +810,7 @@ Warren TG bot
 /add_endpoint vless://...
 /clients
 /amz_create phone
+/getvps
 /no_vpn 192.168.1.20
 /vpn_only 192.168.1.30
 /status
@@ -1070,6 +1100,15 @@ handle_command() {
       ;;
     /status)
       send_keyboard "$chat_id" "$(status_text)" "$(main_keyboard)"
+      ;;
+    /getvps)
+      report_file="$(latest_vps_report)"
+      if [ -r "$report_file" ]; then
+        send_message "$chat_id" "$(tg_vps_report_summary_text "$report_file")"
+        send_document "$chat_id" "$report_file" "Последний VPS-отчёт Warren" || true
+      else
+        send_keyboard "$chat_id" "Сохранённых VPS-отчётов пока нет." "$(main_keyboard)"
+      fi
       ;;
     *)
       send_keyboard "$chat_id" "Не понял команду. Нажми кнопку или напиши /help." "$(main_keyboard)"

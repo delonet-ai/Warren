@@ -9,14 +9,34 @@ check_openwrt() {
 }
 
 check_inet() {
-  ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 || fail "Нет интернета (ping 1.1.1.1)."
-  wget -q --spider https://downloads.openwrt.org/ || fail "Нет DNS/TLS (wget https://downloads.openwrt.org)."
-  done_ "Интернет + HTTPS OK"
+  ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 || fail "Нет базовой связности (ping 1.1.1.1)."
+  done_ "Базовая связность OK"
 }
 
 sync_time() {
-  ntpd -q -p 0.openwrt.pool.ntp.org >/dev/null 2>&1 || warn "NTP не сработал (продолжаю)."
-  done_ "Время проверено"
+  warren_set_timezone_moscow || warn "Не удалось применить timezone Europe/Moscow через UCI."
+  warren_restart_ntp
+
+  if warren_time_sane; then
+    :
+  else
+    warren_ntp_sync_once || true
+  fi
+
+  if ! warren_time_sane && [ -n "${BROWSER_EPOCH:-}" ]; then
+    info "Пробую выставить время от браузера LuCI..."
+    if warren_set_time_from_epoch "$BROWSER_EPOCH"; then
+      warren_restart_ntp
+      sleep 2
+    else
+      warn "Не удалось принять время из браузера LuCI."
+    fi
+  fi
+
+  warren_ntp_sync_once || true
+  warren_require_sane_time "Podkop и HTTPS-проверок"
+  wget -q --spider https://downloads.openwrt.org/ || fail "После синхронизации времени всё ещё нет DNS/TLS (wget https://downloads.openwrt.org)."
+  done_ "Время и HTTPS проверены"
 }
 
 install_full_pkg_list() {

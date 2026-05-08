@@ -2,6 +2,8 @@ GREEN="\033[1;32m"
 RED="\033[1;31m"
 YELLOW="\033[1;33m"
 NC="\033[0m"
+WARREN_TIME_MIN_EPOCH="${WARREN_TIME_MIN_EPOCH:-1735689600}"
+WARREN_TIME_MAX_EPOCH="${WARREN_TIME_MAX_EPOCH:-2082758400}"
 
 say() {
   printf "%b\n" "$*"
@@ -191,4 +193,54 @@ pkg_ensure_installed() {
   pkg_update_indexes || fail "Не удалось обновить индексы пакетов через $(pkg_manager)."
   # shellcheck disable=SC2086
   pkg_install_packages $missing || fail "Не удалось установить пакеты:$missing"
+}
+
+warren_now_epoch() {
+  date +%s 2>/dev/null || echo 0
+}
+
+warren_time_sane() {
+  now="$(warren_now_epoch)"
+  [ "${now:-0}" -ge "$WARREN_TIME_MIN_EPOCH" ] && [ "${now:-0}" -le "$WARREN_TIME_MAX_EPOCH" ]
+}
+
+warren_set_timezone_moscow() {
+  uci -q batch <<'EOF' >/dev/null 2>&1 || return 1
+set system.@system[0].timezone='MSK-3'
+set system.@system[0].zonename='Europe/Moscow'
+commit system
+EOF
+}
+
+warren_set_time_from_epoch() {
+  browser_epoch="$1"
+  case "$browser_epoch" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$browser_epoch" -ge "$WARREN_TIME_MIN_EPOCH" ] || return 1
+  [ "$browser_epoch" -le "$WARREN_TIME_MAX_EPOCH" ] || return 1
+  date -u -s "@$browser_epoch" >/dev/null 2>&1
+}
+
+warren_restart_ntp() {
+  if [ -x /etc/init.d/sysntpd ]; then
+    /etc/init.d/sysntpd enable >/dev/null 2>&1 || true
+    /etc/init.d/sysntpd restart >/dev/null 2>&1 || true
+  fi
+}
+
+warren_ntp_sync_once() {
+  if command -v ntpd >/dev/null 2>&1; then
+    ntpd -q -p 0.openwrt.pool.ntp.org >/dev/null 2>&1 && return 0
+  fi
+  if [ -x /etc/init.d/sysntpd ]; then
+    /etc/init.d/sysntpd restart >/dev/null 2>&1 || true
+  fi
+  sleep 3
+  warren_time_sane
+}
+
+warren_require_sane_time() {
+  context="${1:-этого шага}"
+  warren_time_sane || fail "Неверное системное время. Исправь время роутера перед запуском ${context}: иначе DNS/TLS и Podkop будут ломаться."
 }

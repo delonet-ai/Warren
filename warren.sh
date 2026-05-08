@@ -326,6 +326,8 @@ luci_apply_form_overrides() {
       ;;
   esac
 
+  [ -n "${LUCI_BROWSER_EPOCH:-}" ] && BROWSER_EPOCH="${LUCI_BROWSER_EPOCH:-}"
+
   case "${MODE:-}" in
     tg_bot)
       TG_BOT_TOKEN="${LUCI_TG_BOT_TOKEN:-}"
@@ -644,6 +646,8 @@ run_basic_flow() {
 }
 
 run_podkop_flow() {
+  warren_require_sane_time "Podkop"
+
   case "$MODE" in
     podkop_backup)
       add_podkop_backup_channel
@@ -703,6 +707,7 @@ main() {
     LUCI_AUTO_VPS_SOURCE="${AUTO_VPS_SOURCE:-}"
     LUCI_SELECTED_VPS_REPORT="${SELECTED_VPS_REPORT:-}"
     LUCI_VLESS="${VLESS:-}"
+    LUCI_BROWSER_EPOCH="${BROWSER_EPOCH:-}"
     LUCI_VPS_HOST="${VPS_HOST:-}"
     LUCI_VPS_SSH_PORT="${VPS_SSH_PORT:-}"
     LUCI_VPS_ROOT_PASSWORD="${VPS_ROOT_PASSWORD:-}"
