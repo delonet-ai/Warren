@@ -44,9 +44,9 @@ install_full_pkg_list() {
   essential_pkgs="$common_pkgs ip-full"
 
   if pkg_manager_is_apk; then
-    optional_pkgs="nano-full wget-ssl"
+    optional_pkgs="nano-full wget-ssl nftables-json"
   else
-    optional_pkgs="nano-full wget-ssl"
+    optional_pkgs="nano-full wget-ssl nftables-json"
   fi
 
   # shellcheck disable=SC2086

@@ -1,11 +1,167 @@
-run_qos_flow() {
-  say ""
-  say "${YELLOW}WIP${NC}   QoS для Amnezia пока ещё не реализован."
-  say "Следующим этапом сюда добавим профили клиентов, лимиты и приоритеты."
+QOS_STATE_FILE="${QOS_STATE_FILE:-/etc/warren/amnezia-qos.tsv}"
+QOS_INIT_SCRIPT="${QOS_INIT_SCRIPT:-/etc/init.d/warren-qos}"
+
+qos_profile_dscp() {
+  case "$1" in
+    standard) printf "%s" "cs0" ;;
+    priority) printf "%s" "cs5" ;;
+    bulk) printf "%s" "cs1" ;;
+    *) return 1 ;;
+  esac
 }
 
-run_amnezia_clients_ui_wip_flow() {
+qos_profile_label() {
+  case "$1" in
+    standard) printf "%s" "standard / обычный" ;;
+    priority) printf "%s" "priority / высокий приоритет" ;;
+    bulk) printf "%s" "bulk / фоновый" ;;
+    off) printf "%s" "off / снять профиль" ;;
+    *) printf "%s" "$1" ;;
+  esac
+}
+
+qos_client_ip_by_name() {
+  target="$1"
+  amneziawg_clients_tsv | while IFS='	' read -r name ips sec conf_file; do
+    [ "$name" = "$target" ] || continue
+    first_ip="$(printf "%s" "$ips" | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/32$' | head -n1)"
+    [ -n "$first_ip" ] && { printf "%s" "$first_ip"; break; }
+  done
+}
+
+qos_assignment_profile() {
+  target="$1"
+  [ -f "$QOS_STATE_FILE" ] || return 1
+  awk -F '	' -v target="$target" '$1 == target { profile=$3 } END { if (profile != "") print profile }' "$QOS_STATE_FILE"
+}
+
+qos_remove_client() {
+  target="$1"
+  [ -n "$target" ] || return 0
+  [ -f "$QOS_STATE_FILE" ] || return 0
+
+  tmp="${QOS_STATE_FILE}.tmp.$$"
+  awk -F '	' -v target="$target" '$1 != target' "$QOS_STATE_FILE" > "$tmp" || {
+    rm -f "$tmp" 2>/dev/null || true
+    return 1
+  }
+  mv "$tmp" "$QOS_STATE_FILE"
+}
+
+qos_set_assignment() {
+  name="$1"
+  ip32="$2"
+  profile="$3"
+
+  amneziawg_validate_client_name "$name" || fail "Имя клиента должно быть 1-32 символа: латиница, цифры, точка, подчёркивание или дефис"
+  [ -n "$ip32" ] || fail "Не нашёл IP клиента $name"
+  qos_profile_dscp "$profile" >/dev/null || fail "Неизвестный QoS-профиль: $profile"
+
+  mkdir -p "$(dirname "$QOS_STATE_FILE")" || fail "Не удалось создать каталог QoS"
+  tmp="${QOS_STATE_FILE}.tmp.$$"
+  [ -f "$QOS_STATE_FILE" ] && awk -F '	' -v target="$name" '$1 != target' "$QOS_STATE_FILE" > "$tmp" || : > "$tmp"
+  printf "%s\t%s\t%s\n" "$name" "$ip32" "$profile" >> "$tmp"
+  mv "$tmp" "$QOS_STATE_FILE" || fail "Не удалось сохранить QoS-профиль"
+  chmod 600 "$QOS_STATE_FILE" 2>/dev/null || true
+}
+
+qos_ensure_init_script() {
+  [ "$(id -u 2>/dev/null || echo 1)" = "0" ] || return 0
+  [ -x /usr/bin/warren ] || return 0
+
+  cat > "$QOS_INIT_SCRIPT" <<'EOF'
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+start_service() {
+  /usr/bin/warren --apply-qos >/tmp/warren-qos.log 2>&1
+}
+EOF
+  chmod 755 "$QOS_INIT_SCRIPT" 2>/dev/null || true
+  "$QOS_INIT_SCRIPT" enable >/dev/null 2>&1 || true
+}
+
+qos_apply_rules() {
+  command -v nft >/dev/null 2>&1 || fail "Для QoS нужен nft. Установи пакет nftables/nftables-json через базовую установку Warren."
+
+  nft delete table inet warren_qos >/dev/null 2>&1 || true
+  nft add table inet warren_qos || fail "Не удалось создать nft table inet warren_qos"
+  nft add chain inet warren_qos prerouting '{ type filter hook prerouting priority mangle; policy accept; }' || fail "Не удалось создать nft chain warren_qos/prerouting"
+
+  [ -f "$QOS_STATE_FILE" ] || return 0
+  while IFS='	' read -r name ip32 profile; do
+    [ -n "$name" ] || continue
+    dscp="$(qos_profile_dscp "$profile")" || continue
+    ip="${ip32%/32}"
+    printf "%s" "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || continue
+    nft add rule inet warren_qos prerouting ip saddr "$ip" ip dscp set "$dscp" comment "warren:${name}:${profile}" >/dev/null 2>&1 || warn "Не удалось добавить QoS-правило для $name"
+  done < "$QOS_STATE_FILE"
+}
+
+run_qos_apply_only() {
+  qos_apply_rules
+}
+
+qos_print_assignments() {
   say ""
-  say "${YELLOW}WIP${NC}   Управление Amnezia клиентами из LuCI пока не реализовано как полноценная форма."
-  say "Сейчас рабочие варианты: SSH-команда 'warren' → пункт 7 или Telegram-бот с меню Amnezia."
+  say "=== QoS профили Amnezia ==="
+  if [ ! -f "$QOS_STATE_FILE" ] || [ ! -s "$QOS_STATE_FILE" ]; then
+    say "Профили пока не назначены."
+    return 0
+  fi
+  while IFS='	' read -r name ip32 profile; do
+    [ -n "$name" ] || continue
+    say " - ${GREEN}${name}${NC}  ${ip32:-no-ip}  $(qos_profile_label "$profile")"
+  done < "$QOS_STATE_FILE"
+}
+
+run_qos_flow() {
+  amneziawg_require_server_ready
+
+  name="${QOS_CLIENT_NAME:-${AMZ_CLIENT_NAME:-}}"
+  profile="${QOS_PROFILE:-}"
+
+  if [ -z "$name" ] && [ "${WARREN_LUCI_REQUEST:-0}" != "1" ]; then
+    amneziawg_clients_list
+    ask "Имя Amnezia-клиента для QoS" name ""
+  fi
+
+  if [ -z "$profile" ] && [ "${WARREN_LUCI_REQUEST:-0}" != "1" ]; then
+    say ""
+    say "Профили QoS:"
+    say "1) standard — обычный трафик"
+    say "2) priority — высокий приоритет"
+    say "3) bulk — фоновый трафик"
+    say "0) off — снять профиль"
+    ask "Выбор профиля" choice "1"
+    case "$choice" in
+      1|standard) profile="standard" ;;
+      2|priority) profile="priority" ;;
+      3|bulk) profile="bulk" ;;
+      0|off) profile="off" ;;
+      *) fail "Неверный профиль QoS: $choice" ;;
+    esac
+  fi
+
+  [ -n "$name" ] || fail "Не задан Amnezia-клиент для QoS"
+  [ -n "$profile" ] || fail "Не задан QoS-профиль"
+
+  if [ "$profile" = "off" ]; then
+    qos_remove_client "$name"
+    qos_apply_rules
+    qos_ensure_init_script
+    qos_print_assignments
+    done_ "QoS-профиль снят: $name"
+    return 0
+  fi
+
+  ip32="$(qos_client_ip_by_name "$name")"
+  [ -n "$ip32" ] || fail "Не нашёл Amnezia-клиента или его /32 IP: $name"
+  qos_set_assignment "$name" "$ip32" "$profile"
+  qos_apply_rules
+  qos_ensure_init_script
+  qos_print_assignments
+  done_ "QoS-профиль применён: $name -> $(qos_profile_label "$profile")"
 }

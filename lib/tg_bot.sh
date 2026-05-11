@@ -33,6 +33,7 @@ AWG_SERVER_DIR="${AWG_SERVER_DIR:-/etc/amneziawg}"
 AWG_SERVER_NET_PREFIX="${AWG_SERVER_NET_PREFIX:-10.10.10}"
 AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX}.1"
 AWG_LISTEN_PORT="${AWG_LISTEN_PORT:-51820}"
+QOS_STATE_FILE="${QOS_STATE_FILE:-/etc/warren/amnezia-qos.tsv}"
 
 log() {
   logger -t warren-tg-bot "$*"
@@ -382,6 +383,38 @@ amz_conf_file_by_index() {
   printf "%s/%s.conf" "$AWG_CLIENT_DIR" "$name"
 }
 
+amz_qos_remove_client() {
+  target="$1"
+  [ -n "$target" ] || return 0
+  [ -f "$QOS_STATE_FILE" ] || return 0
+  tmp="${QOS_STATE_FILE}.tmp.$$"
+  awk -F '	' -v target="$target" '$1 != target' "$QOS_STATE_FILE" > "$tmp" || {
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  }
+  mv "$tmp" "$QOS_STATE_FILE" 2>/dev/null || true
+}
+
+amz_qos_apply_after_delete() {
+  command -v nft >/dev/null 2>&1 || return 0
+  nft delete table inet warren_qos >/dev/null 2>&1 || true
+  [ -f "$QOS_STATE_FILE" ] || return 0
+  nft add table inet warren_qos >/dev/null 2>&1 || return 0
+  nft add chain inet warren_qos prerouting '{ type filter hook prerouting priority mangle; policy accept; }' >/dev/null 2>&1 || return 0
+  while IFS='	' read -r qname ip32 profile; do
+    [ -n "$qname" ] || continue
+    case "$profile" in
+      standard) dscp="cs0" ;;
+      priority) dscp="cs5" ;;
+      bulk) dscp="cs1" ;;
+      *) continue ;;
+    esac
+    ip="${ip32%/32}"
+    printf "%s" "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || continue
+    nft add rule inet warren_qos prerouting ip saddr "$ip" ip dscp set "$dscp" comment "warren:${qname}:${profile}" >/dev/null 2>&1 || true
+  done < "$QOS_STATE_FILE"
+}
+
 amz_delete_by_index() {
   index="$1"
   amz_refresh_cache
@@ -394,6 +427,8 @@ amz_delete_by_index() {
   uci commit network || return 1
   /etc/init.d/network restart >/dev/null 2>&1 || true
   rm -f "$AWG_CLIENT_DIR/$name.conf" 2>/dev/null || true
+  amz_qos_remove_client "$name"
+  amz_qos_apply_after_delete
 }
 
 normalize_domain() {

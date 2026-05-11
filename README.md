@@ -39,7 +39,7 @@ English version is also available below: see [English](#english).
 - проверять SNI-кандидаты для `VLESS + Reality` на стороне VPS без изменения `3x-ui` и firewall.
 
 Сейчас Warren рассчитан на OpenWrt `24.10.x` и `25.12.x`.
-При этом базовые сценарии и Podkop/LuCI/TG-бот приводятся к общей логике, а установка `AmneziaWG` пока остаётся привязанной к ветке `24.10.x`, где ещё используется `opkg`.
+Базовые сценарии, Podkop/LuCI/TG-бот и Amnezia-first поток должны работать из одной кодовой базы: `24.10.x` через `opkg`, `25.12.x` через `apk`.
 
 ### Что планируется
 В проекте будет главное меню с такими режимами:
@@ -224,7 +224,7 @@ The project stays on `sh` and is intended to be modularized into multiple shell 
 - `Add Amnezia to existing Podkop`
   Extends an already configured Podkop setup with private AmneziaWG access.
 - `QoS for Amnezia`
-  Applies client policies, shaping, or prioritization rules.
+  Applies per-client DSCP profiles through `nft`.
 - `Manage Amnezia clients`
   Create, list, show config/QR, revoke, and remove clients.
 - `Remote Admin`
@@ -298,19 +298,20 @@ Current and planned behavior:
 #### 4. AmneziaWG private access
 The project direction is to prefer `AmneziaWG` for private remote access.
 
-Planned behavior:
+Current behavior:
 - install and configure AmneziaWG server on OpenWrt,
 - integrate firewall/network rules,
 - issue client configs,
 - show QR where applicable,
 - support revoke/delete/list flows.
+- support `24.10.x`/`opkg` and `25.12.x`/`apk` package install paths from the same flow.
 
 #### 5. QoS for Amnezia clients
-Planned behavior:
-- define per-client priorities or profiles,
-- optionally apply bandwidth limits,
-- later expose policy profiles through UCI/LuCI-compatible config,
-- keep initial implementation simple and deterministic.
+Current v1 behavior:
+- manage per-client profiles: `standard`, `priority`, `bulk`, `off`,
+- store assignments in `/etc/warren/amnezia-qos.tsv`,
+- apply DSCP marking through an `inet warren_qos` nft table,
+- reinstall rules after reboot through `/etc/init.d/warren-qos`.
 
 #### 6. Remote Admin
 Status: `WIP`
@@ -406,10 +407,9 @@ Sensitive data rules:
 ### Roadmap Snapshot
 
 Near-term:
-- finish VPS provisioning for `3x-ui + VLESS + Reality`,
-- harden AmneziaWG flows and add LuCI/Lua surfaces,
-- add QoS profiles for private clients,
-- expand automatic mode into a full end-to-end setup.
+- test AmneziaWG install and client lifecycle on real `24.10.x` and `25.12.x` routers,
+- harden LuCI Amnezia/QoS flows after live-router feedback,
+- keep Automatic/Basic/Podkop parity stable while the private-access surface grows.
 
 Later:
 - remote admin architecture,

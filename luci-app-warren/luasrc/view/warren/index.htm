@@ -17,9 +17,12 @@
 .warren-card{border:1px solid #ddd;border-radius:6px;padding:12px;background:#fff}
 .warren-card h3{margin:.1rem 0 .5rem 0;font-size:1.05rem}
 .warren-card p{margin:.35rem 0 .75rem}
+.warren-client{border-top:1px solid #d8dee4;margin-top:12px;padding-top:12px}
 .warren-kv{display:grid;grid-template-columns:128px minmax(0,1fr);gap:4px 10px;font-size:.92rem}
 .warren-kv code{white-space:pre-wrap;word-break:break-all}
 .warren-log{white-space:pre-wrap;max-height:340px;overflow:auto;background:#111;color:#eee;border-radius:6px;padding:12px;font-size:.85rem}
+.warren-pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;padding:10px;font-size:.82rem}
+.warren-qr{white-space:pre;font-family:monospace;line-height:1;background:#fff;border:1px solid #d8dee4;border-radius:6px;padding:10px;overflow:auto}
 .warren-muted{color:#667}
 .warren-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:10px 0}
 .warren-form-grid label{display:block;font-weight:600;margin-bottom:4px}
@@ -299,21 +302,81 @@ end
 
   <section id="panel-extra" class="warren-panel">
     <div class="warren-grid">
-      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>6) QoS для Amnezia (WIP)</h3>
-        <p class="warren-muted">Пока оставляем этот раздел честной заглушкой. Следующим этапом сюда добавим профили клиентов, лимиты и приоритеты.</p>
-        <input type="hidden" name="token" value="<%=token%>" />
-        <input type="hidden" name="mode" value="qos_private" />
-        <button class="btn cbi-button" type="submit">Открыть WIP</button>
-      </form>
+      <div class="warren-card">
+        <h3>6) QoS для Amnezia</h3>
+        <p class="warren-note">Профили v1 выставляют DSCP через nft для IP выбранного Amnezia-клиента и сохраняются в <code>/etc/warren/amnezia-qos.tsv</code>.</p>
+        <form method="post" action="<%=url('admin/services/warren/run')%>">
+          <input type="hidden" name="token" value="<%=token%>" />
+          <input type="hidden" name="mode" value="qos_private" />
+          <div class="warren-form-grid">
+            <div>
+              <label>Клиент</label>
+              <select name="qos_client_name">
+                <% for _, c in ipairs(amnezia_clients or {}) do %>
+                  <option value="<%=c.name%>"><%=c.name%><% if c.qos_profile ~= "" then %> — <%=c.qos_profile%><% end %></option>
+                <% end %>
+              </select>
+            </div>
+            <div>
+              <label>Профиль</label>
+              <select name="qos_profile">
+                <option value="standard">standard / обычный</option>
+                <option value="priority">priority / высокий приоритет</option>
+                <option value="bulk">bulk / фоновый</option>
+                <option value="off">off / снять профиль</option>
+              </select>
+            </div>
+          </div>
+          <% if not amnezia_clients or #amnezia_clients == 0 then %>
+            <p class="warren-muted">Amnezia-клиенты пока не найдены. Сначала установи Amnezia и создай клиента.</p>
+          <% end %>
+          <button class="btn cbi-button cbi-button-apply" type="submit" <% if not amnezia_clients or #amnezia_clients == 0 then %>disabled="disabled"<% end %>>Применить QoS</button>
+        </form>
+      </div>
 
-      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>7) Управление Amnezia клиентами (WIP в LuCI)</h3>
-        <p class="warren-muted">Shell-менеджер и Telegram-команды уже рабочие. Для LuCI нужен отдельный набор форм: создать, список, QR, экспорт, удаление.</p>
-        <input type="hidden" name="token" value="<%=token%>" />
-        <input type="hidden" name="mode" value="amnezia_clients_ui_wip" />
-        <button class="btn cbi-button" type="submit">Открыть WIP</button>
-      </form>
+      <div class="warren-card">
+        <h3>7) Управление Amnezia клиентами</h3>
+        <form method="post" action="<%=url('admin/services/warren/run')%>">
+          <input type="hidden" name="token" value="<%=token%>" />
+          <input type="hidden" name="mode" value="amnezia_client_create" />
+          <div class="warren-form-grid">
+            <div><label>Имя нового клиента</label><input name="amz_client_name" type="text" placeholder="phone" /></div>
+          </div>
+          <button class="btn cbi-button cbi-button-apply" type="submit">Создать клиента</button>
+        </form>
+
+        <% if not amnezia_clients or #amnezia_clients == 0 then %>
+          <p class="warren-muted">Клиенты пока не найдены.</p>
+        <% else %>
+          <% for _, c in ipairs(amnezia_clients) do %>
+            <div class="warren-client">
+              <h3><%=c.name%></h3>
+              <div class="warren-kv">
+                <div>IP</div><code><%=c.ips%></code>
+                <div>UCI section</div><code><%=c.section%></code>
+                <div>Config</div><code><%=c.conf_file%></code>
+                <div>QoS</div><code><%=c.qos_profile ~= "" and c.qos_profile or "не задан"%></code>
+              </div>
+              <% if c.conf_text ~= "" then %>
+                <h3>Конфиг</h3>
+                <pre class="warren-pre"><%=c.conf_text%></pre>
+              <% else %>
+                <p class="warren-muted">Файл конфига клиента не найден.</p>
+              <% end %>
+              <% if c.qr_utf8 ~= "" then %>
+                <h3>QR</h3>
+                <pre class="warren-qr"><%=c.qr_utf8%></pre>
+              <% end %>
+              <form method="post" action="<%=url('admin/services/warren/run')%>">
+                <input type="hidden" name="token" value="<%=token%>" />
+                <input type="hidden" name="mode" value="amnezia_client_delete" />
+                <input type="hidden" name="amz_client_name" value="<%=c.name%>" />
+                <button class="btn cbi-button cbi-button-remove" type="submit">Удалить клиента</button>
+              </form>
+            </div>
+          <% end %>
+        <% end %>
+      </div>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Telegram-бот для Podkop</h3>

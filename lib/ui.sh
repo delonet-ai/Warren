@@ -338,7 +338,7 @@ menu() {
   say "3) Настрой мне VPS"
   say "4) Podkop"
   say "5) Доустановить Amnezia в Podkop"
-  say "6) QoS для Amnezia (WIP)"
+  say "6) QoS для Amnezia"
   say "7) Управление Amnezia клиентами"
   say "8) Remote Admin (WIP)"
   say "9) USB модем настрой (WIP)"

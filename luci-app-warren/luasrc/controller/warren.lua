@@ -180,6 +180,54 @@ local function annotate_reports_for_podkop(reports, podkop)
   return available_backup_count
 end
 
+local function read_qos_assignments()
+  local assignments = {}
+  local raw = read_file(WARREN_ETC_DIR .. "/amnezia-qos.tsv") or ""
+  for name, ip, profile in raw:gmatch("([^\t\n]+)\t([^\t\n]*)\t([^\t\n]+)") do
+    assignments[name] = { ip = ip, profile = profile }
+  end
+  return assignments
+end
+
+local function amnezia_clients()
+  local clients = {}
+  local qos = read_qos_assignments()
+  local cmd = [[uci show network 2>/dev/null | sed -n "s/^network\.\([^=]*\)=amneziawg_awg0$/\1/p"]]
+  local p = io.popen(cmd)
+  if p then
+    for sec in p:lines() do
+      sec = trim(sec)
+      if sec ~= "" then
+        local name = shell_read("uci -q get network." .. shellquote(sec) .. ".description")
+        if name == "" then
+          name = shell_read("uci -q get network." .. shellquote(sec) .. ".name")
+        end
+        if name == "" then name = sec end
+
+        local ips = shell_read("uci -q get network." .. shellquote(sec) .. ".allowed_ips")
+        local conf_file = "/etc/amneziawg/clients/" .. name .. ".conf"
+        local conf_text = read_file(conf_file) or ""
+        local qr_utf8 = ""
+        if conf_text ~= "" then
+          qr_utf8 = shell_read("qrencode -t UTF8 < " .. shellquote(conf_file))
+        end
+
+        clients[#clients + 1] = {
+          section = sec,
+          name = name,
+          ips = ips,
+          conf_file = conf_file,
+          conf_text = conf_text,
+          qr_utf8 = qr_utf8,
+          qos_profile = qos[name] and qos[name].profile or ""
+        }
+      end
+    end
+    p:close()
+  end
+  return clients
+end
+
 local function job_status()
   local pid = trim(read_file("/tmp/warren-luci-job.pid") or "")
   local running = false
@@ -291,7 +339,10 @@ local function write_form_env()
     VPS_SSH_PORT = "vps_ssh_port",
     VPS_ROOT_PASSWORD = "vps_root_password",
     TG_BOT_TOKEN = "tg_bot_token",
-    TG_BOT_CHAT_ID = "tg_chat_id"
+    TG_BOT_CHAT_ID = "tg_chat_id",
+    AMZ_CLIENT_NAME = "amz_client_name",
+    QOS_CLIENT_NAME = "qos_client_name",
+    QOS_PROFILE = "qos_profile"
   }
   local lines = {"WARREN_LUCI_FORM=1"}
   for env_name, form_name in pairs(allowed) do
@@ -324,6 +375,27 @@ local function validate_run_form(mode)
   local vps_host = trim(http.formvalue("vps_host") or "")
   local vps_ssh_port = trim(http.formvalue("vps_ssh_port") or "")
   local vps_root_password = trim(http.formvalue("vps_root_password") or "")
+  local amz_client_name = trim(http.formvalue("amz_client_name") or "")
+  local qos_client_name = trim(http.formvalue("qos_client_name") or "")
+  local qos_profile = trim(http.formvalue("qos_profile") or "")
+
+  if mode == "amnezia_client_create" or mode == "amnezia_client_delete" then
+    if amz_client_name == "" then
+      return false, "Укажи имя Amnezia-клиента."
+    end
+    if not amz_client_name:match("^[A-Za-z0-9._-]+$") or #amz_client_name > 32 then
+      return false, "Имя клиента: 1-32 символа, латиница, цифры, точка, подчёркивание или дефис."
+    end
+    return true
+  end
+
+  if mode == "qos_private" then
+    if qos_client_name == "" then return false, "Выбери Amnezia-клиента для QoS." end
+    if qos_profile ~= "standard" and qos_profile ~= "priority" and qos_profile ~= "bulk" and qos_profile ~= "off" then
+      return false, "Выбери QoS-профиль: standard, priority, bulk или off."
+    end
+    return true
+  end
 
   if mode == "podkop_setup" or mode == "podkop_backup" then
     if selected_report ~= "" then
@@ -384,10 +456,12 @@ function action_index()
   local podkop = podkop_status()
   local reports = list_reports()
   local backup_report_count = annotate_reports_for_podkop(reports, podkop)
+  local amz_clients = amnezia_clients()
   tpl.render("warren/index", {
     conf = conf,
     reports = reports,
     podkop = podkop,
+    amnezia_clients = amz_clients,
     backup_report_count = backup_report_count,
     job = job,
     warren_state = state,

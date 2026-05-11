@@ -93,3 +93,23 @@ run_amnezia_manage_flow() {
   amnezia_backend_notice
   amneziawg_manage_menu
 }
+
+run_amnezia_client_create_flow() {
+  amnezia_backend_notice
+  name="${AMZ_CLIENT_NAME:-}"
+  if [ -z "$name" ] && [ "${WARREN_LUCI_REQUEST:-0}" != "1" ]; then
+    ask "Имя нового Amnezia-клиента" name ""
+  fi
+  [ -n "$name" ] || fail "Имя нового Amnezia-клиента пустое"
+  amneziawg_create_client_named "$name"
+}
+
+run_amnezia_client_delete_flow() {
+  amnezia_backend_notice
+  name="${AMZ_CLIENT_NAME:-}"
+  if [ -z "$name" ] && [ "${WARREN_LUCI_REQUEST:-0}" != "1" ]; then
+    ask "Имя Amnezia-клиента для удаления" name ""
+  fi
+  [ -n "$name" ] || fail "Имя Amnezia-клиента пустое"
+  amneziawg_delete_client_named "$name"
+}

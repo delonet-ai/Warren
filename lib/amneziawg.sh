@@ -29,6 +29,7 @@ detect_openwrt_arch() {
   AWG_OPENWRT_ARCH="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.arch' 2>/dev/null)"
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(opkg print-architecture 2>/dev/null | awk 'BEGIN {max=0} {if ($3 > max) {max = $3; arch = $2}} END {print arch}')"
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(opkg print-architecture 2>/dev/null | tail -n1 | awk '{print $2}')"
+  [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(apk --print-arch 2>/dev/null || true)"
   [ -n "$AWG_OPENWRT_ARCH" ] || fail "Не удалось определить архитектуру OpenWrt для AmneziaWG"
 }
 
@@ -76,7 +77,7 @@ verify_awg_prereqs() {
   command -v ubus >/dev/null 2>&1 || fail "Для установки AmneziaWG нужен ubus"
   command -v jsonfilter >/dev/null 2>&1 || fail "Для установки AmneziaWG нужен jsonfilter"
   command -v wget >/dev/null 2>&1 || fail "Для установки AmneziaWG нужен wget"
-  pkg_manager_is_opkg || fail "AmneziaWG install flow пока поддержан только на OpenWrt 24.10.x с opkg. Для 25.12.x нужна отдельная адаптация пакетов под apk."
+  pkg_manager >/dev/null 2>&1 || fail "Для установки AmneziaWG нужен пакетный менеджер opkg/apk"
 }
 
 awg_pkg_postfix() {
@@ -85,18 +86,33 @@ awg_pkg_postfix() {
 
 is_awg_pkg_installed() {
   pkg_name="$1"
-  opkg list-installed 2>/dev/null | grep -q "^${pkg_name} "
+  pkg_is_installed "$pkg_name"
+}
+
+awg_package_extensions() {
+  if pkg_manager_is_apk; then
+    printf "apk ipk"
+  else
+    printf "ipk apk"
+  fi
 }
 
 download_awg_package() {
   pkg_name="$1"
-  pkg_file="${pkg_name}$(awg_pkg_postfix).ipk"
-  pkg_url="${AWG_RELEASE_BASE_URL}/${pkg_file}"
-  pkg_path="${AWG_STAGE_DIR}/${pkg_file}"
+  postfix="$(awg_pkg_postfix)"
 
-  wget -qO "$pkg_path" "$pkg_url" || return 1
-  [ -s "$pkg_path" ] || return 1
-  printf "%s" "$pkg_path"
+  for ext in $(awg_package_extensions); do
+    pkg_file="${pkg_name}${postfix}.${ext}"
+    pkg_url="${AWG_RELEASE_BASE_URL}/${pkg_file}"
+    pkg_path="${AWG_STAGE_DIR}/${pkg_file}"
+    if wget -qO "$pkg_path" "$pkg_url" && [ -s "$pkg_path" ]; then
+      printf "%s" "$pkg_path"
+      return 0
+    fi
+    rm -f "$pkg_path" 2>/dev/null || true
+  done
+
+  return 1
 }
 
 install_awg_local_package() {
@@ -118,7 +134,7 @@ download_and_install_awg_package() {
 
   pkg_path="$(download_awg_package "$pkg_name")" || fail "Не удалось скачать пакет $pkg_name для OpenWrt ${AWG_OPENWRT_VERSION} / ${AWG_OPENWRT_ARCH} / ${AWG_OPENWRT_TARGET_MAIN}/${AWG_OPENWRT_SUBTARGET}"
   install_awg_local_package "$pkg_path"
-  say "${GREEN}DONE${NC}  Установлен пакет: $pkg_name"
+  say "${GREEN}DONE${NC}  Установлен пакет: $pkg_name ($(basename "$pkg_path"))"
 }
 
 ensure_qrencode_installed() {
@@ -399,14 +415,23 @@ amneziawg_clients_list() {
   amneziawg_require_server_ready
   say ""
   say "=== Private clients (${AWG_IFACE}) ==="
+  amneziawg_clients_tsv | while IFS='	' read -r name ip sec conf_file; do
+    [ -n "$name" ] || continue
+    say " - ${GREEN}${name}${NC}  [$sec]  allowed_ips: ${ip:-none}  config: ${conf_file:-missing}"
+  done
+  say ""
+}
+
+amneziawg_clients_tsv() {
   awg_peer_section_list | while read -r sec; do
     [ -n "$sec" ] || continue
     desc="$(uci -q get network."$sec".description || uci -q get network."$sec".name || true)"
     ips="$(uci -q get network."$sec".allowed_ips || true)"
-    [ -z "$desc" ] && desc="(no description)"
-    say " - ${GREEN}${desc}${NC}  [$sec]  allowed_ips: ${ips:-none}"
+    [ -n "$desc" ] || desc="$sec"
+    conf_file="$AWG_CLIENT_DIR/$desc.conf"
+    [ -f "$conf_file" ] || conf_file=""
+    printf "%s\t%s\t%s\t%s\n" "$desc" "$ips" "$sec" "$conf_file"
   done
-  say ""
 }
 
 amneziawg_show_conf_text() {
@@ -431,12 +456,12 @@ amneziawg_show_conf_qr() {
   say ""
 }
 
-amneziawg_create_client() {
+amneziawg_create_client_named() {
+  name="$1"
   amneziawg_require_server_ready
   mkdir -p "$AWG_CLIENT_DIR"
   [ -f "$AWG_SERVER_DIR/server.pub" ] || fail "Не найден $AWG_SERVER_DIR/server.pub (сервер AWG не настроен?)"
 
-  ask "Имя нового private-клиента (латиница, без пробелов)" name ""
   amneziawg_validate_client_name "$name" || fail "Имя клиента должно быть 1-32 символа: латиница, цифры, точка, подчёркивание или дефис"
   amneziawg_client_exists "$name" && fail "Клиент уже существует: $name"
 
@@ -444,9 +469,14 @@ amneziawg_create_client() {
   create_amneziawg_peer "$name" "$ip32"
 }
 
-amneziawg_delete_client() {
+amneziawg_create_client() {
+  ask "Имя нового private-клиента (латиница, без пробелов)" name ""
+  amneziawg_create_client_named "$name"
+}
+
+amneziawg_delete_client_named() {
+  name="$1"
   amneziawg_require_server_ready
-  ask "Имя private-клиента для удаления" name ""
   [ -n "$name" ] || fail "Имя пустое"
 
   sec="$(awg_find_section_by_name "$name")"
@@ -457,7 +487,16 @@ amneziawg_delete_client() {
   /etc/init.d/network restart >/dev/null 2>&1 || true
 
   rm -f "$AWG_CLIENT_DIR/$name.conf" 2>/dev/null || true
+  if command -v qos_remove_client >/dev/null 2>&1; then
+    qos_remove_client "$name" || true
+    qos_apply_rules >/dev/null 2>&1 || true
+  fi
   done_ "Private-клиент удалён: $name"
+}
+
+amneziawg_delete_client() {
+  ask "Имя private-клиента для удаления" name ""
+  amneziawg_delete_client_named "$name"
 }
 
 amneziawg_manage_menu() {

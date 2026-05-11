@@ -344,6 +344,16 @@ luci_apply_form_overrides() {
   esac
 
   case "${MODE:-}" in
+    amnezia_client_create|amnezia_client_delete)
+      AMZ_CLIENT_NAME="${LUCI_AMZ_CLIENT_NAME:-}"
+      ;;
+    qos_private)
+      QOS_CLIENT_NAME="${LUCI_QOS_CLIENT_NAME:-}"
+      QOS_PROFILE="${LUCI_QOS_PROFILE:-}"
+      ;;
+  esac
+
+  case "${MODE:-}" in
     auto|podkop_setup)
       LIST_RU="1"
       LIST_CF="1"
@@ -398,10 +408,10 @@ show_mode_banner() {
       say "${YELLOW}INFO${NC}  Режим резервного канала переведёт Podkop на URLTest с несколькими VLESS."
       ;;
     qos_private)
-      say "${YELLOW}WIP${NC}  QoS для Amnezia пока в разработке."
+      say "${YELLOW}INFO${NC}  QoS для Amnezia управляет DSCP-профилями клиентов через nft."
       ;;
-    amnezia_clients_ui_wip)
-      say "${YELLOW}WIP${NC}  Управление Amnezia клиентами из LuCI пока ждёт полноценные формы."
+    amnezia_client_create|amnezia_client_delete|manage_private)
+      say "${YELLOW}INFO${NC}  Управление Amnezia-клиентами работает через тот же backend, что shell, LuCI и TG."
       ;;
     sni_checker)
       say "${YELLOW}INFO${NC}  SNI-checker подготовит и запустит на VPS read-only проверку кандидатов для Reality."
@@ -431,7 +441,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|amnezia_clients_ui_wip|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       return 0
       ;;
     *)
@@ -790,7 +800,8 @@ run_service_mode() {
     shadowsocks_fallback_wip) run_shadowsocks_fallback_wip_flow ;;
     rf_bundle_wip) run_rf_bundle_wip_flow ;;
     qos_private) run_qos_flow ;;
-    amnezia_clients_ui_wip) run_amnezia_clients_ui_wip_flow ;;
+    amnezia_client_create) run_amnezia_client_create_flow ;;
+    amnezia_client_delete) run_amnezia_client_delete_flow ;;
     remote_admin) run_remote_admin_flow ;;
     usb_modem) run_usb_modem_flow ;;
     tg_bot) run_tg_bot_flow ;;
@@ -807,6 +818,12 @@ run_service_mode() {
 
 main() {
   warren_maybe_offer_update "$@"
+
+  if [ "${WARREN_CLI_ARG1:-}" = "--apply-qos" ]; then
+    MODE="qos_apply"
+    run_qos_apply_only
+    exit 0
+  fi
 
   if [ "${WARREN_CLI_ARG1:-}" = "--install-luci" ]; then
     MODE="initialize"
@@ -827,6 +844,9 @@ main() {
     LUCI_VPS_ROOT_PASSWORD="${VPS_ROOT_PASSWORD:-}"
     LUCI_TG_BOT_TOKEN="${TG_BOT_TOKEN:-}"
     LUCI_TG_BOT_CHAT_ID="${TG_BOT_CHAT_ID:-}"
+    LUCI_AMZ_CLIENT_NAME="${AMZ_CLIENT_NAME:-}"
+    LUCI_QOS_CLIENT_NAME="${QOS_CLIENT_NAME:-}"
+    LUCI_QOS_PROFILE="${QOS_PROFILE:-}"
     load_conf_if_exists || true
     WARREN_PREVIOUS_MODE="${MODE:-}"
     WARREN_PREVIOUS_STATE="$(get_state)"
