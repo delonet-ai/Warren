@@ -20,13 +20,13 @@ print_banner() {
 
 progress_stage() {
   st="$1"
-  if [ "$st" -lt 10 ]; then
+  if [ "$st" -lt 30 ]; then
     echo 0
-  elif [ "$st" -lt 20 ]; then
-    echo 1
-  elif [ "$st" -lt 30 ]; then
-    echo 2
   elif [ "$st" -lt 40 ]; then
+    echo 1
+  elif [ "$st" -lt 50 ]; then
+    echo 2
+  elif [ "$st" -lt 60 ]; then
     echo 3
   elif [ "$st" -lt 75 ]; then
     echo 4
@@ -44,6 +44,29 @@ progress_stage() {
     echo 10
   else
     echo 11
+  fi
+}
+
+basic_progress_stage() {
+  st="$1"
+  if [ "$st" -lt 10 ]; then
+    echo 0
+  elif [ "$st" -lt 20 ]; then
+    echo 1
+  elif [ "$st" -lt 30 ]; then
+    echo 2
+  elif [ "$st" -lt 40 ]; then
+    echo 3
+  elif [ "$st" -lt 45 ]; then
+    echo 4
+  elif [ "$st" -lt 50 ]; then
+    echo 5
+  elif [ "$st" -lt 60 ]; then
+    echo 6
+  elif [ "$st" -lt 70 ]; then
+    echo 7
+  else
+    echo 8
   fi
 }
 
@@ -68,6 +91,23 @@ print_progress() {
 
   say ""
   say "┌──────────────────────── Прогресс ────────────────────────────┐"
+  if [ "$mode_label" = "basic" ]; then
+    cur="$(basic_progress_stage "$st")"
+    _stage_line 0 "$cur" "Preflight: версия OpenWrt"
+    _stage_line 1 "$cur" "Preflight: интернет"
+    _stage_line 2 "$cur" "Preflight: время / TLS"
+    _stage_line 3 "$cur" "Установка пакетов (24 opkg / 25 apk)"
+    _stage_line 4 "$cur" "Проверка overlay"
+    _stage_line 5 "$cur" "Подготовка expand-root"
+    _stage_line 6 "$cur" "Expand-root (resize → reboot)"
+    _stage_line 7 "$cur" "Пакеты после reboot"
+    _stage_line 8 "$cur" "Финальная проверка места"
+    say "└──────────────────────────────────────────────────────────────┘"
+    say "State: $st"
+    say ""
+    return 0
+  fi
+
   _stage_line 0 "$cur" "Preflight (версия / интернет / время)"
   _stage_line 1 "$cur" "Установка пакетов (полный список)"
   _stage_line 2 "$cur" "Проверка места / подготовка expand-root"
@@ -287,6 +327,8 @@ auto_collect_inputs() {
 menu() {
   clear_terminal
   print_banner
+  PRE_MENU_MODE="${MODE:-}"
+  PRE_MENU_STATE="$(get_state)"
 
   say ""
   say "Главное меню:"
@@ -328,6 +370,12 @@ menu() {
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
 
+  if [ "$MODE" = "basic" ]; then
+    if [ "$PRE_MENU_MODE" != "basic" ] || [ "${PRE_MENU_STATE:-0}" -ge 75 ]; then
+      set_state 0
+    fi
+  fi
+
   VLESS="${VLESS:-}"
   LIST_RU="${LIST_RU:-1}"
   LIST_CF="${LIST_CF:-1}"
@@ -361,7 +409,9 @@ menu() {
 
   AWG_ENDPOINT=""
 
-  [ "$MODE" = "auto" ] && capture_runtime_inputs
+  if [ "$MODE" = "auto" ]; then
+    capture_runtime_inputs
+  fi
   save_conf
   done_ "Параметры сохранены в $CONF"
 }

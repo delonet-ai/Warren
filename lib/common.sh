@@ -12,7 +12,7 @@ say() {
 done_() {
   say "${GREEN}DONE${NC}  $*"
   case "${MODE:-}" in
-    vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|vps|podkop_backup|qos_private|amnezia_clients_ui_wip|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       ;;
     *)
       print_progress
@@ -201,7 +201,10 @@ warren_now_epoch() {
 
 warren_time_sane() {
   now="$(warren_now_epoch)"
-  [ "${now:-0}" -ge "$WARREN_TIME_MIN_EPOCH" ] && [ "${now:-0}" -le "$WARREN_TIME_MAX_EPOCH" ]
+  if [ "${now:-0}" -ge "$WARREN_TIME_MIN_EPOCH" ] && [ "${now:-0}" -le "$WARREN_TIME_MAX_EPOCH" ]; then
+    return 0
+  fi
+  return 1
 }
 
 warren_set_timezone_moscow() {

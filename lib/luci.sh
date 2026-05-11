@@ -7,33 +7,28 @@ luci_install_dir() {
 luci_install_prereqs() {
   pkg_manager >/dev/null 2>&1 || fail "LuCI UI installer не нашёл поддерживаемый пакетный менеджер OpenWrt."
 
-  if pkg_manager_is_apk && ! pkg_is_installed luci; then
-    info "OpenWrt 25.12.x: сначала ставлю базовый LuCI через apk -U add luci"
-    apk -U add luci || fail "Не удалось установить базовый пакет LuCI через apk."
-  fi
-
-  missing=""
-  [ -d /usr/lib/lua/luci ] || missing="$missing luci-base"
-  [ -d /www ] || missing="$missing uhttpd"
   if pkg_manager_is_opkg; then
-    if ! pkg_is_installed luci-compat; then
-      missing="$missing luci-compat"
-    fi
+    info "OpenWrt 24.10.x: проверяю LuCI/Lua runtime через opkg"
+    pkg_ensure_installed luci-base luci-compat uhttpd rpcd
   fi
+
   if pkg_manager_is_apk; then
-    if ! pkg_is_installed luci-lua-runtime; then
-      missing="$missing luci-lua-runtime"
-    fi
-    if ! pkg_is_installed luci-compat; then
-      missing="$missing luci-compat"
+    info "OpenWrt 25.12.x: проверяю LuCI/Lua runtime через apk"
+    missing=""
+    for pkg in luci luci-lua-runtime luci-compat uhttpd rpcd; do
+      pkg_is_installed "$pkg" || missing="$missing $pkg"
+    done
+    if [ -n "$missing" ]; then
+      # shellcheck disable=SC2086
+      apk -U add $missing || fail "Не удалось установить LuCI runtime через apk."
     fi
   fi
 
-  if [ -n "$missing" ]; then
-    info "Ставлю зависимости Warren UI:$missing"
-    # shellcheck disable=SC2086
-    pkg_ensure_installed $missing
-  fi
+  [ -d /usr/lib/lua/luci ] || fail "LuCI Lua runtime не найден после установки зависимостей."
+  [ -d /www ] || fail "Каталог /www не найден после установки LuCI/uhttpd."
+  [ -d /usr/share/luci/menu.d ] || mkdir -p /usr/share/luci/menu.d || fail "Не удалось создать /usr/share/luci/menu.d"
+  [ -d /usr/share/rpcd/acl.d ] || mkdir -p /usr/share/rpcd/acl.d || fail "Не удалось создать /usr/share/rpcd/acl.d"
+  [ -d /usr/libexec/warren ] || mkdir -p /usr/libexec/warren || fail "Не удалось создать /usr/libexec/warren"
 }
 
 luci_write_file() {
@@ -224,6 +219,19 @@ install_warren_luci_acl() {
     "luci-app-warren/root/usr/share/rpcd/acl.d/luci-app-warren.json"
 }
 
+verify_warren_luci_ui() {
+  [ -x /usr/bin/warren ] || fail "Проверка UI: /usr/bin/warren не установлен."
+  [ -x /usr/libexec/warren/warren-luci-run ] || fail "Проверка UI: warren-luci-run не установлен."
+  [ -r /usr/lib/lua/luci/controller/warren.lua ] || fail "Проверка UI: controller warren.lua не установлен."
+  [ -r /usr/lib/lua/luci/view/warren/index.htm ] || fail "Проверка UI: view index.htm не установлен."
+  [ -r /usr/share/luci/menu.d/luci-app-warren.json ] || fail "Проверка UI: menu.d JSON не установлен."
+  [ -r /usr/share/rpcd/acl.d/luci-app-warren.json ] || fail "Проверка UI: rpcd ACL JSON не установлен."
+
+  if command -v luac >/dev/null 2>&1; then
+    luac -p /usr/lib/lua/luci/controller/warren.lua >/dev/null 2>&1 || fail "Проверка UI: Lua controller не проходит luac -p."
+  fi
+}
+
 install_warren_luci_ui() {
   luci_install_dir
   luci_install_prereqs
@@ -236,6 +244,7 @@ install_warren_luci_ui() {
   install_warren_luci_view
   install_warren_luci_menu
   install_warren_luci_acl
+  verify_warren_luci_ui
 
   if [ -x /etc/init.d/uhttpd ]; then
     /etc/init.d/uhttpd restart >/dev/null 2>&1 || true

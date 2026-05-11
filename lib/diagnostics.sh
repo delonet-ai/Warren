@@ -146,6 +146,14 @@ warren_diag_check_dns() {
   fi
 }
 
+warren_diag_check_time() {
+  if warren_time_sane; then
+    warren_diag_ok "System time: корректное время для TLS ($(date +'%F %T %z'))"
+  else
+    warren_diag_bad "System time: неверное время для TLS ($(date +'%F %T %z')); Podkop/GitHub/HTTPS могут падать"
+  fi
+}
+
 warren_diag_check_tcp() {
   label="$1"
   host="$2"
@@ -221,6 +229,33 @@ warren_diag_check_podkop_runtime() {
   warren_diag_bad "Podkop: runtime не выглядит активным"
 }
 
+warren_diag_check_podkop_defaults() {
+  dns_server="$(uci -q get podkop.settings.dns_server 2>/dev/null || true)"
+  bootstrap_dns="$(uci -q get podkop.settings.bootstrap_dns_server 2>/dev/null || true)"
+  proxy_type="$(uci -q get podkop.main.proxy_config_type 2>/dev/null || true)"
+
+  if [ "$dns_server" = "9.9.9.9" ]; then
+    warren_diag_ok "Podkop DNS: основной DNS 9.9.9.9"
+  else
+    warren_diag_bad "Podkop DNS: основной DNS ${dns_server:-<unset>}, ожидается 9.9.9.9"
+  fi
+
+  if [ "$bootstrap_dns" = "77.88.8.8" ]; then
+    warren_diag_ok "Podkop DNS: bootstrap DNS 77.88.8.8"
+  else
+    warren_diag_bad "Podkop DNS: bootstrap DNS ${bootstrap_dns:-<unset>}, ожидается 77.88.8.8"
+  fi
+
+  case "$proxy_type" in
+    url|urltest|selector)
+      warren_diag_ok "Podkop mode: $proxy_type"
+      ;;
+    *)
+      warren_diag_bad "Podkop mode: ${proxy_type:-<unset>} не похож на рабочий proxy mode"
+      ;;
+  esac
+}
+
 warren_diag_capture_snapshot() {
   phase="$1"
   DIAG_OK_COUNT=0
@@ -260,15 +295,17 @@ warren_diag_capture_snapshot() {
   warren_diag_cmd "nft podkop/tproxy rules" sh -c 'nft list ruleset 2>&1 | grep -Ei "podkop|sing|tproxy|mark|dns|redirect" -C 3'
 
   warren_diag_section "ACTIVE CHECKS $phase"
+  warren_diag_check_time
   warren_diag_check_podkop_runtime
+  warren_diag_check_podkop_defaults
   warren_diag_check_proxy_engine
 
   warren_diag_check_ping "WAN gateway" "$wan_gw"
-  warren_diag_check_ping "Public IP 1.1.1.1" "1.1.1.1"
+  warren_diag_check_ping "Public IP 9.9.9.9" "9.9.9.9"
   warren_diag_check_ping "Public IP 8.8.8.8" "8.8.8.8"
   warren_diag_check_dns "Local resolver" "127.0.0.1" "ya.ru"
   warren_diag_check_dns "External resolver" "77.88.8.8" "ya.ru"
-  warren_diag_check_dns "External resolver" "1.1.1.1" "google.com"
+  warren_diag_check_dns "External resolver" "9.9.9.9" "google.com"
   warren_diag_check_tcp "OpenWrt downloads HTTPS" "downloads.openwrt.org" "443"
 
   if [ "${proxy_count:-0}" -gt 0 ]; then
@@ -406,10 +443,10 @@ run_diagnostics_flow() {
         warren_diag_capture_snapshot "after_dns_fallback"
         say ""
         say "После DNS-fallback: OK=$DIAG_LAST_OK, проблемы=$DIAG_LAST_BAD"
-        [ "$DIAG_LAST_BAD" -gt 0 ] && {
+        if [ "$DIAG_LAST_BAD" -gt 0 ]; then
           say "Оставшиеся проблемы:"
           printf "%s\n" "$DIAG_LAST_ISSUES" | sed '/^$/d' | sed 's/^/  /'
-        }
+        fi
         info "Возвращаю DNS-настройки Podkop как были до диагностики."
         warren_diag_restore_dns_settings
         ;;

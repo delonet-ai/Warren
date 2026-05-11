@@ -10,8 +10,8 @@ install_podkop() {
   download_file "$PODKOP_INSTALL_URL" /tmp/podkop-install.sh "$PODKOP_INSTALL_SHA256" "PODKOP_INSTALL"
   chmod +x /tmp/podkop-install.sh
 
-  if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
-    printf 'y\n' | sh /tmp/podkop-install.sh || fail "Установка Podkop через LuCI завершилась с ошибкой"
+  if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ] || [ "${MODE:-}" = "auto" ]; then
+    printf 'y\n' | sh /tmp/podkop-install.sh || fail "Установка Podkop завершилась с ошибкой"
   elif [ -r /dev/tty ]; then
     sh /tmp/podkop-install.sh </dev/tty >/dev/tty 2>&1
   else
@@ -30,6 +30,8 @@ podkop_use_preseeded_vless() {
     [ -r "${SELECTED_VPS_REPORT:-}" ] || fail "Не найден выбранный VPS-отчёт: ${SELECTED_VPS_REPORT:-}"
     VLESS="$(vps_report_vless_link "$SELECTED_VPS_REPORT")"
     [ -n "${VLESS:-}" ] || fail "Не удалось прочитать VLESS из выбранного VPS-отчёта."
+    conf_set VLESS "$VLESS"
+    conf_set SELECTED_VPS_REPORT "$SELECTED_VPS_REPORT"
   fi
 
   [ -n "${VLESS:-}" ] || return 1
@@ -173,12 +175,16 @@ configure_podkop_full() {
   if [ "${MODE:-}" = "auto" ]; then
     [ -n "${VLESS:-}" ] || fail "В авторежиме не подготовлена ссылка конфигурации для Podkop."
     proxy_link_supported "${VLESS:-}" || fail "В авторежиме подготовлена неподдерживаемая ссылка конфигурации для Podkop."
+    LIST_RU="1"
+    LIST_CF="1"
+    LIST_META="1"
+    LIST_GOOGLE_AI="1"
   else
     if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ] && podkop_use_preseeded_vless; then
-      LIST_RU="${LIST_RU:-1}"
-      LIST_CF="${LIST_CF:-1}"
-      LIST_META="${LIST_META:-1}"
-      LIST_GOOGLE_AI="${LIST_GOOGLE_AI:-1}"
+      LIST_RU="1"
+      LIST_CF="1"
+      LIST_META="1"
+      LIST_GOOGLE_AI="1"
     else
       podkop_standard_choose_vless || return 1
       podkop_prompt_lists
@@ -335,8 +341,8 @@ podkop_apply_urltest_links() {
 
   configure_podkop_common_settings
   uciq set podkop.main.proxy_config_type='urltest'
-  uciq -q del podkop.main.proxy_string
-  uciq -q del podkop.main.urltest_proxy_links
+  uciq -q del podkop.main.proxy_string || true
+  uciq -q del podkop.main.urltest_proxy_links || true
   printf "%s\n" "$links" | sed '/^$/d' | while IFS= read -r link; do
     uciq add_list podkop.main.urltest_proxy_links="$link"
   done
@@ -362,7 +368,52 @@ podkop_print_active_urltest_links() {
   fi
 }
 
+podkop_backup_preseeded_link() {
+  BACKUP_SOURCE_VLESS=""
+  BACKUP_SOURCE_REPORT=""
+
+  if [ -n "${SELECTED_VPS_REPORT:-}" ]; then
+    [ -r "${SELECTED_VPS_REPORT:-}" ] || fail "Не найден выбранный VPS-отчёт: ${SELECTED_VPS_REPORT:-}"
+    BACKUP_SOURCE_REPORT="$SELECTED_VPS_REPORT"
+    BACKUP_SOURCE_VLESS="$(vps_report_vless_link "$SELECTED_VPS_REPORT")"
+    [ -n "$BACKUP_SOURCE_VLESS" ] || fail "Не удалось прочитать VLESS из выбранного VPS-отчёта."
+  elif [ -n "${VLESS:-}" ]; then
+    BACKUP_SOURCE_VLESS="$VLESS"
+  else
+    fail "Для добавления резервного канала из LuCI выбери VPS-отчёт или введи VLESS-ссылку."
+  fi
+
+  proxy_link_supported "$BACKUP_SOURCE_VLESS" || fail "Резервная ссылка не поддерживается Podkop."
+}
+
+add_podkop_backup_channel_luci() {
+  podkop_require_existing_config
+  warren_require_sane_time "Podkop URLTest"
+
+  current_links="$(podkop_current_proxy_links | sed '/^$/d')"
+  [ -n "$current_links" ] || fail "Не удалось определить текущий VLESS в Podkop."
+
+  podkop_backup_preseeded_link
+  if podkop_link_in_list "$BACKUP_SOURCE_VLESS" "$current_links"; then
+    done_ "Этот резервный канал уже есть в Podkop"
+    podkop_print_active_urltest_links
+    return 0
+  fi
+
+  working_links="$(printf "%s\n%s\n" "$current_links" "$BACKUP_SOURCE_VLESS" | sed '/^$/d' | awk '!seen[$0]++')"
+  podkop_apply_urltest_links "$working_links"
+  done_ "Резервный канал добавлен в Podkop через URLTest"
+  podkop_print_active_urltest_links
+}
+
 add_podkop_backup_channel() {
+  warren_require_sane_time "Podkop URLTest"
+
+  if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+    add_podkop_backup_channel_luci
+    return 0
+  fi
+
   podkop_require_existing_config
 
   current_mode_label="$(podkop_current_proxy_mode_label)"

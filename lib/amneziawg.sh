@@ -283,7 +283,7 @@ configure_amneziawg_server() {
   uciq set network."$AWG_IFACE".private_key="$(cat "$AWG_SERVER_DIR/server.key")"
   uciq set network."$AWG_IFACE".listen_port="$AWG_LISTEN_PORT"
   uciq set network."$AWG_IFACE".defaultroute='0'
-  uciq -q del network."$AWG_IFACE".addresses
+  uciq -q del network."$AWG_IFACE".addresses || true
   uciq add_list network."$AWG_IFACE".addresses="${AWG_SERVER_IP}/24"
   uciq set network."$AWG_IFACE".awg_jc="$AWG_JC"
   uciq set network."$AWG_IFACE".awg_jmin="$AWG_JMIN"

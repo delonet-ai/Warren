@@ -147,6 +147,7 @@ main_keyboard() {
       [{text:"Amnezia клиенты",callback_data:"amz_menu"}],
       [{text:"Выбор Endpoint",callback_data:"endpoint_choose"}],
       [{text:"Редактор Endpoint",callback_data:"endpoint_editor"}],
+      [{text:"Последний VPS",callback_data:"getvps"}],
       [{text:"Статус",callback_data:"status"}]
     ]
   }'
@@ -636,8 +637,8 @@ use_endpoint() {
   [ -n "$endpoint" ] || return 1
   uci set podkop.main.proxy_config_type='url'
   uci set "podkop.main.proxy_string=${endpoint}"
-  uci -q del podkop.main.urltest_proxy_links
-  uci -q del podkop.main.selector_proxy_links
+  uci -q del podkop.main.urltest_proxy_links >/dev/null 2>&1 || true
+  uci -q del podkop.main.selector_proxy_links >/dev/null 2>&1 || true
   restart_podkop || return 2
   return 0
 }
@@ -646,8 +647,8 @@ use_auto_endpoint() {
   seed_endpoints
   [ -s "$ENDPOINTS" ] || return 1
   uci set podkop.main.proxy_config_type='urltest'
-  uci -q del podkop.main.proxy_string
-  uci -q del podkop.main.urltest_proxy_links
+  uci -q del podkop.main.proxy_string >/dev/null 2>&1 || true
+  uci -q del podkop.main.urltest_proxy_links >/dev/null 2>&1 || true
   while IFS= read -r endpoint; do
     [ -n "$endpoint" ] || continue
     uci add_list "podkop.main.urltest_proxy_links=${endpoint}"
@@ -1288,6 +1289,15 @@ handle_callback() {
       ;;
     status)
       send_keyboard "$chat_id" "$(status_text)" "$(main_keyboard)"
+      ;;
+    getvps)
+      report_file="$(latest_vps_report)"
+      if [ -r "$report_file" ]; then
+        send_message "$chat_id" "$(tg_vps_report_summary_text "$report_file")"
+        send_document "$chat_id" "$report_file" "Последний VPS-отчёт Warren" || true
+      else
+        send_keyboard "$chat_id" "Сохранённых VPS-отчётов пока нет." "$(main_keyboard)"
+      fi
       ;;
     *)
       send_keyboard "$chat_id" "Неизвестная кнопка. Вернул главное меню." "$(main_keyboard)"

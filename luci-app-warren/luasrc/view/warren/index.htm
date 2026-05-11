@@ -148,14 +148,14 @@ end
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>1) Базовые настройки</h3>
-        <p>Проверит OpenWrt, интернет и время, поставит базовые пакеты и подготовит место на overlay для дальнейшей настройки.</p>
+        <p>Неинтерактивный фундамент: OpenWrt 24/25, интернет, время, базовые пакеты, автоматический expand-root, ребут и post-reboot проверка.</p>
         <div class="warren-lights">
           <% render_tile_lights(basic_tile) %>
         </div>
         <% if basic_tile and basic_tile.resume then %>
           <p class="warren-muted"><% if basic_tile.failed then %>Последний запуск завершился с ошибкой. Можно продолжить с текущего шага.<% else %>Найдена незавершённая базовая настройка. После перезагрузки вернись сюда и нажми продолжение.<% end %></p>
         <% end %>
-        <p class="warren-note">Expand-root в базовом сценарии выполняется автоматически. После ребута просто снова открой Warren или запусти <code>warren</code>.</p>
+        <p class="warren-note">Expand-root в базовом сценарии всегда выполняется автоматически. После ребута просто снова открой Warren или запусти <code>warren</code>.</p>
         <input type="hidden" name="browser_epoch" value="" />
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="basic" />
@@ -235,7 +235,7 @@ end
     <div class="warren-grid">
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>4) Стандартная настройка Podkop</h3>
-        <p>Настроит Podkop на готовую VLESS-ссылку или выбранный VPS-отчёт. В LuCI для стандартной настройки community lists тоже включаются автоматически.</p>
+        <p>Настроит Podkop на готовую VLESS-ссылку или выбранный VPS-отчёт. DNS: 9.9.9.9, bootstrap DNS: 77.88.8.8, community lists включаются автоматически.</p>
         <div class="warren-form-grid">
           <div>
             <label>VPS-отчёт Warren</label>
@@ -258,7 +258,41 @@ end
 
       <div class="warren-card">
         <h3>Резервные каналы Podkop</h3>
-        <p class="warren-note">Логика резервных каналов уже есть в shell-режиме Warren. Следующий шаг для UI — отдельная форма с показом текущих каналов, выбором VPS-отчётов и ручным вводом ссылки без ухода в SSH.</p>
+        <p class="warren-note">Текущий режим: <strong><%=podkop and podkop.mode_label or "неизвестно"%></strong></p>
+        <% if podkop and podkop.channels and #podkop.channels > 0 then %>
+          <div class="warren-kv">
+            <% for i, channel in ipairs(podkop.channels) do %>
+              <div>Канал <%=i%></div><code><%=channel%></code>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="warren-muted">Текущие каналы пока не найдены.</p>
+        <% end %>
+        <form method="post" action="<%=url('admin/services/warren/run')%>">
+          <input type="hidden" name="token" value="<%=token%>" />
+          <input type="hidden" name="mode" value="podkop_backup" />
+          <div class="warren-form-grid">
+            <div>
+              <label>Добавить из VPS-отчёта</label>
+              <select name="selected_vps_report">
+                <option value="">не выбирать</option>
+                <% for _, r in ipairs(reports or {}) do %>
+                  <% if r.vless ~= "" and not r.in_podkop then %>
+                    <option value="<%=r.path%>"><%=r.host ~= "" and r.host or r.name%></option>
+                  <% end %>
+                <% end %>
+              </select>
+              <% if (backup_report_count or 0) == 0 then %>
+                <p class="warren-muted">Новых VPS-отчётов для добавления нет.</p>
+              <% end %>
+            </div>
+            <div>
+              <label>Или VLESS ссылка</label>
+              <input name="vless" type="text" placeholder="vless://..." />
+            </div>
+          </div>
+          <button class="btn cbi-button cbi-button-apply" type="submit">Добавить резервный канал</button>
+        </form>
       </div>
     </div>
   </section>
@@ -274,11 +308,11 @@ end
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>7) Управление Amnezia клиентами</h3>
-        <p>Открывает текущий рабочий менеджер клиентов: выдача конфигов, QR, удаление клиентов и базовое управление приватным доступом.</p>
+        <h3>7) Управление Amnezia клиентами (WIP в LuCI)</h3>
+        <p class="warren-muted">Shell-менеджер и Telegram-команды уже рабочие. Для LuCI нужен отдельный набор форм: создать, список, QR, экспорт, удаление.</p>
         <input type="hidden" name="token" value="<%=token%>" />
-        <input type="hidden" name="mode" value="manage_private" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Открыть текущий менеджер</button>
+        <input type="hidden" name="mode" value="amnezia_clients_ui_wip" />
+        <button class="btn cbi-button" type="submit">Открыть WIP</button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">

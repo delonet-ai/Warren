@@ -295,8 +295,11 @@ collect_vps_inputs() {
   conf_set VPS_SSH_PORT "$VPS_SSH_PORT"
   conf_set VPS_ROOT_PASSWORD "$VPS_ROOT_PASSWORD"
 
-  init_runtime_state
+  if [ "${MODE:-}" != "auto" ]; then
+    init_runtime_state
+  fi
   runtime_state_set "mode" "${MODE:-vps}"
+  runtime_state_set "auto_vps_source" "${AUTO_VPS_SOURCE:-}"
   runtime_state_set "vps_host" "$VPS_HOST"
   runtime_state_set "vps_ssh_port" "$VPS_SSH_PORT"
   runtime_state_set "vps_root_password" "$VPS_ROOT_PASSWORD"
@@ -827,9 +830,14 @@ handle_existing_vps_setup() {
   fi
 
   say "${YELLOW}INFO${NC}  На сервере уже найден установленный 3x-ui."
-  say "1) Пересоздать inbound"
-  say "2) Починить: снести 3x-ui и поставить заново"
-  ask "Выбор (1-2)" EXISTING_3XUI_ACTION "1"
+  if [ "${MODE:-}" = "auto" ] || [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+    EXISTING_3XUI_ACTION="1"
+    say "${YELLOW}INFO${NC}  В неинтерактивном режиме переиспользую 3x-ui и пересоздам inbound."
+  else
+    say "1) Пересоздать inbound"
+    say "2) Починить: снести 3x-ui и поставить заново"
+    ask "Выбор (1-2)" EXISTING_3XUI_ACTION "1"
+  fi
 
   case "$EXISTING_3XUI_ACTION" in
     1)

@@ -16,6 +16,8 @@ WARREN_ASSET_BASE_URL="${WARREN_ASSET_BASE_URL:-${BOOTSTRAP_ASSET_BASE_URL:-http
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || echo ".")"
 WARREN_DEV_DIR_DEFAULT="${SCRIPT_DIR}/.warren-dev"
+WARREN_CLI_ARG1="${1:-}"
+WARREN_CLI_ARG2="${2:-}"
 
 migrate_legacy_file_if_missing() {
   legacy_path="$1"
@@ -126,6 +128,8 @@ warren_install_bootstrap_file() {
 
   if [ -r "$src_path" ]; then
     cp "$src_path" "$tmp_path" || warren_die "Не удалось скопировать $src_path"
+  elif [ -r "$dst_path" ]; then
+    return 0
   else
     wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
   fi
@@ -316,17 +320,21 @@ luci_apply_form_overrides() {
   [ "${WARREN_LUCI_REQUEST:-0}" = "1" ] || return 0
 
   case "${MODE:-}" in
-    auto|podkop_setup|vps)
-      AUTO_VPS_SOURCE="${LUCI_AUTO_VPS_SOURCE:-}"
-      SELECTED_VPS_REPORT="${LUCI_SELECTED_VPS_REPORT:-}"
-      VLESS="${LUCI_VLESS:-}"
-      VPS_HOST="${LUCI_VPS_HOST:-}"
-      VPS_SSH_PORT="${LUCI_VPS_SSH_PORT:-22}"
-      VPS_ROOT_PASSWORD="${LUCI_VPS_ROOT_PASSWORD:-}"
+    auto|podkop_setup|podkop_backup|vps)
+      if [ "${WARREN_LUCI_FORM:-0}" = "1" ] || [ -n "${LUCI_AUTO_VPS_SOURCE:-}${LUCI_SELECTED_VPS_REPORT:-}${LUCI_VLESS:-}${LUCI_VPS_HOST:-}${LUCI_VPS_ROOT_PASSWORD:-}" ]; then
+        AUTO_VPS_SOURCE="${LUCI_AUTO_VPS_SOURCE:-}"
+        SELECTED_VPS_REPORT="${LUCI_SELECTED_VPS_REPORT:-}"
+        VLESS="${LUCI_VLESS:-}"
+        VPS_HOST="${LUCI_VPS_HOST:-}"
+        VPS_SSH_PORT="${LUCI_VPS_SSH_PORT:-22}"
+        VPS_ROOT_PASSWORD="${LUCI_VPS_ROOT_PASSWORD:-}"
+      fi
       ;;
   esac
 
-  [ -n "${LUCI_BROWSER_EPOCH:-}" ] && BROWSER_EPOCH="${LUCI_BROWSER_EPOCH:-}"
+  if [ -n "${LUCI_BROWSER_EPOCH:-}" ]; then
+    BROWSER_EPOCH="${LUCI_BROWSER_EPOCH:-}"
+  fi
 
   case "${MODE:-}" in
     tg_bot)
@@ -337,10 +345,10 @@ luci_apply_form_overrides() {
 
   case "${MODE:-}" in
     auto|podkop_setup)
-      LIST_RU="${LIST_RU:-1}"
-      LIST_CF="${LIST_CF:-1}"
-      LIST_META="${LIST_META:-1}"
-      LIST_GOOGLE_AI="${LIST_GOOGLE_AI:-1}"
+      LIST_RU="1"
+      LIST_CF="1"
+      LIST_META="1"
+      LIST_GOOGLE_AI="1"
       ;;
   esac
 
@@ -392,6 +400,9 @@ show_mode_banner() {
     qos_private)
       say "${YELLOW}WIP${NC}  QoS для Amnezia пока в разработке."
       ;;
+    amnezia_clients_ui_wip)
+      say "${YELLOW}WIP${NC}  Управление Amnezia клиентами из LuCI пока ждёт полноценные формы."
+      ;;
     sni_checker)
       say "${YELLOW}INFO${NC}  SNI-checker подготовит и запустит на VPS read-only проверку кандидатов для Reality."
       say "3x-ui, Xray, firewall и конфиги трогаться не будут."
@@ -411,7 +422,8 @@ show_mode_banner() {
 mode_target_state() {
   case "$MODE" in
     basic) echo 75 ;;
-    podkop_setup|auto) echo 95 ;;
+    podkop_setup) echo 95 ;;
+    auto) echo 100 ;;
     add_private) echo 120 ;;
     *) echo 0 ;;
   esac
@@ -419,7 +431,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|vps|podkop_backup|qos_private|amnezia_clients_ui_wip|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       return 0
       ;;
     *)
@@ -460,6 +472,32 @@ auto_require_saved_inputs() {
 
 prepare_auto_proxy_source() {
   [ "$MODE" = "auto" ] || return 0
+
+  st="$(get_state)"
+  if [ "$st" -ge 85 ]; then
+    case "${AUTO_VPS_SOURCE:-}" in
+      new_vps|report)
+        if [ -z "${VLESS:-}" ] && [ -n "${SELECTED_VPS_REPORT:-}" ]; then
+          VLESS="$(vps_report_vless_link "${SELECTED_VPS_REPORT:-}")"
+          if [ -n "${VLESS:-}" ]; then
+            conf_set VLESS "$VLESS"
+          fi
+        fi
+        [ -n "${VLESS:-}" ] || fail "Auto resume: proxy-ссылка уже должна быть подготовлена, но VLESS пустой."
+        proxy_link_supported "${VLESS:-}" || fail "Auto resume: сохранённая proxy-ссылка не поддерживается Podkop."
+        runtime_state_set "vless" "$VLESS"
+        runtime_state_set "selected_vps_report" "${SELECTED_VPS_REPORT:-}"
+        return 0
+        ;;
+      link)
+        [ -n "${VLESS:-}" ] || fail "Auto resume: сохранённая proxy-ссылка пуста."
+        proxy_link_supported "${VLESS:-}" || fail "Auto resume: сохранённая proxy-ссылка не поддерживается Podkop."
+        runtime_state_set "vless" "$VLESS"
+        runtime_state_set "selected_vps_report" ""
+        return 0
+        ;;
+    esac
+  fi
 
   case "${AUTO_VPS_SOURCE:-}" in
     new_vps)
@@ -517,20 +555,86 @@ ensure_warren_ui_for_auto() {
   set_state 80
 }
 
+print_component_status_line() {
+  label="$1"
+  status="$2"
+  detail="$3"
+
+  if [ -n "$detail" ]; then
+    say "$label: $status ($detail)"
+  else
+    say "$label: $status"
+  fi
+}
+
+print_installed_components_summary() {
+  say "Installed components:"
+
+  if [ -x /usr/bin/warren ]; then
+    print_component_status_line "  Warren launcher" "installed" "/usr/bin/warren"
+  else
+    print_component_status_line "  Warren launcher" "missing" "/usr/bin/warren"
+  fi
+
+  if [ -r /usr/lib/lua/luci/controller/warren.lua ] && [ -r /usr/lib/lua/luci/view/warren/index.htm ]; then
+    print_component_status_line "  Warren LuCI" "installed" "Services -> Warren"
+  else
+    print_component_status_line "  Warren LuCI" "missing" ""
+  fi
+
+  if uci -q get podkop.main >/dev/null 2>&1; then
+    print_component_status_line "  Podkop" "configured" "$(uci -q get podkop.main.proxy_config_type 2>/dev/null || echo unknown)"
+  else
+    print_component_status_line "  Podkop" "not configured" ""
+  fi
+
+  if uci -q get network."$(podkop_private_iface)".proto 2>/dev/null | grep -qx 'amneziawg'; then
+    print_component_status_line "  AmneziaWG" "configured" "$(podkop_private_iface)"
+  else
+    print_component_status_line "  AmneziaWG" "not configured" ""
+  fi
+
+  if [ -x /etc/init.d/warren-tg-bot ]; then
+    print_component_status_line "  Telegram bot" "installed" "/etc/init.d/warren-tg-bot"
+  else
+    print_component_status_line "  Telegram bot" "not installed" ""
+  fi
+}
+
+print_podkop_proxy_summary() {
+  podkop_mode="$(uci -q get podkop.main.proxy_config_type 2>/dev/null || echo unknown)"
+  say "Podkop mode: $podkop_mode"
+  say "Current proxy link(s):"
+
+  proxy_links="$(podkop_current_proxy_links | sed '/^$/d' || true)"
+  if [ -n "$proxy_links" ]; then
+    proxy_index=1
+    printf "%s\n" "$proxy_links" | while IFS= read -r proxy_link; do
+      [ -n "$proxy_link" ] || continue
+      say "  $proxy_index) $proxy_link"
+      proxy_index=$((proxy_index + 1))
+    done
+  elif [ -n "${VLESS:-}" ]; then
+    say "  1) $VLESS"
+  else
+    say "  unknown"
+  fi
+}
+
 print_auto_final_summary() {
   [ "$MODE" = "auto" ] || return 0
 
   st="$(get_state)"
-  if [ "$st" -lt 95 ]; then
-    set_state 95
+  if [ "$st" -lt 100 ]; then
+    set_state 100
   fi
 
   say ""
   say "=== Итог полного авторежима ==="
   say "OpenWrt: $(openwrt_release_version)"
-  say "UI Warren: /usr/bin/warren"
-  say "Podkop mode: $(uci -q get podkop.main.proxy_config_type 2>/dev/null || echo unknown)"
-  say "Proxy link: ${VLESS:-unknown}"
+  say "Auto proxy source: ${AUTO_VPS_SOURCE:-unknown}"
+  print_installed_components_summary
+  print_podkop_proxy_summary
 
   if [ -r "${SELECTED_VPS_REPORT:-}" ]; then
     say ""
@@ -579,7 +683,10 @@ should_resume_current_mode() {
     return 1
   fi
 
-  [ "$target" -gt 0 ] && [ "$st" -gt 0 ] && [ "$st" -lt "$target" ]
+  if [ "$target" -gt 0 ] && [ "$st" -gt 0 ] && [ "$st" -lt "$target" ]; then
+    return 0
+  fi
+  return 1
 }
 
 run_basic_flow() {
@@ -588,6 +695,7 @@ run_basic_flow() {
   st="$(get_state)"
   log "state=$st mode=$MODE"
   if [ "$st" -lt 10 ]; then
+    basic_stage_note preflight
     check_openwrt
     set_state 10
   fi
@@ -606,6 +714,7 @@ run_basic_flow() {
 
   st="$(get_state)"
   if [ "$st" -lt 40 ]; then
+    basic_stage_note packages
     if install_full_pkg_list; then
       set_state 40
     else
@@ -616,6 +725,7 @@ run_basic_flow() {
 
   st="$(get_state)"
   if [ "$st" -lt 45 ]; then
+    basic_stage_note overlay
     check_space_overlay
     set_state 45
   fi
@@ -629,11 +739,13 @@ run_basic_flow() {
 
   st="$(get_state)"
   if [ "$st" -lt 60 ]; then
+    basic_stage_note reboot
     expand_root_run_and_reboot
   fi
 
   st="$(get_state)"
   if [ "$st" -lt 70 ]; then
+    basic_stage_note post_reboot
     install_full_pkg_list
     set_state 70
   fi
@@ -678,6 +790,7 @@ run_service_mode() {
     shadowsocks_fallback_wip) run_shadowsocks_fallback_wip_flow ;;
     rf_bundle_wip) run_rf_bundle_wip_flow ;;
     qos_private) run_qos_flow ;;
+    amnezia_clients_ui_wip) run_amnezia_clients_ui_wip_flow ;;
     remote_admin) run_remote_admin_flow ;;
     usb_modem) run_usb_modem_flow ;;
     tg_bot) run_tg_bot_flow ;;
@@ -695,15 +808,16 @@ run_service_mode() {
 main() {
   warren_maybe_offer_update "$@"
 
-  if [ "${1:-}" = "--install-luci" ]; then
+  if [ "${WARREN_CLI_ARG1:-}" = "--install-luci" ]; then
     MODE="initialize"
     install_warren_luci_ui
     exit 0
   fi
 
-  if [ "${1:-}" = "--luci-run" ]; then
-    MODE="${2:-}"
+  if [ "${WARREN_CLI_ARG1:-}" = "--luci-run" ]; then
+    MODE="${WARREN_CLI_ARG2:-}"
     [ -n "$MODE" ] || fail "Не задан режим Warren для LuCI"
+    WARREN_REQUESTED_LUCI_MODE="$MODE"
     LUCI_AUTO_VPS_SOURCE="${AUTO_VPS_SOURCE:-}"
     LUCI_SELECTED_VPS_REPORT="${SELECTED_VPS_REPORT:-}"
     LUCI_VLESS="${VLESS:-}"
@@ -714,7 +828,15 @@ main() {
     LUCI_TG_BOT_TOKEN="${TG_BOT_TOKEN:-}"
     LUCI_TG_BOT_CHAT_ID="${TG_BOT_CHAT_ID:-}"
     load_conf_if_exists || true
+    WARREN_PREVIOUS_MODE="${MODE:-}"
+    WARREN_PREVIOUS_STATE="$(get_state)"
+    MODE="$WARREN_REQUESTED_LUCI_MODE"
     WARREN_LUCI_REQUEST=1
+    if [ "$MODE" = "basic" ]; then
+      if [ "$WARREN_PREVIOUS_MODE" != "basic" ] || [ "${WARREN_PREVIOUS_STATE:-0}" -ge 75 ]; then
+        set_state 0
+      fi
+    fi
     conf_set MODE "$MODE"
     luci_apply_form_overrides
   fi

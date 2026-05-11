@@ -63,13 +63,26 @@ run_amnezia_private_flow() {
   [ -f "$AWG_SERVER_DIR/server.key" ] || [ "$st" -lt 100 ] || st=100
   uci -q get network."$AWG_IFACE".proto 2>/dev/null | grep -qx 'amneziawg' || [ "$st" -lt 110 ] || st=110
 
-  [ "$st" -lt 100 ] && install_amneziawg && set_state 100
-  [ "$st" -lt 110 ] && configure_amneziawg_server && set_state 110
-  [ "$MODE" = "add_private" ] && [ "$st" -lt 115 ] && patch_podkop_add_private_iface_only "$AWG_IFACE" && set_state 115
+  if [ "$st" -lt 100 ]; then
+    install_amneziawg
+    set_state 100
+  fi
+
+  if [ "$st" -lt 110 ]; then
+    configure_amneziawg_server
+    set_state 110
+  fi
+
+  if [ "$MODE" = "add_private" ] && [ "$st" -lt 115 ]; then
+    patch_podkop_add_private_iface_only "$AWG_IFACE"
+    set_state 115
+  fi
 
   if [ "$st" -lt 120 ]; then
     amnezia_collect_clients_count
-    [ "$PEERS" -gt 0 ] && amnezia_create_initial_awg_clients
+    if [ "$PEERS" -gt 0 ]; then
+      amnezia_create_initial_awg_clients
+    fi
     set_state 120
   fi
 

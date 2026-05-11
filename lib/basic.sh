@@ -41,13 +41,12 @@ sync_time() {
 
 install_full_pkg_list() {
   common_pkgs="parted losetup resize2fs blkid e2fsprogs block-mount fstrim tune2fs ca-bundle ca-certificates curl tcpdump kmod-nft-tproxy"
+  essential_pkgs="$common_pkgs ip-full"
 
   if pkg_manager_is_apk; then
-    essential_pkgs="$common_pkgs ip-full"
     optional_pkgs="nano-full wget-ssl"
   else
-    essential_pkgs="$common_pkgs ss wget-ssl"
-    optional_pkgs="nano-full"
+    optional_pkgs="nano-full wget-ssl"
   fi
 
   # shellcheck disable=SC2086
@@ -81,7 +80,7 @@ overlay_report_and_prepare_expand() {
 
   say ""
   say "Overlay (место под пакеты): всего ${total_mb}MB, занято ${used_mb}MB, свободно ${avail_mb}MB"
-  say "Продолжаю с автоматическим expand-root."
+  say "Expand-root выполняется автоматически, без дополнительных вопросов."
   say ""
   return 0
 }
@@ -90,4 +89,14 @@ check_space_overlay() {
   free_kb="$(df -k /overlay 2>/dev/null | awk 'NR==2 {print $4}')"
   [ -n "$free_kb" ] || fail "Не вижу /overlay"
   done_ "Свободно /overlay: $((free_kb/1024)) MB"
+}
+
+basic_stage_note() {
+  case "$1" in
+    preflight) info "Basic: preflight (OpenWrt / интернет / время)" ;;
+    packages) info "Basic: установка базовых пакетов через $(pkg_manager)" ;;
+    overlay) info "Basic: проверка overlay и подготовка expand-root" ;;
+    reboot) info "Basic: автоматический expand-root и ребут" ;;
+    post_reboot) info "Basic: post-reboot проверка пакетов и места" ;;
+  esac
 }
