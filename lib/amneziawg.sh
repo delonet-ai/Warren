@@ -27,6 +27,9 @@ detect_openwrt_version() {
 
 detect_openwrt_arch() {
   AWG_OPENWRT_ARCH="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.arch' 2>/dev/null || true)"
+  if [ -z "$AWG_OPENWRT_ARCH" ] && pkg_manager_is_apk && [ -r /etc/apk/arch ]; then
+    AWG_OPENWRT_ARCH="$(sed -n '1p' /etc/apk/arch | tr -d '\r')"
+  fi
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(opkg print-architecture 2>/dev/null | awk 'BEGIN {max=0} {if ($3 > max) {max = $3; arch = $2}} END {print arch}')"
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(opkg print-architecture 2>/dev/null | tail -n1 | awk '{print $2}')"
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(apk --print-arch 2>/dev/null || true)"
