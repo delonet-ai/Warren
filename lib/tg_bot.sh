@@ -411,15 +411,22 @@ amz_qos_apply_after_delete() {
   nft add chain inet warren_qos prerouting '{ type filter hook prerouting priority mangle; policy accept; }' >/dev/null 2>&1 || return 0
   while IFS='	' read -r qname ip32 profile; do
     [ -n "$qname" ] || continue
+    limit_kbytes=""
     case "$profile" in
       standard) dscp="cs0" ;;
       priority) dscp="cs5" ;;
       bulk) dscp="cs1" ;;
+      limit_1mbit) dscp="cs0"; limit_kbytes="125" ;;
+      limit_10mbit) dscp="cs0"; limit_kbytes="1250" ;;
       *) continue ;;
     esac
     ip="${ip32%/32}"
     printf "%s" "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || continue
     nft add rule inet warren_qos prerouting ip saddr "$ip" ip dscp set "$dscp" comment "warren:${qname}:${profile}" >/dev/null 2>&1 || true
+    if [ -n "$limit_kbytes" ]; then
+      nft add rule inet warren_qos prerouting ip saddr "$ip" limit rate over "$limit_kbytes" kbytes/second drop comment "warren:${qname}:${profile}:up" >/dev/null 2>&1 || true
+      nft add rule inet warren_qos prerouting ip daddr "$ip" limit rate over "$limit_kbytes" kbytes/second drop comment "warren:${qname}:${profile}:down" >/dev/null 2>&1 || true
+    fi
   done < "$QOS_STATE_FILE"
 }
 

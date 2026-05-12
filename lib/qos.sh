@@ -6,6 +6,16 @@ qos_profile_dscp() {
     standard) printf "%s" "cs0" ;;
     priority) printf "%s" "cs5" ;;
     bulk) printf "%s" "cs1" ;;
+    limit_1mbit) printf "%s" "cs0" ;;
+    limit_10mbit) printf "%s" "cs0" ;;
+    *) return 1 ;;
+  esac
+}
+
+qos_profile_limit_kbytes() {
+  case "$1" in
+    limit_1mbit) printf "%s" "125" ;;
+    limit_10mbit) printf "%s" "1250" ;;
     *) return 1 ;;
   esac
 }
@@ -15,6 +25,8 @@ qos_profile_label() {
     standard) printf "%s" "standard / обычный" ;;
     priority) printf "%s" "priority / высокий приоритет" ;;
     bulk) printf "%s" "bulk / фоновый" ;;
+    limit_1mbit) printf "%s" "limit-1 / DSCP cs0 + 1 Mbps up/down" ;;
+    limit_10mbit) printf "%s" "limit-10 / DSCP cs0 + 10 Mbps up/down" ;;
     off) printf "%s" "off / снять профиль" ;;
     *) printf "%s" "$1" ;;
   esac
@@ -98,6 +110,10 @@ qos_apply_rules() {
     printf "%s" "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || continue
     nft_comment="warren_${q_name}_${q_profile}"
     nft add rule inet warren_qos prerouting ip saddr "$ip" ip dscp set "$dscp" comment "$nft_comment" >/dev/null 2>&1 || warn "Не удалось добавить QoS-правило для $q_name"
+    if limit_kbytes="$(qos_profile_limit_kbytes "$q_profile" 2>/dev/null)"; then
+      nft add rule inet warren_qos prerouting ip saddr "$ip" limit rate over "$limit_kbytes" kbytes/second drop comment "${nft_comment}_up" >/dev/null 2>&1 || warn "Не удалось добавить upload-limit для $q_name"
+      nft add rule inet warren_qos prerouting ip daddr "$ip" limit rate over "$limit_kbytes" kbytes/second drop comment "${nft_comment}_down" >/dev/null 2>&1 || warn "Не удалось добавить download-limit для $q_name"
+    fi
   done < "$QOS_STATE_FILE"
 }
 
@@ -135,12 +151,16 @@ run_qos_flow() {
     say "1) standard — обычный трафик"
     say "2) priority — высокий приоритет"
     say "3) bulk — фоновый трафик"
+    say "4) limit-1 — обычный DSCP cs0 + лимит 1 Mbps up/down"
+    say "5) limit-10 — обычный DSCP cs0 + лимит 10 Mbps up/down"
     say "0) off — снять профиль"
     ask "Выбор профиля" choice "1"
     case "$choice" in
       1|standard) profile="standard" ;;
       2|priority) profile="priority" ;;
       3|bulk) profile="bulk" ;;
+      4|limit-1|limit_1mbit) profile="limit_1mbit" ;;
+      5|limit-10|limit_10mbit) profile="limit_10mbit" ;;
       0|off) profile="off" ;;
       *) fail "Неверный профиль QoS: $choice" ;;
     esac

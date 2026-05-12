@@ -391,8 +391,8 @@ local function validate_run_form(mode)
 
   if mode == "qos_private" then
     if qos_client_name == "" then return false, "Выбери Amnezia-клиента для QoS." end
-    if qos_profile ~= "standard" and qos_profile ~= "priority" and qos_profile ~= "bulk" and qos_profile ~= "off" then
-      return false, "Выбери QoS-профиль: standard, priority, bulk или off."
+    if qos_profile ~= "standard" and qos_profile ~= "priority" and qos_profile ~= "bulk" and qos_profile ~= "limit_1mbit" and qos_profile ~= "limit_10mbit" and qos_profile ~= "off" then
+      return false, "Выбери QoS-профиль: standard, priority, bulk, limit_1mbit, limit_10mbit или off."
     end
     return true
   end

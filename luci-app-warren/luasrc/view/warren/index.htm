@@ -40,15 +40,15 @@
 .warren-kv{display:grid;grid-template-columns:128px minmax(0,1fr);gap:4px 10px;font-size:.92rem}
 .warren-kv code{white-space:pre-wrap;word-break:break-all}
 .warren-log{white-space:pre-wrap;max-height:340px;overflow:auto;background:#080c12;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:12px;font-size:.85rem}
-.warren-pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;font-size:.82rem}
-.warren-qr{white-space:pre;font-family:monospace;line-height:.78;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:8px;overflow:auto;font-size:5px;max-height:300px}
+.warren-pre{white-space:pre-wrap;max-height:210px;overflow:auto;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;font-size:.78rem}
+.warren-qr{white-space:pre;font-family:monospace;line-height:.72;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;overflow:auto;font-size:6px;min-height:260px;max-height:430px}
 .warren-client-layout{display:grid;grid-template-columns:minmax(210px,280px) minmax(0,1fr);gap:12px;align-items:start}
 .warren-client-list{display:flex;flex-direction:column;gap:8px}
 .warren-client-button{width:100%;text-align:left;border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);color:var(--warren-text);padding:8px;cursor:pointer}
 .warren-client-button.active{border-color:var(--warren-accent);background:rgba(59,130,246,.18)}
 .warren-client-detail{display:none}
 .warren-client-detail.active{display:block}
-.warren-client-detail-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,360px);gap:12px}
+.warren-client-detail-grid{display:grid;grid-template-columns:minmax(300px,430px) minmax(0,1fr);gap:12px;align-items:start}
 .warren-qos-help{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:10px}
 .warren-qos-help div{border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);padding:8px}
 .warren-qos-placeholder{margin-top:12px;border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);padding:10px}
@@ -68,7 +68,7 @@
 .warren-note{font-size:.92rem;color:var(--warren-note);line-height:1.45}
 @media (max-width: 760px){
   .warren-client-layout,.warren-client-detail-grid{grid-template-columns:1fr}
-  .warren-qr{font-size:4px}
+  .warren-qr{font-size:4px;min-height:220px}
 }
 </style>
 
@@ -372,58 +372,8 @@ end
 
   <section id="panel-awg" class="warren-panel">
     <div class="warren-grid">
-      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>5) Доустановить Amnezia в Podkop</h3>
-        <p>Поставит AmneziaWG, поднимет приватный интерфейс и добавит его в Podkop, чтобы клиенты могли ходить через приватный доступ.</p>
-        <input type="hidden" name="token" value="<%=token%>" />
-        <input type="hidden" name="mode" value="add_private" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Установить Amnezia</button>
-      </form>
-
-      <div class="warren-card">
-        <h3>6) QoS для Amnezia</h3>
-        <p class="warren-note">Профили v1 выставляют DSCP через nft для IP выбранного Amnezia-клиента и сохраняются в <code>/etc/warren/amnezia-qos.tsv</code>.</p>
-        <div class="warren-qos-help">
-          <div><strong>standard</strong><br /><span class="warren-muted">Обычный трафик без повышения приоритета. DSCP <code>cs0</code>.</span></div>
-          <div><strong>priority</strong><br /><span class="warren-muted">Помечает клиента как важный трафик. DSCP <code>cs5</code>.</span></div>
-          <div><strong>bulk</strong><br /><span class="warren-muted">Фоновый трафик: загрузки, синхронизации, неважные задачи. DSCP <code>cs1</code>.</span></div>
-          <div><strong>off</strong><br /><span class="warren-muted">Снимает профиль и удаляет правило Warren из nft.</span></div>
-        </div>
-        <form method="post" action="<%=url('admin/services/warren/run')%>">
-          <input type="hidden" name="token" value="<%=token%>" />
-          <input type="hidden" name="mode" value="qos_private" />
-          <div class="warren-form-grid">
-            <div>
-              <label>Клиент</label>
-              <select name="qos_client_name">
-                <% for _, c in ipairs(amnezia_clients or {}) do %>
-                  <option value="<%=c.name%>"><%=c.name%><% if c.qos_profile ~= "" then %> — <%=c.qos_profile%><% end %></option>
-                <% end %>
-              </select>
-            </div>
-            <div>
-              <label>Профиль</label>
-              <select name="qos_profile">
-                <option value="standard">standard / обычный</option>
-                <option value="priority">priority / высокий приоритет</option>
-                <option value="bulk">bulk / фоновый</option>
-                <option value="off">off / снять профиль</option>
-              </select>
-            </div>
-          </div>
-          <% if not amnezia_clients or #amnezia_clients == 0 then %>
-            <p class="warren-muted">Amnezia-клиенты пока не найдены. Сначала установи Amnezia и создай клиента.</p>
-          <% end %>
-          <button class="btn cbi-button cbi-button-apply" type="submit" <% if not amnezia_clients or #amnezia_clients == 0 then %>disabled="disabled"<% end %>>Применить QoS</button>
-        </form>
-        <div class="warren-qos-placeholder">
-          <h3>Профили QoS (WIP)</h3>
-          <p class="warren-muted">Здесь будет настройка пользовательских профилей: имя, DSCP-класс и, позже, правила применения. Сейчас доступны фиксированные профили v1 выше.</p>
-        </div>
-      </div>
-
       <div class="warren-card warren-wide">
-        <h3>7) Управление Amnezia клиентами</h3>
+        <h3>Управление Amnezia клиентами</h3>
         <form method="post" action="<%=url('admin/services/warren/run')%>">
           <input type="hidden" name="token" value="<%=token%>" />
           <input type="hidden" name="mode" value="amnezia_client_create" />
@@ -458,19 +408,19 @@ end
                   </div>
                   <div class="warren-client-detail-grid">
                     <div>
-                      <h3>Конфиг</h3>
-                      <% if c.conf_text ~= "" then %>
-                        <pre class="warren-pre"><%=c.conf_text%></pre>
-                      <% else %>
-                        <p class="warren-muted">Файл конфига клиента не найден. Если имя похоже на <code>@amneziawg_awg0[0]</code>, это orphan UCI peer без клиентского файла; его лучше чистить отдельным repair-действием, а не обычным удалением клиента.</p>
-                      <% end %>
-                    </div>
-                    <div>
                       <h3>QR</h3>
                       <% if c.qr_utf8 ~= "" then %>
                         <pre class="warren-qr"><%=c.qr_utf8%></pre>
                       <% else %>
                         <p class="warren-muted">QR недоступен без клиентского config-файла.</p>
+                      <% end %>
+                    </div>
+                    <div>
+                      <h3>Конфиг</h3>
+                      <% if c.conf_text ~= "" then %>
+                        <pre class="warren-pre"><%=c.conf_text%></pre>
+                      <% else %>
+                        <p class="warren-muted">Файл конфига клиента не найден. Если имя похоже на <code>@amneziawg_awg0[0]</code>, это orphan UCI peer без клиентского файла; его лучше чистить отдельным repair-действием, а не обычным удалением клиента.</p>
                       <% end %>
                     </div>
                   </div>
@@ -485,6 +435,52 @@ end
             </div>
           </div>
         <% end %>
+      </div>
+
+      <div class="warren-card warren-wide">
+        <h3>QoS для Amnezia</h3>
+        <p class="warren-note">Профили v1 выставляют DSCP через nft для IP выбранного Amnezia-клиента и сохраняются в <code>/etc/warren/amnezia-qos.tsv</code>. Лимитные профили дополнительно режут upload/download грубым nft-limit по IP клиента.</p>
+        <form method="post" action="<%=url('admin/services/warren/run')%>">
+          <input type="hidden" name="token" value="<%=token%>" />
+          <input type="hidden" name="mode" value="qos_private" />
+          <div class="warren-form-grid">
+            <div>
+              <label>Клиент</label>
+              <select name="qos_client_name">
+                <% for _, c in ipairs(amnezia_clients or {}) do %>
+                  <option value="<%=c.name%>"><%=c.name%><% if c.qos_profile ~= "" then %> — <%=c.qos_profile%><% end %></option>
+                <% end %>
+              </select>
+            </div>
+            <div>
+              <label>Профиль</label>
+              <select name="qos_profile">
+                <option value="standard">standard / DSCP cs0</option>
+                <option value="priority">priority / DSCP cs5</option>
+                <option value="bulk">bulk / DSCP cs1</option>
+                <option value="limit_1mbit">limit-1 / cs0 + 1 Mbps up/down</option>
+                <option value="limit_10mbit">limit-10 / cs0 + 10 Mbps up/down</option>
+                <option value="off">off / снять профиль</option>
+              </select>
+            </div>
+          </div>
+          <% if not amnezia_clients or #amnezia_clients == 0 then %>
+            <p class="warren-muted">Amnezia-клиенты пока не найдены. Сначала установи Amnezia и создай клиента.</p>
+          <% end %>
+          <button class="btn cbi-button cbi-button-apply" type="submit" <% if not amnezia_clients or #amnezia_clients == 0 then %>disabled="disabled"<% end %>>Применить QoS</button>
+        </form>
+        <div class="warren-qos-help">
+          <div><strong>standard</strong><br /><span class="warren-muted">Обычный трафик без повышения приоритета. DSCP <code>cs0</code>.</span></div>
+          <div><strong>priority</strong><br /><span class="warren-muted">Важный клиентский трафик. DSCP <code>cs5</code>.</span></div>
+          <div><strong>bulk</strong><br /><span class="warren-muted">Фоновый трафик: загрузки, синхронизации. DSCP <code>cs1</code>.</span></div>
+          <div><strong>limit-1</strong><br /><span class="warren-muted">DSCP <code>cs0</code> и лимит примерно 1 Mbps в обе стороны.</span></div>
+          <div><strong>limit-10</strong><br /><span class="warren-muted">DSCP <code>cs0</code> и лимит примерно 10 Mbps в обе стороны.</span></div>
+          <div><strong>off</strong><br /><span class="warren-muted">Снимает профиль и удаляет правило Warren из nft.</span></div>
+        </div>
+        <div class="warren-qos-placeholder">
+          <h3>Профили QoS (WIP)</h3>
+          <p class="warren-muted">Здесь будет настройка пользовательских профилей: имя, DSCP-класс и лимиты. Сейчас доступны пять фиксированных профилей выше.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -502,6 +498,14 @@ end
           <div><label>Chat ID</label><input name="tg_chat_id" type="text" placeholder="можно пустым" /></div>
         </div>
         <button class="btn cbi-button cbi-button-apply" type="submit">Установить TG</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Доустановить AWG в Podkop</h3>
+        <p>Поставит AmneziaWG, поднимет приватный интерфейс и добавит его в Podkop, чтобы клиенты могли ходить через приватный доступ.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="add_private" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Установить Amnezia</button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
