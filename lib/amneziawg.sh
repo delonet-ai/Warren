@@ -26,7 +26,7 @@ detect_openwrt_version() {
 }
 
 detect_openwrt_arch() {
-  AWG_OPENWRT_ARCH="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.arch' 2>/dev/null)"
+  AWG_OPENWRT_ARCH="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.arch' 2>/dev/null || true)"
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(opkg print-architecture 2>/dev/null | awk 'BEGIN {max=0} {if ($3 > max) {max = $3; arch = $2}} END {print arch}')"
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(opkg print-architecture 2>/dev/null | tail -n1 | awk '{print $2}')"
   [ -n "$AWG_OPENWRT_ARCH" ] || AWG_OPENWRT_ARCH="$(apk --print-arch 2>/dev/null || true)"
@@ -34,7 +34,7 @@ detect_openwrt_arch() {
 }
 
 detect_openwrt_target() {
-  AWG_OPENWRT_TARGET="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.target' 2>/dev/null)"
+  AWG_OPENWRT_TARGET="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.target' 2>/dev/null || true)"
   [ -n "$AWG_OPENWRT_TARGET" ] || fail "Не удалось определить target OpenWrt для AmneziaWG"
   AWG_OPENWRT_TARGET_MAIN="$(printf "%s" "$AWG_OPENWRT_TARGET" | cut -d/ -f1)"
   AWG_OPENWRT_SUBTARGET="$(printf "%s" "$AWG_OPENWRT_TARGET" | cut -d/ -f2)"
