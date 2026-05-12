@@ -1,40 +1,60 @@
 <%+header%>
 
 <style>
-.warren-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px}
+:root{
+  --warren-bg:#0f141b;
+  --warren-panel:#161d26;
+  --warren-panel-2:#1d2632;
+  --warren-border:#334155;
+  --warren-text:#e6edf3;
+  --warren-muted:#a8b3c2;
+  --warren-note:#c4ceda;
+  --warren-input:#0b1118;
+  --warren-accent:#3b82f6;
+  --warren-accent-2:#2563eb;
+  --warren-good:#22c55e;
+  --warren-warn:#eab308;
+  --warren-bad:#ef4444;
+}
+.warren-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px;color:var(--warren-text)}
 .warren-tabs input{display:none}
-.warren-tabs label{border:1px solid #ccd2d8;border-radius:6px;padding:8px 12px;background:#f7f9fb;cursor:pointer;font-weight:600}
+.warren-tabs label{border:1px solid var(--warren-border);border-radius:6px;padding:8px 12px;background:var(--warren-panel-2);color:var(--warren-text);cursor:pointer;font-weight:600}
 .warren-panel{display:none;width:100%;margin-top:10px}
 #wtab-quick:checked~label[for=wtab-quick],
 #wtab-vps:checked~label[for=wtab-vps],
-#wtab-amnezia:checked~label[for=wtab-amnezia],
-#wtab-extra:checked~label[for=wtab-extra]{background:#1f6feb;color:#fff;border-color:#1f6feb}
+#wtab-podkop:checked~label[for=wtab-podkop],
+#wtab-awg:checked~label[for=wtab-awg],
+#wtab-extra:checked~label[for=wtab-extra]{background:var(--warren-accent-2);color:#fff;border-color:var(--warren-accent)}
 #wtab-quick:checked~#panel-quick,
 #wtab-vps:checked~#panel-vps,
-#wtab-amnezia:checked~#panel-amnezia,
+#wtab-podkop:checked~#panel-podkop,
+#wtab-awg:checked~#panel-awg,
 #wtab-extra:checked~#panel-extra{display:block}
 .warren-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:14px 0}
-.warren-card{border:1px solid #ddd;border-radius:6px;padding:12px;background:#fff}
+.warren-card{border:1px solid var(--warren-border);border-radius:6px;padding:12px;background:var(--warren-panel);color:var(--warren-text)}
 .warren-card h3{margin:.1rem 0 .5rem 0;font-size:1.05rem}
 .warren-card p{margin:.35rem 0 .75rem}
-.warren-client{border-top:1px solid #d8dee4;margin-top:12px;padding-top:12px}
+.warren-card code{color:#dbeafe;background:rgba(59,130,246,.12);border-radius:4px;padding:1px 3px}
+.warren-client{border-top:1px solid var(--warren-border);margin-top:12px;padding-top:12px}
 .warren-kv{display:grid;grid-template-columns:128px minmax(0,1fr);gap:4px 10px;font-size:.92rem}
 .warren-kv code{white-space:pre-wrap;word-break:break-all}
-.warren-log{white-space:pre-wrap;max-height:340px;overflow:auto;background:#111;color:#eee;border-radius:6px;padding:12px;font-size:.85rem}
-.warren-pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;padding:10px;font-size:.82rem}
-.warren-qr{white-space:pre;font-family:monospace;line-height:1;background:#fff;border:1px solid #d8dee4;border-radius:6px;padding:10px;overflow:auto}
-.warren-muted{color:#667}
+.warren-log{white-space:pre-wrap;max-height:340px;overflow:auto;background:#080c12;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:12px;font-size:.85rem}
+.warren-pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;font-size:.82rem}
+.warren-qr{white-space:pre;font-family:monospace;line-height:1;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;overflow:auto}
+.warren-muted{color:var(--warren-muted)}
 .warren-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:10px 0}
 .warren-form-grid label{display:block;font-weight:600;margin-bottom:4px}
 .warren-form-grid input{width:100%}
 .warren-form-grid select{width:100%}
+.warren-form-grid input,.warren-form-grid select{background:var(--warren-input);color:var(--warren-text);border:1px solid var(--warren-border);border-radius:6px;min-height:34px}
+.warren-form-grid input:focus,.warren-form-grid select:focus{border-color:var(--warren-accent);outline:1px solid var(--warren-accent)}
 .warren-lights{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
-.warren-light{display:flex;align-items:center;gap:6px;border:1px solid #ddd;border-radius:6px;padding:7px 9px;background:#fff}
-.warren-dot{width:12px;height:12px;border-radius:50%;background:#c8ced6;display:inline-block}
-.warren-light.done .warren-dot{background:#2da44e}
-.warren-light.active .warren-dot{background:#bf8700}
-.warren-light.fail .warren-dot{background:#cf222e}
-.warren-note{font-size:.92rem;color:#445;line-height:1.45}
+.warren-light{display:flex;align-items:center;gap:6px;border:1px solid var(--warren-border);border-radius:6px;padding:7px 9px;background:var(--warren-panel-2)}
+.warren-dot{width:12px;height:12px;border-radius:50%;background:#64748b;display:inline-block}
+.warren-light.done .warren-dot{background:var(--warren-good)}
+.warren-light.active .warren-dot{background:var(--warren-warn)}
+.warren-light.fail .warren-dot{background:var(--warren-bad)}
+.warren-note{font-size:.92rem;color:var(--warren-note);line-height:1.45}
 </style>
 
 <script>
@@ -48,15 +68,30 @@ document.addEventListener("DOMContentLoaded", function () {
   updateBrowserEpoch();
   var forms = document.querySelectorAll("form");
   for (var i = 0; i < forms.length; i++) {
-    forms[i].addEventListener("submit", updateBrowserEpoch);
+    forms[i].addEventListener("submit", function (event) {
+      updateBrowserEpoch();
+      var form = event.currentTarget;
+      var panel = form.closest(".warren-panel");
+      var tab = "quick";
+      if (panel && panel.id) tab = panel.id.replace(/^panel-/, "");
+      var field = form.querySelector('input[name="tab"]');
+      if (!field) {
+        field = document.createElement("input");
+        field.type = "hidden";
+        field.name = "tab";
+        form.appendChild(field);
+      }
+      field.value = tab;
+    });
   }
 });
 </script>
 
-<h2 name="content">Warren</h2>
+<h2 name="content" style="color:var(--warren-text)">Warren</h2>
 
 <%
 local log = job and job.log or ""
+local active_tab = active_tab or "quick"
 local function has(s) return log:find(s, 1, true) ~= nil end
 local function light(label, done, active)
   local class = done and "done" or active and "active" or ""
@@ -85,15 +120,17 @@ end
   <div class="warren-log"><%=log ~= "" and log or "Лог появится после запуска действия."%></div>
 </div>
 
-<div class="warren-tabs">
-  <input id="wtab-quick" name="wtab" type="radio" checked="checked" />
-  <input id="wtab-vps" name="wtab" type="radio" />
-  <input id="wtab-amnezia" name="wtab" type="radio" />
-  <input id="wtab-extra" name="wtab" type="radio" />
+<div id="warren-tabs" class="warren-tabs">
+  <input id="wtab-quick" name="wtab" type="radio" <% if active_tab == "quick" then %>checked="checked"<% end %> />
+  <input id="wtab-vps" name="wtab" type="radio" <% if active_tab == "vps" then %>checked="checked"<% end %> />
+  <input id="wtab-podkop" name="wtab" type="radio" <% if active_tab == "podkop" then %>checked="checked"<% end %> />
+  <input id="wtab-awg" name="wtab" type="radio" <% if active_tab == "awg" then %>checked="checked"<% end %> />
+  <input id="wtab-extra" name="wtab" type="radio" <% if active_tab == "extra" then %>checked="checked"<% end %> />
 
   <label for="wtab-quick">Настройка</label>
   <label for="wtab-vps">Настройки VPS</label>
-  <label for="wtab-amnezia">Podkop</label>
+  <label for="wtab-podkop">Podkop</label>
+  <label for="wtab-awg">AWG Server</label>
   <label for="wtab-extra">Инструменты</label>
 
   <section id="panel-quick" class="warren-panel">
@@ -172,14 +209,6 @@ end
         <input type="hidden" name="mode" value="initialize" />
         <button class="btn cbi-button cbi-button-apply" type="submit">Установить / обновить UI</button>
       </form>
-
-      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>5) Доустановить Amnezia в Podkop</h3>
-        <p>Поставит AmneziaWG, поднимет приватный интерфейс и добавит его в Podkop, чтобы клиенты могли ходить через приватный доступ.</p>
-        <input type="hidden" name="token" value="<%=token%>" />
-        <input type="hidden" name="mode" value="add_private" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Установить Amnezia</button>
-      </form>
     </div>
   </section>
 
@@ -234,7 +263,7 @@ end
     </div>
   </section>
 
-  <section id="panel-amnezia" class="warren-panel">
+  <section id="panel-podkop" class="warren-panel">
     <div class="warren-grid">
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>4) Стандартная настройка Podkop</h3>
@@ -300,8 +329,16 @@ end
     </div>
   </section>
 
-  <section id="panel-extra" class="warren-panel">
+  <section id="panel-awg" class="warren-panel">
     <div class="warren-grid">
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>5) Доустановить Amnezia в Podkop</h3>
+        <p>Поставит AmneziaWG, поднимет приватный интерфейс и добавит его в Podkop, чтобы клиенты могли ходить через приватный доступ.</p>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="add_private" />
+        <button class="btn cbi-button cbi-button-apply" type="submit">Установить Amnezia</button>
+      </form>
+
       <div class="warren-card">
         <h3>6) QoS для Amnezia</h3>
         <p class="warren-note">Профили v1 выставляют DSCP через nft для IP выбранного Amnezia-клиента и сохраняются в <code>/etc/warren/amnezia-qos.tsv</code>.</p>
@@ -377,6 +414,11 @@ end
           <% end %>
         <% end %>
       </div>
+    </div>
+  </section>
+
+  <section id="panel-extra" class="warren-panel">
+    <div class="warren-grid">
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Telegram-бот для Podkop</h3>

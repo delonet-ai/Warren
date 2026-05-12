@@ -449,6 +449,7 @@ end
 
 function action_index()
   local tpl = require "luci.template"
+  local http = require "luci.http"
   local job = job_status()
   local state = read_state()
   local conf_mode = read_conf_mode()
@@ -457,6 +458,10 @@ function action_index()
   local reports = list_reports()
   local backup_report_count = annotate_reports_for_podkop(reports, podkop)
   local amz_clients = amnezia_clients()
+  local active_tab = trim(http.formvalue("tab") or "quick")
+  if active_tab ~= "quick" and active_tab ~= "vps" and active_tab ~= "podkop" and active_tab ~= "awg" and active_tab ~= "extra" then
+    active_tab = "quick"
+  end
   tpl.render("warren/index", {
     conf = conf,
     reports = reports,
@@ -466,6 +471,7 @@ function action_index()
     job = job,
     warren_state = state,
     warren_mode = conf_mode,
+    active_tab = active_tab,
     basic_tile = tile_state("basic", state, conf_mode, job),
     auto_tile = tile_state("auto", state, conf_mode, job)
   })
@@ -474,6 +480,10 @@ end
 function action_run()
   local http = require "luci.http"
   local mode = http.formvalue("mode") or ""
+  local tab = trim(http.formvalue("tab") or "quick")
+  if tab ~= "quick" and tab ~= "vps" and tab ~= "podkop" and tab ~= "awg" and tab ~= "extra" then
+    tab = "quick"
+  end
   if mode:match("^[A-Za-z0-9_-]+$") then
     local ok, err = validate_run_form(mode)
     if ok then
@@ -483,5 +493,5 @@ function action_run()
       write_luci_error_log(mode, err)
     end
   end
-  http.redirect(luci.dispatcher.build_url("admin", "services", "warren"))
+  http.redirect(luci.dispatcher.build_url("admin", "services", "warren") .. "?tab=" .. tab .. "#warren-tabs")
 end
