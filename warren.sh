@@ -128,10 +128,12 @@ warren_install_bootstrap_file() {
 
   if [ -r "$src_path" ]; then
     cp "$src_path" "$tmp_path" || warren_die "Не удалось скопировать $src_path"
+  elif [ -n "$src_url" ]; then
+    wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
   elif [ -r "$dst_path" ]; then
     return 0
   else
-    wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
+    warren_die "Не найден локальный файл и URL для $dst_path"
   fi
 
   mv "$tmp_path" "$dst_path" || warren_die "Не удалось записать $dst_path"
