@@ -192,7 +192,7 @@ EOF
   WARREN_BOOTSTRAP_READY=1
 }
 
-warren_bootstrap_install_persistent_app
+warren_bootstrap_install_persistent_app "${WARREN_BOOTSTRAP_FORCE_REMOTE:-0}"
 
 warren_should_check_updates() {
   [ "$(id -u 2>/dev/null || echo 1)" = "0" ] || return 1
@@ -666,21 +666,21 @@ print_auto_final_summary() {
 
 run_rf_bundle_wip_flow() {
   say ""
-  say "${YELLOW}WIP${NC}  Здесь будет режим установки Warren из локального архива внутри РФ-сегмента."
+  say "${YELLOW}WIP${NC}  Milestone 10: здесь будет режим установки Warren из локального архива внутри РФ-сегмента."
   say "План: один bundle с warren.sh, lib и assets, который роутер сможет скачать и распаковать без GitHub raw."
   done_ "Режим РФ-сегмента пока в разработке"
 }
 
 run_naiveproxy_wip_flow() {
   say ""
-  say "${YELLOW}WIP${NC}  Здесь будет сценарий настройки NaiveProxy."
+  say "${YELLOW}WIP${NC}  Milestone 12: здесь будет сценарий настройки NaiveProxy."
   say "Пока оставляем раздел как placeholder, без детальной логики."
   done_ "NaiveProxy пока в разработке"
 }
 
 run_shadowsocks_fallback_wip_flow() {
   say ""
-  say "${YELLOW}WIP${NC}  Здесь будет fallback-сценарий на Shadowsocks."
+  say "${YELLOW}WIP${NC}  Milestone 8: здесь будет fallback-сценарий на Shadowsocks."
   say "Пока оставляем раздел как placeholder, без детальной логики."
   done_ "Shadowsocks fallback пока в разработке"
 }

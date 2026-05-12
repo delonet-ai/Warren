@@ -50,11 +50,14 @@ English version is also available below: see [English](#english).
 - `Доустановить Amnezia в Podkop`
 - `QoS для Amnezia`
 - `Управление Amnezia клиентами`
-- `Remote Admin` (`WIP`)
-- `USB модем настрой` (`WIP`)
+- `Remote Admin` (`WIP, Milestone 9`)
+- `USB модем настрой` (`WIP, Milestone 11`)
 - `Telegram-бот для Podkop`
 - `Диагностика Podkop/VPS`
 - `Проверка SNI-кандидатов Reality`
+- `NaiveProxy` (`WIP, Milestone 12`)
+- `Shadowsocks fallback` (`WIP, Milestone 8`)
+- `Установить всё из РФ сегмента` (`WIP, Milestone 10`)
 
 ### Где Warren хранит данные
 
@@ -148,7 +151,45 @@ wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main
 - Центром всей логики будет `OpenWrt`.
 - Основной язык проекта: `sh`.
 - Для приватного доступа делаем ставку на `AmneziaWG`.
-- `Remote Admin` и работа с USB-модемами будут добавляться отдельными этапами.
+- WIP-направления вынесены в отдельные milestones и не блокируют текущую проверку Amnezia/QoS.
+
+### Roadmap milestones
+
+#### Milestone 5 — Amnezia + QoS Live
+Текущий активный milestone на ветке `codex/milestone-5-amnezia`.
+
+Acceptance:
+- AmneziaWG ставится на `24.10.x` и `25.12.x`;
+- создание, список, config/QR и удаление клиентов работают из shell и LuCI;
+- QoS-профили `standard`, `priority`, `bulk`, `off` применяются через `nft`;
+- QoS восстанавливается после reboot.
+
+#### Milestone 6 — Diagnostics, SNI Checker, LuCI Parity
+Рабочие tools без будущих WIP-функций:
+- `Diagnostics Podkop/VPS`;
+- emergency DNS-fallback;
+- VPS-side `SNI checker`;
+- LuCI parity для diagnostics, SNI, Podkop status, Amnezia clients и QoS.
+
+Telegram bot не блокирует этот milestone: сервис ставится и стартует, но live Telegram API зависит от доступности Telegram с маршрута роутера.
+
+#### Milestone 7 — Self SNI
+Отдельный будущий дизайн для самостоятельной проверки/подбора SNI. До реализации нужно зафиксировать, где выполняется проверка, меняет ли она конфиг автоматически и как результат попадает в Podkop/3x-ui.
+
+#### Milestone 8 — Shadowsocks Fallback
+Будущий fallback-сценарий на Shadowsocks. Сейчас shell и LuCI показывают только WIP-placeholder и ничего не меняют.
+
+#### Milestone 9 — Remote Admin
+Будущий безопасный удалённый доступ к роутеру. Сейчас это WIP-placeholder.
+
+#### Milestone 10 — RF Bundle
+Будущая установка Warren из локального bundle или другого доступного ресурса внутри РФ-сегмента. Сейчас пункт `99` ничего не меняет.
+
+#### Milestone 11 — USB Modem
+Будущие сценарии USB-модема как основного или резервного uplink. Сейчас это WIP-placeholder.
+
+#### Milestone 12 — NaiveProxy
+Будущий отдельный сценарий настройки NaiveProxy. Сейчас это WIP-placeholder.
 
 ---
 
@@ -228,9 +269,9 @@ The project stays on `sh` and is intended to be modularized into multiple shell 
 - `Manage Amnezia clients`
   Create, list, show config/QR, revoke, and remove clients.
 - `Remote Admin`
-  Work in progress placeholder for remote administration tooling.
+  Work in progress placeholder for Milestone 9.
 - `USB modem setup`
-  Work in progress placeholder for mobile uplink / backup uplink scenarios.
+  Work in progress placeholder for Milestone 11.
 
 ### Automatic Mode
 
@@ -313,7 +354,35 @@ Current v1 behavior:
 - apply DSCP marking through an `inet warren_qos` nft table,
 - reinstall rules after reboot through `/etc/init.d/warren-qos`.
 
-#### 6. Remote Admin
+#### 6. Milestone 6 — Diagnostics, SNI Checker, LuCI Parity
+Current next milestone after Amnezia/QoS live validation.
+
+Target behavior:
+- validate Podkop/VPS diagnostics and emergency DNS fallback,
+- validate VPS-side SNI checker reports,
+- keep LuCI behavior aligned with shell flows for diagnostics, SNI, Podkop status, Amnezia clients, and QoS.
+
+Telegram bot does not block this milestone: the service can be installed and started, but live Telegram API access depends on router-side reachability to Telegram.
+
+#### 7. Self SNI
+Status: `WIP`
+
+Target idea:
+- design a standalone SNI selection/checking scenario,
+- decide whether it runs on the router, VPS, or both,
+- decide whether it only recommends values or also applies them.
+
+This area needs a separate design pass before implementation.
+
+#### 8. Shadowsocks fallback
+Status: `WIP`
+
+Target idea:
+- add Shadowsocks as a fallback strategy separate from the current VLESS-based Podkop path.
+
+Until Milestone 8 starts, shell and LuCI only show placeholders and do not change router state.
+
+#### 9. Remote Admin
 Status: `WIP`
 
 Target idea:
@@ -324,13 +393,32 @@ Target idea:
 
 This area needs a separate design pass before implementation.
 
-#### 7. USB modem setup
+#### 10. RF bundle
+Status: `WIP`
+
+Target idea:
+- install Warren from a local bundle or another RF-segment reachable source,
+- avoid relying on GitHub raw when that path is unavailable.
+
+Until Milestone 10 starts, menu item `99` only shows a placeholder and does not change router state.
+
+#### 11. USB modem setup
 Status: `WIP`
 
 Target idea:
 - prepare the system for using a USB modem as the main channel,
 - prepare the system for using a USB modem as a backup uplink,
 - integrate with remote admin and tunnel persistence where possible.
+
+Until Milestone 11 starts, shell and LuCI only show placeholders and do not change router state.
+
+#### 12. NaiveProxy
+Status: `WIP`
+
+Target idea:
+- add a separate NaiveProxy setup scenario.
+
+Until Milestone 12 starts, shell and LuCI only show placeholders and do not change router state.
 
 ### Current State In Repository
 
@@ -409,9 +497,12 @@ Sensitive data rules:
 Near-term:
 - test AmneziaWG install and client lifecycle on real `24.10.x` and `25.12.x` routers,
 - harden LuCI Amnezia/QoS flows after live-router feedback,
-- keep Automatic/Basic/Podkop parity stable while the private-access surface grows.
+- run Milestone 6 diagnostics, SNI checker, and LuCI parity checks.
 
 Later:
-- remote admin architecture,
-- USB modem main/backup uplink flows,
-- LuCI/UCI-friendly configuration surfaces where practical.
+- Milestone 7: Self SNI,
+- Milestone 8: Shadowsocks fallback,
+- Milestone 9: Remote Admin,
+- Milestone 10: RF bundle,
+- Milestone 11: USB modem,
+- Milestone 12: NaiveProxy.
