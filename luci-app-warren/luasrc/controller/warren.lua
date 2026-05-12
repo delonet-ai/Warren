@@ -47,6 +47,13 @@ local function read_file(path)
   return data
 end
 
+local function strip_ansi(s)
+  s = s or ""
+  s = s:gsub("\27%][^\7]*\7", "")
+  s = s:gsub("\27%[[0-9;?]*[ -/]*[@-~]", "")
+  return s
+end
+
 local function read_conf_table()
   local conf_path = existing_path(WARREN_ETC_DIR .. "/warren.conf", LEGACY_WARREN_ETC_DIR .. "/warren.conf")
   local raw = read_file(conf_path) or ""
@@ -208,7 +215,9 @@ local function amnezia_clients()
         local conf_file = "/etc/amneziawg/clients/" .. name .. ".conf"
         local conf_text = read_file(conf_file) or ""
         local qr_utf8 = ""
+        local qr_svg_b64 = ""
         if conf_text ~= "" then
+          qr_svg_b64 = shell_read("qrencode -t SVG < " .. shellquote(conf_file) .. " | base64 | tr -d '\\n'")
           qr_utf8 = shell_read("qrencode -t UTF8 < " .. shellquote(conf_file))
         end
 
@@ -218,6 +227,7 @@ local function amnezia_clients()
           ips = ips,
           conf_file = conf_file,
           conf_text = conf_text,
+          qr_svg_b64 = qr_svg_b64,
           qr_utf8 = qr_utf8,
           qos_profile = qos[name] and qos[name].profile or ""
         }
@@ -231,7 +241,7 @@ end
 local function job_status()
   local pid = trim(read_file("/tmp/warren-luci-job.pid") or "")
   local running = false
-  local log = read_file("/tmp/warren-luci-job.log") or ""
+  local log = strip_ansi(read_file("/tmp/warren-luci-job.log") or "")
   local exit_code = first_match(log, "\n=== exit code:%s*([^\n=]+)") or first_match(log, "^=== exit code:%s*([^\n=]+)")
   if pid ~= "" then
     running = os.execute("kill -0 " .. shellquote(pid) .. " >/dev/null 2>&1") == 0
