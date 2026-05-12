@@ -78,6 +78,12 @@ run_amnezia_private_flow() {
     set_state 115
   fi
 
+  if [ "$MODE" = "add_private" ] && [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+    set_state 120
+    amnezia_print_awg_summary
+    return 0
+  fi
+
   if [ "$st" -lt 120 ]; then
     amnezia_collect_clients_count
     if [ "$PEERS" -gt 0 ]; then

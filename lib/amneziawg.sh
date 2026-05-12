@@ -222,6 +222,15 @@ ensure_awg_obfuscation_defaults() {
 
 ensure_awg_endpoint() {
   if [ -z "${AWG_ENDPOINT:-}" ]; then
+    if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+      wan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n1)"
+      if [ -n "$wan_ip" ]; then
+        AWG_ENDPOINT="${wan_ip}:${AWG_LISTEN_PORT}"
+        conf_set AWG_ENDPOINT "$AWG_ENDPOINT"
+        say "${YELLOW}INFO${NC}  Endpoint AmneziaWG для LuCI выбран автоматически: $AWG_ENDPOINT"
+        return 0
+      fi
+    fi
     ask "Endpoint для private-клиентов AmneziaWG (например: my.domain.com:${AWG_LISTEN_PORT})" AWG_ENDPOINT ""
     [ -n "$AWG_ENDPOINT" ] || fail "Endpoint для private-клиентов пустой"
     conf_set AWG_ENDPOINT "$AWG_ENDPOINT"
