@@ -31,6 +31,7 @@
 #wtab-awg:checked~#panel-awg,
 #wtab-extra:checked~#panel-extra{display:block}
 .warren-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:14px 0}
+.warren-wide{grid-column:1/-1}
 .warren-card{border:1px solid var(--warren-border);border-radius:6px;padding:12px;background:var(--warren-panel);color:var(--warren-text)}
 .warren-card h3{margin:.1rem 0 .5rem 0;font-size:1.05rem}
 .warren-card p{margin:.35rem 0 .75rem}
@@ -40,7 +41,17 @@
 .warren-kv code{white-space:pre-wrap;word-break:break-all}
 .warren-log{white-space:pre-wrap;max-height:340px;overflow:auto;background:#080c12;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:12px;font-size:.85rem}
 .warren-pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;font-size:.82rem}
-.warren-qr{white-space:pre;font-family:monospace;line-height:1;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;overflow:auto}
+.warren-qr{white-space:pre;font-family:monospace;line-height:.78;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:8px;overflow:auto;font-size:5px;max-height:300px}
+.warren-client-layout{display:grid;grid-template-columns:minmax(210px,280px) minmax(0,1fr);gap:12px;align-items:start}
+.warren-client-list{display:flex;flex-direction:column;gap:8px}
+.warren-client-button{width:100%;text-align:left;border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);color:var(--warren-text);padding:8px;cursor:pointer}
+.warren-client-button.active{border-color:var(--warren-accent);background:rgba(59,130,246,.18)}
+.warren-client-detail{display:none}
+.warren-client-detail.active{display:block}
+.warren-client-detail-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,360px);gap:12px}
+.warren-qos-help{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:10px}
+.warren-qos-help div{border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);padding:8px}
+.warren-qos-placeholder{margin-top:12px;border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);padding:10px}
 .warren-muted{color:var(--warren-muted)}
 .warren-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:10px 0}
 .warren-form-grid label{display:block;font-weight:600;margin-bottom:4px}
@@ -55,6 +66,10 @@
 .warren-light.active .warren-dot{background:var(--warren-warn)}
 .warren-light.fail .warren-dot{background:var(--warren-bad)}
 .warren-note{font-size:.92rem;color:var(--warren-note);line-height:1.45}
+@media (max-width: 760px){
+  .warren-client-layout,.warren-client-detail-grid{grid-template-columns:1fr}
+  .warren-qr{font-size:4px}
+}
 </style>
 
 <script>
@@ -66,6 +81,26 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   updateBrowserEpoch();
+  var initialClient = document.querySelector(".warren-client-button");
+  function selectClient(name) {
+    var buttons = document.querySelectorAll(".warren-client-button");
+    var details = document.querySelectorAll(".warren-client-detail");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].classList.toggle("active", buttons[i].getAttribute("data-client") === name);
+    }
+    for (var j = 0; j < details.length; j++) {
+      details[j].classList.toggle("active", details[j].getAttribute("data-client") === name);
+    }
+  }
+
+  var clientButtons = document.querySelectorAll(".warren-client-button");
+  for (var c = 0; c < clientButtons.length; c++) {
+    clientButtons[c].addEventListener("click", function () {
+      selectClient(this.getAttribute("data-client"));
+    });
+  }
+  if (initialClient) selectClient(initialClient.getAttribute("data-client"));
+
   var forms = document.querySelectorAll("form");
   for (var i = 0; i < forms.length; i++) {
     forms[i].addEventListener("submit", function (event) {
@@ -84,6 +119,12 @@ document.addEventListener("DOMContentLoaded", function () {
       field.value = tab;
     });
   }
+
+  <% if job and job.running then %>
+  window.setTimeout(function () {
+    window.location.href = "<%=url('admin/services/warren')%>?tab=<%=active_tab%>#warren-tabs";
+  }, 2500);
+  <% end %>
 });
 </script>
 
@@ -342,6 +383,12 @@ end
       <div class="warren-card">
         <h3>6) QoS для Amnezia</h3>
         <p class="warren-note">Профили v1 выставляют DSCP через nft для IP выбранного Amnezia-клиента и сохраняются в <code>/etc/warren/amnezia-qos.tsv</code>.</p>
+        <div class="warren-qos-help">
+          <div><strong>standard</strong><br /><span class="warren-muted">Обычный трафик без повышения приоритета. DSCP <code>cs0</code>.</span></div>
+          <div><strong>priority</strong><br /><span class="warren-muted">Помечает клиента как важный трафик. DSCP <code>cs5</code>.</span></div>
+          <div><strong>bulk</strong><br /><span class="warren-muted">Фоновый трафик: загрузки, синхронизации, неважные задачи. DSCP <code>cs1</code>.</span></div>
+          <div><strong>off</strong><br /><span class="warren-muted">Снимает профиль и удаляет правило Warren из nft.</span></div>
+        </div>
         <form method="post" action="<%=url('admin/services/warren/run')%>">
           <input type="hidden" name="token" value="<%=token%>" />
           <input type="hidden" name="mode" value="qos_private" />
@@ -369,9 +416,13 @@ end
           <% end %>
           <button class="btn cbi-button cbi-button-apply" type="submit" <% if not amnezia_clients or #amnezia_clients == 0 then %>disabled="disabled"<% end %>>Применить QoS</button>
         </form>
+        <div class="warren-qos-placeholder">
+          <h3>Профили QoS (WIP)</h3>
+          <p class="warren-muted">Здесь будет настройка пользовательских профилей: имя, DSCP-класс и, позже, правила применения. Сейчас доступны фиксированные профили v1 выше.</p>
+        </div>
       </div>
 
-      <div class="warren-card">
+      <div class="warren-card warren-wide">
         <h3>7) Управление Amnezia клиентами</h3>
         <form method="post" action="<%=url('admin/services/warren/run')%>">
           <input type="hidden" name="token" value="<%=token%>" />
@@ -385,33 +436,54 @@ end
         <% if not amnezia_clients or #amnezia_clients == 0 then %>
           <p class="warren-muted">Клиенты пока не найдены.</p>
         <% else %>
-          <% for _, c in ipairs(amnezia_clients) do %>
-            <div class="warren-client">
-              <h3><%=c.name%></h3>
-              <div class="warren-kv">
-                <div>IP</div><code><%=c.ips%></code>
-                <div>UCI section</div><code><%=c.section%></code>
-                <div>Config</div><code><%=c.conf_file%></code>
-                <div>QoS</div><code><%=c.qos_profile ~= "" and c.qos_profile or "не задан"%></code>
-              </div>
-              <% if c.conf_text ~= "" then %>
-                <h3>Конфиг</h3>
-                <pre class="warren-pre"><%=c.conf_text%></pre>
-              <% else %>
-                <p class="warren-muted">Файл конфига клиента не найден.</p>
+          <div class="warren-client-layout">
+            <div class="warren-client-list">
+              <% for _, c in ipairs(amnezia_clients) do %>
+                <button class="warren-client-button" type="button" data-client="<%=c.name%>">
+                  <strong><%=c.name%></strong><br />
+                  <span class="warren-muted"><%=c.ips ~= "" and c.ips or "IP не найден"%></span><br />
+                  <span class="warren-muted">QoS: <%=c.qos_profile ~= "" and c.qos_profile or "не задан"%></span>
+                </button>
               <% end %>
-              <% if c.qr_utf8 ~= "" then %>
-                <h3>QR</h3>
-                <pre class="warren-qr"><%=c.qr_utf8%></pre>
-              <% end %>
-              <form method="post" action="<%=url('admin/services/warren/run')%>">
-                <input type="hidden" name="token" value="<%=token%>" />
-                <input type="hidden" name="mode" value="amnezia_client_delete" />
-                <input type="hidden" name="amz_client_name" value="<%=c.name%>" />
-                <button class="btn cbi-button cbi-button-remove" type="submit">Удалить клиента</button>
-              </form>
             </div>
-          <% end %>
+            <div>
+              <% for _, c in ipairs(amnezia_clients) do %>
+                <div class="warren-client-detail" data-client="<%=c.name%>">
+                  <h3><%=c.name%></h3>
+                  <div class="warren-kv">
+                    <div>IP</div><code><%=c.ips%></code>
+                    <div>UCI section</div><code><%=c.section%></code>
+                    <div>Config</div><code><%=c.conf_file%></code>
+                    <div>QoS</div><code><%=c.qos_profile ~= "" and c.qos_profile or "не задан"%></code>
+                  </div>
+                  <div class="warren-client-detail-grid">
+                    <div>
+                      <h3>Конфиг</h3>
+                      <% if c.conf_text ~= "" then %>
+                        <pre class="warren-pre"><%=c.conf_text%></pre>
+                      <% else %>
+                        <p class="warren-muted">Файл конфига клиента не найден. Если имя похоже на <code>@amneziawg_awg0[0]</code>, это orphan UCI peer без клиентского файла; его лучше чистить отдельным repair-действием, а не обычным удалением клиента.</p>
+                      <% end %>
+                    </div>
+                    <div>
+                      <h3>QR</h3>
+                      <% if c.qr_utf8 ~= "" then %>
+                        <pre class="warren-qr"><%=c.qr_utf8%></pre>
+                      <% else %>
+                        <p class="warren-muted">QR недоступен без клиентского config-файла.</p>
+                      <% end %>
+                    </div>
+                  </div>
+                  <form method="post" action="<%=url('admin/services/warren/run')%>">
+                    <input type="hidden" name="token" value="<%=token%>" />
+                    <input type="hidden" name="mode" value="amnezia_client_delete" />
+                    <input type="hidden" name="amz_client_name" value="<%=c.name%>" />
+                    <button class="btn cbi-button cbi-button-remove" type="submit" <% if c.conf_text == "" then %>disabled="disabled"<% end %>>Удалить клиента</button>
+                  </form>
+                </div>
+              <% end %>
+            </div>
+          </div>
         <% end %>
       </div>
     </div>
