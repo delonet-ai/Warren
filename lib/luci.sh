@@ -65,13 +65,12 @@ luci_persistent_source() {
 install_warren_binary() {
   target="/usr/bin/warren"
   tmp="/tmp/warren-bin.$$.tmp"
-  if source_path="$(luci_persistent_source "warren.sh")"; then
-    cp "$source_path" "$tmp" || fail "Не удалось подготовить /usr/bin/warren"
-  elif [ -r "$SCRIPT_DIR/warren.sh" ]; then
-    cp "$SCRIPT_DIR/warren.sh" "$tmp" || fail "Не удалось подготовить /usr/bin/warren"
-  else
-    wget -qO "$tmp" "$WARREN_RAW_BASE_URL/warren.sh" || fail "Не удалось скачать warren.sh"
-  fi
+  app_script="${WARREN_APP_DIR:-/root/warren/app}/warren.sh"
+  [ -r "$app_script" ] || fail "Не найден persistent Warren app: $app_script"
+  cat > "$tmp" <<EOF
+#!/bin/sh
+exec "$app_script" "\$@"
+EOF
   mv "$tmp" "$target" || fail "Не удалось установить $target"
   chmod +x "$target" 2>/dev/null || true
 }
