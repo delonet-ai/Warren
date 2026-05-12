@@ -312,7 +312,11 @@ amz_create_client() {
   uci add_list network."$sec".allowed_ips="$client_ip32"
   uci commit network || return 1
   /etc/init.d/network restart >/dev/null 2>&1 || true
-  amz_create_config "$name" "$client_priv" "$client_ip32" "$client_psk" || return 1
+  amz_create_config "$name" "$client_priv" "$client_ip32" "$client_psk" || {
+    uci delete network."$sec" >/dev/null 2>&1 || true
+    uci commit network >/dev/null 2>&1 || true
+    return 1
+  }
   printf "%s" "$client_ip32"
   return 0
 }
@@ -334,6 +338,10 @@ amz_client_count() {
   amz_refresh_cache
   [ -s "$AMZ_CACHE" ] || { echo 0; return 0; }
   wc -l < "$AMZ_CACHE" | tr -d ' '
+}
+
+amz_has_clients() {
+  [ "$(amz_client_count)" -gt 0 ] 2>/dev/null
 }
 
 amz_list_text() {
@@ -786,6 +794,17 @@ tg_vps_report_summary_text() {
     "${vless_link:-unknown}" "${report_path:-unknown}"
 }
 
+show_latest_vps_report() {
+  chat_id="$1"
+  report_file="$(latest_vps_report)"
+  if [ -r "$report_file" ]; then
+    send_message "$chat_id" "$(tg_vps_report_summary_text "$report_file")"
+    send_document "$chat_id" "$report_file" "Последний VPS-отчёт Warren" || true
+  else
+    send_keyboard "$chat_id" "Сохранённых VPS-отчётов пока нет." "$(main_keyboard)"
+  fi
+}
+
 endpoint_add_keyboard() {
   refresh_report_cache
   tmp="/tmp/warren-tg-add-keyboard.$$"
@@ -918,6 +937,10 @@ show_amz_picker() {
     send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
     return 0
   }
+  if ! amz_has_clients; then
+    send_keyboard "$chat_id" "Amnezia-клиентов пока нет." "$(amz_menu_keyboard)"
+    return 0
+  fi
   send_keyboard "$chat_id" "$title" "$(amz_pick_keyboard "$action")"
 }
 
@@ -1138,13 +1161,7 @@ handle_command() {
       send_keyboard "$chat_id" "$(status_text)" "$(main_keyboard)"
       ;;
     /getvps)
-      report_file="$(latest_vps_report)"
-      if [ -r "$report_file" ]; then
-        send_message "$chat_id" "$(tg_vps_report_summary_text "$report_file")"
-        send_document "$chat_id" "$report_file" "Последний VPS-отчёт Warren" || true
-      else
-        send_keyboard "$chat_id" "Сохранённых VPS-отчётов пока нет." "$(main_keyboard)"
-      fi
+      show_latest_vps_report "$chat_id"
       ;;
     *)
       send_keyboard "$chat_id" "Не понял команду. Нажми кнопку или напиши /help." "$(main_keyboard)"
@@ -1326,13 +1343,7 @@ handle_callback() {
       send_keyboard "$chat_id" "$(status_text)" "$(main_keyboard)"
       ;;
     getvps)
-      report_file="$(latest_vps_report)"
-      if [ -r "$report_file" ]; then
-        send_message "$chat_id" "$(tg_vps_report_summary_text "$report_file")"
-        send_document "$chat_id" "$report_file" "Последний VPS-отчёт Warren" || true
-      else
-        send_keyboard "$chat_id" "Сохранённых VPS-отчётов пока нет." "$(main_keyboard)"
-      fi
+      show_latest_vps_report "$chat_id"
       ;;
     *)
       send_keyboard "$chat_id" "Неизвестная кнопка. Вернул главное меню." "$(main_keyboard)"
