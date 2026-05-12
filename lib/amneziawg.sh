@@ -420,6 +420,7 @@ create_amneziawg_peer() {
 
   say ""
   say "${GREEN}QR (ANSI) для private-клиента $name:${NC}"
+  ensure_qrencode_installed
   qrencode -t ansiutf8 < "$AWG_CLIENT_DIR/$name.conf" || true
   done_ "Private-клиент $name создан: $AWG_CLIENT_DIR/$name.conf"
 }
@@ -465,6 +466,7 @@ amneziawg_show_conf_qr() {
   [ -f "$file" ] || fail "Файл конфига не найден: $file"
   say ""
   say "${GREEN}QR (ANSI) для private-клиента $name:${NC}"
+  ensure_qrencode_installed
   qrencode -t ansiutf8 < "$file" || fail "qrencode не сработал (проверь пакет qrencode)"
   say ""
 }
