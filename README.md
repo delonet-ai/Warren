@@ -156,12 +156,12 @@ wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main
 ### Roadmap milestones
 
 #### Milestone 5 — Amnezia + QoS Live
-Текущий активный milestone на ветке `codex/milestone-5-amnezia`.
+Status: `done in 0.6.0`.
 
 Acceptance:
 - AmneziaWG ставится на `24.10.x` и `25.12.x`;
 - создание, список, config/QR и удаление клиентов работают из shell и LuCI;
-- QoS-профили `standard`, `priority`, `bulk`, `off` применяются через `nft`;
+- QoS-профили `standard`, `priority`, `bulk`, `limit_1mbit`, `limit_10mbit`, `off` применяются через `nft`;
 - QoS восстанавливается после reboot.
 
 #### Milestone 6 — Diagnostics, SNI Checker, LuCI Parity
@@ -169,7 +169,8 @@ Acceptance:
 - `Diagnostics Podkop/VPS`;
 - emergency DNS-fallback;
 - VPS-side `SNI checker`;
-- LuCI parity для diagnostics, SNI, Podkop status, Amnezia clients и QoS.
+- LuCI parity для diagnostics, SNI, Podkop status, Amnezia clients и QoS;
+- Podkop health после reboot: не полагаться только на `/etc/init.d/podkop status`, а проверять связку `podkop status`, процесс `sing-box`, nft/routing rules, sing-box config, DNS и реальную связность. На `24.10.x` был пойман случай, где `sing-box` и трафик живы, но init-status показывает `not running`.
 
 Telegram bot не блокирует этот milestone: сервис ставится и стартует, но live Telegram API зависит от доступности Telegram с маршрута роутера.
 
@@ -349,9 +350,9 @@ Current behavior:
 
 #### 5. QoS for Amnezia clients
 Current v1 behavior:
-- manage per-client profiles: `standard`, `priority`, `bulk`, `off`,
+- manage per-client profiles: `standard`, `priority`, `bulk`, `limit_1mbit`, `limit_10mbit`, `off`,
 - store assignments in `/etc/warren/amnezia-qos.tsv`,
-- apply DSCP marking through an `inet warren_qos` nft table,
+- apply DSCP marking and fixed 1/10 Mbps nft-limit profiles through an `inet warren_qos` nft table,
 - reinstall rules after reboot through `/etc/init.d/warren-qos`.
 
 #### 6. Milestone 6 — Diagnostics, SNI Checker, LuCI Parity
@@ -360,7 +361,8 @@ Current next milestone after Amnezia/QoS live validation.
 Target behavior:
 - validate Podkop/VPS diagnostics and emergency DNS fallback,
 - validate VPS-side SNI checker reports,
-- keep LuCI behavior aligned with shell flows for diagnostics, SNI, Podkop status, Amnezia clients, and QoS.
+- keep LuCI behavior aligned with shell flows for diagnostics, SNI, Podkop status, Amnezia clients, and QoS,
+- make Podkop health checks truthful after reboot by comparing init status with `sing-box`, nft/routing state, generated config, DNS, and real connectivity.
 
 Telegram bot does not block this milestone: the service can be installed and started, but live Telegram API access depends on router-side reachability to Telegram.
 
@@ -495,9 +497,7 @@ Sensitive data rules:
 ### Roadmap Snapshot
 
 Near-term:
-- test AmneziaWG install and client lifecycle on real `24.10.x` and `25.12.x` routers,
-- harden LuCI Amnezia/QoS flows after live-router feedback,
-- run Milestone 6 diagnostics, SNI checker, and LuCI parity checks.
+- close Milestone 6 diagnostics, SNI checker, Podkop health, and LuCI parity checks.
 
 Later:
 - Milestone 7: Self SNI,
