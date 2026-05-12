@@ -122,16 +122,19 @@ warren_install_bootstrap_file() {
   src_path="$1"
   dst_path="$2"
   src_url="$3"
+  force_remote="${4:-0}"
 
   mkdir -p "$(dirname "$dst_path")" || warren_die "Не удалось создать каталог для $dst_path"
   tmp_path="${dst_path}.tmp.$$"
 
   if [ -r "$src_path" ]; then
     cp "$src_path" "$tmp_path" || warren_die "Не удалось скопировать $src_path"
-  elif [ -n "$src_url" ]; then
+  elif [ "$force_remote" = "1" ] && [ -n "$src_url" ]; then
     wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
   elif [ -r "$dst_path" ]; then
     return 0
+  elif [ -n "$src_url" ]; then
+    wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
   else
     warren_die "Не найден локальный файл и URL для $dst_path"
   fi
@@ -153,34 +156,34 @@ warren_bootstrap_install_persistent_app() {
   mkdir -p "$WARREN_APP_DIR" "$lib_dir" "$asset_dir" || warren_die "Не удалось подготовить постоянный каталог Warren"
 
   if [ "$force_remote" = "1" ]; then
-    warren_install_bootstrap_file "" "$app_script" "$WARREN_RAW_BASE_URL/warren.sh"
+    warren_install_bootstrap_file "" "$app_script" "$WARREN_RAW_BASE_URL/warren.sh" "$force_remote"
   else
-    warren_install_bootstrap_file "$SCRIPT_DIR/warren.sh" "$app_script" "$WARREN_RAW_BASE_URL/warren.sh"
+    warren_install_bootstrap_file "$SCRIPT_DIR/warren.sh" "$app_script" "$WARREN_RAW_BASE_URL/warren.sh" "$force_remote"
   fi
   chmod 700 "$app_script" 2>/dev/null || true
 
   for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
     if [ "$force_remote" = "1" ]; then
-      warren_install_bootstrap_file "" "$lib_dir/$lib" "$WARREN_LIB_BASE_URL/$lib"
+      warren_install_bootstrap_file "" "$lib_dir/$lib" "$WARREN_LIB_BASE_URL/$lib" "$force_remote"
     else
-      warren_install_bootstrap_file "$SCRIPT_DIR/lib/$lib" "$lib_dir/$lib" "$WARREN_LIB_BASE_URL/$lib"
+      warren_install_bootstrap_file "$SCRIPT_DIR/lib/$lib" "$lib_dir/$lib" "$WARREN_LIB_BASE_URL/$lib" "$force_remote"
     fi
     chmod 644 "$lib_dir/$lib" 2>/dev/null || true
   done
 
   for asset in sni-candidates.txt; do
     if [ "$force_remote" = "1" ]; then
-      warren_install_bootstrap_file "" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset"
+      warren_install_bootstrap_file "" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset" "$force_remote"
     else
-      warren_install_bootstrap_file "$SCRIPT_DIR/assets/$asset" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset"
+      warren_install_bootstrap_file "$SCRIPT_DIR/assets/$asset" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset" "$force_remote"
     fi
     chmod 644 "$asset_dir/$asset" 2>/dev/null || true
   done
 
   if [ "$force_remote" = "1" ]; then
-    warren_install_bootstrap_file "" "$version_path" "$WARREN_RAW_BASE_URL/VERSION"
+    warren_install_bootstrap_file "" "$version_path" "$WARREN_RAW_BASE_URL/VERSION" "$force_remote"
   else
-    warren_install_bootstrap_file "$SCRIPT_DIR/VERSION" "$version_path" "$WARREN_RAW_BASE_URL/VERSION"
+    warren_install_bootstrap_file "$SCRIPT_DIR/VERSION" "$version_path" "$WARREN_RAW_BASE_URL/VERSION" "$force_remote"
   fi
   chmod 644 "$version_path" 2>/dev/null || true
 
