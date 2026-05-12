@@ -91,12 +91,13 @@ qos_apply_rules() {
   nft add chain inet warren_qos prerouting '{ type filter hook prerouting priority mangle; policy accept; }' || fail "Не удалось создать nft chain warren_qos/prerouting"
 
   [ -f "$QOS_STATE_FILE" ] || return 0
-  while IFS='	' read -r name ip32 profile; do
-    [ -n "$name" ] || continue
-    dscp="$(qos_profile_dscp "$profile")" || continue
-    ip="${ip32%/32}"
+  while IFS='	' read -r q_name q_ip32 q_profile; do
+    [ -n "$q_name" ] || continue
+    dscp="$(qos_profile_dscp "$q_profile")" || continue
+    ip="${q_ip32%/32}"
     printf "%s" "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || continue
-    nft add rule inet warren_qos prerouting ip saddr "$ip" ip dscp set "$dscp" comment "warren:${name}:${profile}" >/dev/null 2>&1 || warn "Не удалось добавить QoS-правило для $name"
+    nft_comment="warren_${q_name}_${q_profile}"
+    nft add rule inet warren_qos prerouting ip saddr "$ip" ip dscp set "$dscp" comment "$nft_comment" >/dev/null 2>&1 || warn "Не удалось добавить QoS-правило для $q_name"
   done < "$QOS_STATE_FILE"
 }
 
@@ -111,9 +112,9 @@ qos_print_assignments() {
     say "Профили пока не назначены."
     return 0
   fi
-  while IFS='	' read -r name ip32 profile; do
-    [ -n "$name" ] || continue
-    say " - ${GREEN}${name}${NC}  ${ip32:-no-ip}  $(qos_profile_label "$profile")"
+  while IFS='	' read -r q_name q_ip32 q_profile; do
+    [ -n "$q_name" ] || continue
+    say " - ${GREEN}${q_name}${NC}  ${q_ip32:-no-ip}  $(qos_profile_label "$q_profile")"
   done < "$QOS_STATE_FILE"
 }
 
