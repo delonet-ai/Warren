@@ -334,7 +334,7 @@ configure_amneziawg_server() {
 }
 
 awg_peer_section_list() {
-  uci show network 2>/dev/null | grep "=amneziawg_${AWG_IFACE}" | cut -d. -f2
+  uci show network 2>/dev/null | sed -n "s/^network\.\([^=]*\)=amneziawg_${AWG_IFACE}$/\1/p"
 }
 
 awg_find_section_by_name() {
