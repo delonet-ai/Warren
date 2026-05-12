@@ -120,7 +120,17 @@ download_awg_package() {
 
 install_awg_local_package() {
   pkg_path="$1"
-  pkg_install_local_file "$pkg_path" || fail "Не удалось установить пакет AmneziaWG: $pkg_path"
+  pkg_name="${2:-}"
+  if pkg_install_local_file "$pkg_path"; then
+    return 0
+  fi
+
+  if [ -n "$pkg_name" ] && is_awg_pkg_installed "$pkg_name"; then
+    warn "Пакет $pkg_name установлен, но пакетный менеджер вернул предупреждение/ошибку. Продолжаю после проверки результата."
+    return 0
+  fi
+
+  fail "Не удалось установить пакет AmneziaWG: $pkg_path"
 }
 
 verify_awg_install() {
@@ -136,7 +146,7 @@ download_and_install_awg_package() {
   fi
 
   pkg_path="$(download_awg_package "$pkg_name")" || fail "Не удалось скачать пакет $pkg_name для OpenWrt ${AWG_OPENWRT_VERSION} / ${AWG_OPENWRT_ARCH} / ${AWG_OPENWRT_TARGET_MAIN}/${AWG_OPENWRT_SUBTARGET}"
-  install_awg_local_package "$pkg_path"
+  install_awg_local_package "$pkg_path" "$pkg_name"
   say "${GREEN}DONE${NC}  Установлен пакет: $pkg_name ($(basename "$pkg_path"))"
 }
 
