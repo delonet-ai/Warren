@@ -40,15 +40,16 @@
 .warren-kv{display:grid;grid-template-columns:128px minmax(0,1fr);gap:4px 10px;font-size:.92rem}
 .warren-kv code{white-space:pre-wrap;word-break:break-all}
 .warren-log{white-space:pre-wrap;max-height:340px;overflow:auto;background:#080c12;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:12px;font-size:.85rem}
-.warren-pre{white-space:pre-wrap;max-height:210px;overflow:auto;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;font-size:.78rem}
-.warren-qr{white-space:pre;font-family:monospace;line-height:.72;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;overflow:auto;font-size:6px;min-height:260px;max-height:430px}
+.warren-pre{white-space:pre-wrap;max-height:240px;overflow:auto;background:#0b1118;color:#e6edf3;border:1px solid var(--warren-border);border-radius:6px;padding:10px;font-size:.78rem}
+.warren-qr-wrap{width:min(100%,560px);aspect-ratio:1/1;background:#0b1118;border:1px solid var(--warren-border);border-radius:6px;padding:10px;overflow:auto}
+.warren-qr{white-space:pre;font-family:monospace;line-height:.66;color:#e6edf3;font-size:7px;margin:0;min-width:max-content}
 .warren-client-layout{display:grid;grid-template-columns:minmax(210px,280px) minmax(0,1fr);gap:12px;align-items:start}
 .warren-client-list{display:flex;flex-direction:column;gap:8px}
 .warren-client-button{width:100%;text-align:left;border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);color:var(--warren-text);padding:8px;cursor:pointer}
 .warren-client-button.active{border-color:var(--warren-accent);background:rgba(59,130,246,.18)}
 .warren-client-detail{display:none}
 .warren-client-detail.active{display:block}
-.warren-client-detail-grid{display:grid;grid-template-columns:minmax(300px,430px) minmax(0,1fr);gap:12px;align-items:start}
+.warren-client-detail-grid{display:grid;grid-template-columns:minmax(420px,560px) minmax(260px,1fr);gap:12px;align-items:start}
 .warren-qos-help{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:10px}
 .warren-qos-help div{border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);padding:8px}
 .warren-qos-placeholder{margin-top:12px;border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);padding:10px}
@@ -68,7 +69,8 @@
 .warren-note{font-size:.92rem;color:var(--warren-note);line-height:1.45}
 @media (max-width: 760px){
   .warren-client-layout,.warren-client-detail-grid{grid-template-columns:1fr}
-  .warren-qr{font-size:4px;min-height:220px}
+  .warren-qr-wrap{width:100%;max-width:100%;min-height:280px}
+  .warren-qr{font-size:5px}
 }
 </style>
 
@@ -410,7 +412,7 @@ end
                     <div>
                       <h3>QR</h3>
                       <% if c.qr_utf8 ~= "" then %>
-                        <pre class="warren-qr"><%=c.qr_utf8%></pre>
+                        <div class="warren-qr-wrap"><pre class="warren-qr"><%=c.qr_utf8%></pre></div>
                       <% else %>
                         <p class="warren-muted">QR недоступен без клиентского config-файла.</p>
                       <% end %>
