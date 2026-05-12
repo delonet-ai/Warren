@@ -268,7 +268,7 @@ amneziawg_client_exists() {
 }
 
 find_lan_zone_name() {
-  uci show firewall | grep "=zone" | cut -d. -f2 | while read -r z; do
+  uci show firewall 2>/dev/null | sed -n "s/^firewall\.\([^=]*\)=zone$/\1/p" | while read -r z; do
     name="$(uci -q get firewall."$z".name || true)"
     [ "$name" = "lan" ] && echo "$z" && break
   done
