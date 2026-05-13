@@ -50,6 +50,15 @@ sni_checker_select_vps_report() {
   [ "${report_count:-0}" -gt 0 ] || fail "Не найдено VPS-отчётов в $(vps_reports_dir). Сначала настрой VPS через Warren."
 
   if [ -n "${SELECTED_VPS_REPORT:-}" ] && [ -r "${SELECTED_VPS_REPORT:-}" ]; then
+    conf_set SELECTED_VPS_REPORT "$SELECTED_VPS_REPORT"
+    return 0
+  fi
+
+  if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+    SELECTED_VPS_REPORT="$(printf "%s\n" "$report_list" | sed '/^$/d' | head -n1)"
+    [ -n "$SELECTED_VPS_REPORT" ] || fail "Не удалось выбрать VPS-отчёт для SNI-checker"
+    conf_set SELECTED_VPS_REPORT "$SELECTED_VPS_REPORT"
+    say "${GREEN}DONE${NC}  SNI-checker выбрал VPS-отчёт: $(basename "$SELECTED_VPS_REPORT" .txt)"
     return 0
   fi
 
@@ -521,12 +530,17 @@ run_sni_checker_flow() {
   sni_checker_show_local_script
 
   say ""
-  ask "Загрузить и запустить SNI-checker на VPS? (y/n)" SNI_CHECKER_CONFIRM "y"
-  case "$SNI_CHECKER_CONFIRM" in
-    y|Y) ;;
-    n|N) done_ "SNI-checker подготовлен, запуск отменён пользователем"; return 0 ;;
-    *) fail "Введи y или n" ;;
-  esac
+  if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+    SNI_CHECKER_CONFIRM="y"
+    info "LuCI-запуск: подтверждение SNI-checker выполнено автоматически."
+  else
+    ask "Загрузить и запустить SNI-checker на VPS? (y/n)" SNI_CHECKER_CONFIRM "y"
+    case "$SNI_CHECKER_CONFIRM" in
+      y|Y) ;;
+      n|N) done_ "SNI-checker подготовлен, запуск отменён пользователем"; return 0 ;;
+      *) fail "Введи y или n" ;;
+    esac
+  fi
 
   sni_checker_upload_files
   sni_checker_run_remote

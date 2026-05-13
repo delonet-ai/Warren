@@ -42,6 +42,13 @@ warren_diag_bad() {
 }- $*"
 }
 
+warren_diag_warn() {
+  DIAG_WARN_COUNT=$((DIAG_WARN_COUNT + 1))
+  warren_diag_line "WARN: $*"
+  DIAG_WARNINGS="${DIAG_WARNINGS}${DIAG_WARNINGS:+
+}- $*"
+}
+
 warren_diag_has_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
@@ -191,10 +198,16 @@ warren_diag_check_service() {
 
 warren_diag_check_proxy_engine() {
   if [ -x /etc/init.d/sing-box ]; then
-    warren_diag_check_service sing-box
+    if /etc/init.d/sing-box status >/dev/null 2>&1; then
+      warren_diag_ok "proxy engine sing-box: init status запущен"
+    elif warren_diag_sing_box_running; then
+      warren_diag_warn "proxy engine sing-box: init status не подтверждён, но процесс запущен"
+    else
+      warren_diag_bad "proxy engine sing-box: не выглядит запущенным"
+    fi
     return 0
   fi
-  if pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1; then
+  if warren_diag_sing_box_running; then
     warren_diag_ok "proxy engine sing-box: процесс запущен"
     return 0
   fi
@@ -209,24 +222,81 @@ warren_diag_check_proxy_engine() {
   warren_diag_bad "proxy engine: не найден запущенный sing-box/xray"
 }
 
+warren_diag_sing_box_running() {
+  pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1
+}
+
+warren_diag_podkop_rule_active() {
+  ip rule show 2>/dev/null | grep -Eqi 'podkop|tproxy|fwmark|0x2023|mark'
+}
+
+warren_diag_podkop_nft_active() {
+  warren_diag_has_cmd nft || return 1
+  nft list ruleset 2>/dev/null | grep -Eqi 'podkop|sing-box|tproxy|0x2023|dns_redirect|mangle'
+}
+
+warren_diag_sing_box_config_ok() {
+  if [ -s /etc/sing-box/config.json ]; then
+    if warren_diag_has_cmd sing-box; then
+      sing-box check -c /etc/sing-box/config.json >/dev/null 2>&1 && return 0
+      return 1
+    fi
+    return 0
+  fi
+
+  if [ -s /tmp/etc/sing-box/config.json ]; then
+    return 0
+  fi
+
+  return 1
+}
+
 warren_diag_check_podkop_runtime() {
   if ! uci -q get podkop.main >/dev/null 2>&1; then
     warren_diag_bad "Podkop: секция podkop.main не найдена"
     return 0
   fi
 
+  podkop_init_ok=0
+  sing_box_ok=0
+  config_ok=0
+  rules_ok=0
+  nft_ok=0
+  evidence=0
+
   if [ -x /etc/init.d/podkop ] && /etc/init.d/podkop status >/dev/null 2>&1; then
+    podkop_init_ok=1
+  fi
+  if warren_diag_sing_box_running; then
+    sing_box_ok=1
+    evidence=$((evidence + 1))
+  fi
+  if warren_diag_sing_box_config_ok; then
+    config_ok=1
+    evidence=$((evidence + 1))
+  fi
+  if warren_diag_podkop_rule_active; then
+    rules_ok=1
+    evidence=$((evidence + 1))
+  fi
+  if warren_diag_podkop_nft_active; then
+    nft_ok=1
+    evidence=$((evidence + 1))
+  fi
+
+  DIAG_PODKOP_EVIDENCE="init=$podkop_init_ok sing-box=$sing_box_ok config=$config_ok rules=$rules_ok nft=$nft_ok"
+
+  if [ "$podkop_init_ok" = "1" ]; then
     warren_diag_ok "Podkop: init status запущен"
     return 0
   fi
 
-  if { pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1; } \
-    && ip rule show 2>/dev/null | grep -q 'lookup podkop'; then
-    warren_diag_ok "Podkop: UCI, sing-box и routing rule активны"
+  if [ "$sing_box_ok" = "1" ] && [ "$evidence" -ge 3 ]; then
+    warren_diag_warn "Podkop: init status говорит not running, но runtime выглядит активным ($DIAG_PODKOP_EVIDENCE)"
     return 0
   fi
 
-  warren_diag_bad "Podkop: runtime не выглядит активным"
+  warren_diag_bad "Podkop: runtime не выглядит активным ($DIAG_PODKOP_EVIDENCE)"
 }
 
 warren_diag_check_podkop_defaults() {
@@ -259,8 +329,10 @@ warren_diag_check_podkop_defaults() {
 warren_diag_capture_snapshot() {
   phase="$1"
   DIAG_OK_COUNT=0
+  DIAG_WARN_COUNT=0
   DIAG_BAD_COUNT=0
   DIAG_ISSUES=""
+  DIAG_WARNINGS=""
 
   warren_diag_section "SNAPSHOT $phase"
   warren_diag_line "time=$(date +'%F %T %z')"
@@ -289,6 +361,8 @@ warren_diag_capture_snapshot() {
   warren_diag_cmd "Routes all" sh -c 'ip route show table all 2>&1'
   warren_diag_cmd "DNS config" sh -c 'cat /tmp/resolv.conf.d/resolv.conf.auto /etc/resolv.conf 2>&1'
   warren_diag_cmd "Listeners" sh -c 'ss -lntup 2>&1'
+  warren_diag_cmd "Podkop init/runtime status" sh -c '/etc/init.d/podkop status 2>&1; ps w 2>/dev/null | grep -E "[s]ing-box|[p]odkop|[x]ray" || true'
+  warren_diag_cmd "sing-box config check" sh -c 'if command -v sing-box >/dev/null 2>&1 && [ -s /etc/sing-box/config.json ]; then sing-box check -c /etc/sing-box/config.json; elif [ -s /etc/sing-box/config.json ]; then echo "/etc/sing-box/config.json exists, sing-box binary not found"; elif [ -s /tmp/etc/sing-box/config.json ]; then echo "/tmp/etc/sing-box/config.json exists"; else echo "sing-box config not found"; fi'
   warren_diag_cmd "Podkop log" sh -c 'logread -e podkop 2>&1 | tail -n 160'
   warren_diag_cmd "sing-box log" sh -c 'logread -e sing-box 2>&1 | tail -n 160'
   warren_diag_cmd "dnsmasq log" sh -c 'logread -e dnsmasq 2>&1 | tail -n 120'
@@ -333,11 +407,13 @@ warren_diag_capture_snapshot() {
   fi
 
   warren_diag_line ""
-  warren_diag_line "SUMMARY $phase: ok=$DIAG_OK_COUNT bad=$DIAG_BAD_COUNT"
+  warren_diag_line "SUMMARY $phase: ok=$DIAG_OK_COUNT warn=$DIAG_WARN_COUNT bad=$DIAG_BAD_COUNT"
 
   DIAG_LAST_OK="$DIAG_OK_COUNT"
+  DIAG_LAST_WARN="$DIAG_WARN_COUNT"
   DIAG_LAST_BAD="$DIAG_BAD_COUNT"
   DIAG_LAST_ISSUES="$DIAG_ISSUES"
+  DIAG_LAST_WARNINGS="$DIAG_WARNINGS"
 }
 
 warren_diag_apply_dns_fallback() {
@@ -421,7 +497,12 @@ run_diagnostics_flow() {
   warren_diag_capture_snapshot "before"
 
   say ""
-  say "Диагностика: OK=$DIAG_LAST_OK, проблемы=$DIAG_LAST_BAD"
+  say "Диагностика: OK=$DIAG_LAST_OK, предупреждения=${DIAG_LAST_WARN:-0}, проблемы=$DIAG_LAST_BAD"
+  if [ "${DIAG_LAST_WARN:-0}" -gt 0 ]; then
+    say ""
+    say "Предупреждения:"
+    printf "%s\n" "$DIAG_LAST_WARNINGS" | sed '/^$/d' | sed 's/^/  /'
+  fi
   if [ "${DIAG_FORCE_FALLBACK:-0}" = "1" ] || [ "$DIAG_LAST_BAD" -gt 0 ]; then
     say ""
     if [ "$DIAG_LAST_BAD" -gt 0 ]; then
@@ -433,6 +514,12 @@ run_diagnostics_flow() {
     say ""
     if [ "${DIAG_FORCE_FALLBACK:-0}" = "1" ]; then
       DIAG_FIX_CHOICE="y"
+    elif [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
+      DIAG_FIX_CHOICE="n"
+      say "LuCI-запуск штатной диагностики не меняет настройки автоматически."
+      say "Для проверки аварийного DNS-fallback нажми отдельную кнопку «Аварийный режим»."
+      warren_diag_line ""
+      warren_diag_line "DNS fallback skipped: LuCI normal diagnostics run"
     else
       ask "Применить диагностический DNS-fallback Podkop и повторить проверку? (y/n)" DIAG_FIX_CHOICE "y"
     fi
@@ -442,7 +529,11 @@ run_diagnostics_flow() {
         warren_diag_apply_dns_fallback
         warren_diag_capture_snapshot "after_dns_fallback"
         say ""
-        say "После DNS-fallback: OK=$DIAG_LAST_OK, проблемы=$DIAG_LAST_BAD"
+        say "После DNS-fallback: OK=$DIAG_LAST_OK, предупреждения=${DIAG_LAST_WARN:-0}, проблемы=$DIAG_LAST_BAD"
+        if [ "${DIAG_LAST_WARN:-0}" -gt 0 ]; then
+          say "Предупреждения:"
+          printf "%s\n" "$DIAG_LAST_WARNINGS" | sed '/^$/d' | sed 's/^/  /'
+        fi
         if [ "$DIAG_LAST_BAD" -gt 0 ]; then
           say "Оставшиеся проблемы:"
           printf "%s\n" "$DIAG_LAST_ISSUES" | sed '/^$/d' | sed 's/^/  /'

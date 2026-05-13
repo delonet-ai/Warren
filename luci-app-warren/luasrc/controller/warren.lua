@@ -121,6 +121,25 @@ local function report_proxy_link(path)
   return first_match(text, "\nVLESS inbound link:%s*([^\n]+)") or first_match(text, "^VLESS inbound link:%s*([^\n]+)")
 end
 
+local function list_sni_reports()
+  local reports = {}
+  local dir = WARREN_ETC_DIR .. "/sni-checker/reports"
+  local p = io.popen("ls -1t " .. shellquote(dir) .. "/*.txt 2>/dev/null | head -n 5")
+  if p then
+    for path in p:lines() do
+      local text = read_file(path) or ""
+      reports[#reports + 1] = {
+        path = path,
+        name = basename(path),
+        current = first_match(text, "\nCurrent SNI:%s*([^\n]+)") or first_match(text, "^Current SNI:%s*([^\n]+)"),
+        best = first_match(text, "\nBest candidate:%s*([^\n]+)") or first_match(text, "^Best candidate:%s*([^\n]+)")
+      }
+    end
+    p:close()
+  end
+  return reports
+end
+
 local function link_in_channels(link, channels)
   if link == "" or not channels then return false end
   for _, channel in ipairs(channels) do
@@ -151,6 +170,11 @@ local function podkop_status()
   local raw_mode = shell_read("uci -q get podkop.main.proxy_config_type")
   local channels = {}
   local cmd
+  local init_ok = shell_read("[ -x /etc/init.d/podkop ] && /etc/init.d/podkop status >/dev/null 2>&1 && echo yes || echo no")
+  local engine_ok = shell_read("(pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1) && echo yes || echo no")
+  local config_ok = shell_read("[ -s /etc/sing-box/config.json ] || [ -s /tmp/etc/sing-box/config.json ]; echo $?")
+  local rules_ok = shell_read("ip rule show 2>/dev/null | grep -Eqi 'podkop|tproxy|fwmark|0x2023|mark' && echo yes || echo no")
+  local nft_ok = shell_read("command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -Eqi 'podkop|sing-box|tproxy|0x2023|dns_redirect|mangle' && echo yes || echo no")
 
   if raw_mode == "urltest" then
     cmd = "uci -q get podkop.main.urltest_proxy_links | tr ' ' '\\n'"
@@ -169,10 +193,36 @@ local function podkop_status()
     p:close()
   end
 
+  local evidence = 0
+  if engine_ok == "yes" then evidence = evidence + 1 end
+  if config_ok == "0" then evidence = evidence + 1 end
+  if rules_ok == "yes" then evidence = evidence + 1 end
+  if nft_ok == "yes" then evidence = evidence + 1 end
+
+  local health = "bad"
+  local health_label = "runtime не выглядит активным"
+  if init_ok == "yes" then
+    health = "ok"
+    health_label = "init status запущен"
+  elseif engine_ok == "yes" and evidence >= 3 then
+    health = "warn"
+    health_label = "runtime активен, но init status говорит not running"
+  elseif raw_mode == "" and #channels == 0 then
+    health = "empty"
+    health_label = "Podkop ещё не настроен"
+  end
+
   return {
     raw_mode = raw_mode,
     mode_label = podkop_mode_label(raw_mode),
-    channels = channels
+    channels = channels,
+    init_ok = init_ok,
+    engine_ok = engine_ok,
+    config_ok = config_ok == "0" and "yes" or "no",
+    rules_ok = rules_ok,
+    nft_ok = nft_ok,
+    health = health,
+    health_label = health_label
   }
 end
 
@@ -430,6 +480,13 @@ local function validate_run_form(mode)
     return true
   end
 
+  if mode == "sni_checker" then
+    if selected_report ~= "" and not read_file(selected_report) then
+      return false, "Выбранный VPS-отчёт не найден: " .. selected_report
+    end
+    return true
+  end
+
   if mode ~= "auto" then
     return true
   end
@@ -466,6 +523,7 @@ function action_index()
   local conf = read_conf_table()
   local podkop = podkop_status()
   local reports = list_reports()
+  local sni_reports = list_sni_reports()
   local backup_report_count = annotate_reports_for_podkop(reports, podkop)
   local amz_clients = amnezia_clients()
   local active_tab = trim(http.formvalue("tab") or "quick")
@@ -475,6 +533,7 @@ function action_index()
   tpl.render("warren/index", {
     conf = conf,
     reports = reports,
+    sni_reports = sni_reports,
     podkop = podkop,
     amnezia_clients = amz_clients,
     backup_report_count = backup_report_count,

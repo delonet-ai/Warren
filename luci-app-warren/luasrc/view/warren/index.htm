@@ -67,6 +67,13 @@
 .warren-light.active .warren-dot{background:var(--warren-warn)}
 .warren-light.fail .warren-dot{background:var(--warren-bad)}
 .warren-note{font-size:.92rem;color:var(--warren-note);line-height:1.45}
+.warren-status-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}
+.warren-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--warren-border);border-radius:6px;background:var(--warren-panel-2);padding:6px 8px}
+.warren-badge:before{content:"";width:10px;height:10px;border-radius:50%;background:#64748b}
+.warren-badge.ok:before{background:var(--warren-good)}
+.warren-badge.warn:before{background:var(--warren-warn)}
+.warren-badge.bad:before{background:var(--warren-bad)}
+.warren-badge.empty:before{background:#64748b}
 @media (max-width: 760px){
   .warren-client-layout,.warren-client-detail-grid{grid-template-columns:1fr}
   .warren-qr-box{width:min(100%,360px)}
@@ -334,6 +341,12 @@ end
       <div class="warren-card">
         <h3>Резервные каналы Podkop</h3>
         <p class="warren-note">Текущий режим: <strong><%=podkop and podkop.mode_label or "неизвестно"%></strong></p>
+        <div class="warren-status-row">
+          <span class="warren-badge <%=podkop and podkop.health or "empty"%>"><%=podkop and podkop.health_label or "статус неизвестен"%></span>
+          <span class="warren-badge <%=podkop and podkop.engine_ok == "yes" and "ok" or "bad"%>">sing-box: <%=podkop and podkop.engine_ok or "no"%></span>
+          <span class="warren-badge <%=podkop and podkop.rules_ok == "yes" and "ok" or "bad"%>">rules: <%=podkop and podkop.rules_ok or "no"%></span>
+          <span class="warren-badge <%=podkop and podkop.nft_ok == "yes" and "ok" or "bad"%>">nft: <%=podkop and podkop.nft_ok or "no"%></span>
+        </div>
         <% if podkop and podkop.channels and #podkop.channels > 0 then %>
           <div class="warren-kv">
             <% for i, channel in ipairs(podkop.channels) do %>
@@ -512,9 +525,9 @@ end
         <h3>Диагностика сети</h3>
         <p>Соберёт состояние Podkop/VPS, DNS, маршрутов, портов и сервисов. Светофоры появятся в логе выполнения.</p>
         <div class="warren-lights">
-          <% light("Связь", has("базовая связность") or has("WAN"), job and job.mode == "diagnostics") %>
+          <% light("Связь", has("WAN gateway") or has("Public IP"), job and job.mode == "diagnostics") %>
           <% light("DNS", has("DNS"), false) %>
-          <% light("Podkop", has("podkop"), false) %>
+          <% light("Podkop", has("Podkop:"), false) %>
           <% light("VPS", has("VLESS") or has("VPS"), false) %>
         </div>
         <input type="hidden" name="token" value="<%=token%>" />
@@ -525,9 +538,33 @@ end
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Проверка SNI-кандидатов</h3>
         <p>Подготовит на VPS read-only проверку доменов для VLESS + Reality, покажет таблицу, сохранит отчёты и предложит лучший SNI-кандидат.</p>
+        <div class="warren-form-grid">
+          <div>
+            <label>VPS-отчёт Warren</label>
+            <select name="selected_vps_report">
+              <option value="">автоматически выбрать последний</option>
+              <% for _, r in ipairs(reports or {}) do %>
+                <option value="<%=r.path%>" <% if conf and conf.SELECTED_VPS_REPORT == r.path then %>selected="selected"<% end %>><%=r.host ~= "" and r.host or r.name%></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+        <% if not reports or #reports == 0 then %>
+          <p class="warren-muted">VPS-отчётов пока нет. SNI-checker запускается на VPS, поэтому сначала нужен хотя бы один отчёт Warren.</p>
+        <% end %>
+        <% if sni_reports and #sni_reports > 0 then %>
+          <div class="warren-kv">
+            <% for _, r in ipairs(sni_reports) do %>
+              <div><%=r.name%></div>
+              <code><%=r.best ~= "" and r.best or "best не найден"%><% if r.current ~= "" then %> / current: <%=r.current%><% end %> / <%=r.path%></code>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="warren-muted">Сохранённых SNI-отчётов пока нет.</p>
+        <% end %>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="sni_checker" />
-        <button class="btn cbi-button cbi-button-apply" type="submit">Запустить SNI-checker</button>
+        <button class="btn cbi-button cbi-button-apply" type="submit" <% if not reports or #reports == 0 then %>disabled="disabled"<% end %>>Запустить SNI-checker</button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
