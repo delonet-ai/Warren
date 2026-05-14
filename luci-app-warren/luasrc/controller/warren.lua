@@ -128,11 +128,17 @@ local function list_sni_reports()
   if p then
     for path in p:lines() do
       local text = read_file(path) or ""
+      local best_line = first_match(text, "\nBest candidate:%s*([^\n]+)") or first_match(text, "^Best candidate:%s*([^\n]+)")
+      local current_line = first_match(text, "\nCurrent SNI:%s*([^\n]+)") or first_match(text, "^Current SNI:%s*([^\n]+)")
       reports[#reports + 1] = {
         path = path,
         name = basename(path),
-        current = first_match(text, "\nCurrent SNI:%s*([^\n]+)") or first_match(text, "^Current SNI:%s*([^\n]+)"),
-        best = first_match(text, "\nBest candidate:%s*([^\n]+)") or first_match(text, "^Best candidate:%s*([^\n]+)")
+        current = current_line,
+        current_sni = first_match(current_line, "^([^%s%(]+)"),
+        current_status = first_match(current_line, "%(([^,%)]*)"),
+        best = best_line,
+        best_sni = first_match(best_line, "^([^%s%(]+)"),
+        best_status = first_match(best_line, "%(([^,%)]*)")
       }
     end
     p:close()
@@ -400,6 +406,9 @@ local function write_form_env()
     VPS_ROOT_PASSWORD = "vps_root_password",
     TG_BOT_TOKEN = "tg_bot_token",
     TG_BOT_CHAT_ID = "tg_chat_id",
+    SNI_APPLY_SOURCE = "sni_apply_source",
+    SNI_NEW = "sni_new",
+    SNI_REPORT_PATH = "sni_report_path",
     AMZ_CLIENT_NAME = "amz_client_name",
     QOS_CLIENT_NAME = "qos_client_name",
     QOS_PROFILE = "qos_profile"
@@ -438,6 +447,9 @@ local function validate_run_form(mode)
   local amz_client_name = trim(http.formvalue("amz_client_name") or "")
   local qos_client_name = trim(http.formvalue("qos_client_name") or "")
   local qos_profile = trim(http.formvalue("qos_profile") or "")
+  local sni_apply_source = trim(http.formvalue("sni_apply_source") or "")
+  local sni_new = trim(http.formvalue("sni_new") or "")
+  local sni_report_path = trim(http.formvalue("sni_report_path") or "")
 
   if mode == "amnezia_client_create" or mode == "amnezia_client_delete" then
     if amz_client_name == "" then
@@ -483,6 +495,25 @@ local function validate_run_form(mode)
   if mode == "sni_checker" then
     if selected_report ~= "" and not read_file(selected_report) then
       return false, "Выбранный VPS-отчёт не найден: " .. selected_report
+    end
+    return true
+  end
+
+  if mode == "sni_apply" then
+    if selected_report ~= "" and not read_file(selected_report) then
+      return false, "Выбранный VPS-отчёт не найден: " .. selected_report
+    end
+    if sni_report_path ~= "" and not read_file(sni_report_path) then
+      return false, "Выбранный SNI-отчёт не найден: " .. sni_report_path
+    end
+    if sni_apply_source ~= "best" and sni_apply_source ~= "manual" then
+      return false, "Выбери источник SNI: лучший GOOD или ручной ввод."
+    end
+    if sni_apply_source == "manual" and sni_new == "" then
+      return false, "Для ручной замены SNI введи домен."
+    end
+    if sni_new ~= "" and not sni_new:match("^[A-Za-z0-9][A-Za-z0-9.-]*%.[A-Za-z0-9][A-Za-z0-9.-]*$") then
+      return false, "SNI должен быть похож на домен, например login.vk.com."
     end
     return true
   end

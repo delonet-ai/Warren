@@ -128,6 +128,8 @@ English version is also available below: see [English](#english).
 - сохраняет отчёты в `txt` и `csv`,
 - в конце предлагает лучший SNI-кандидат для `dest`, `serverNames` и клиентского `sni`.
 
+Пункт `13) Применить SNI к VPS/Podkop` использует результат проверки или ручной ввод. Он меняет конфиги только после подтверждения: обновляет Warren Reality inbound в `3x-ui`, пересобирает VLESS-ссылку, обновляет VPS report и заменяет активный endpoint в Podkop. Перед изменениями сохраняется backup в `/etc/warren/sni-checker/backups`.
+
 ### Как будет работать автоматический режим
 `Автоматический режим` должен стать основным сценарием.
 
@@ -169,6 +171,7 @@ Acceptance:
 - `Diagnostics Podkop/VPS`;
 - emergency DNS-fallback;
 - VPS-side `SNI checker`;
+- SNI apply flow в `0.6.1`: проверка отдельно, применение отдельно, изменения только после подтверждения;
 - LuCI parity для diagnostics, SNI, Podkop status, Amnezia clients и QoS;
 - Podkop health после reboot: не полагаться только на `/etc/init.d/podkop status`, а проверять связку `podkop status`, процесс `sing-box`, nft/routing rules, sing-box config, DNS и реальную связность. На `24.10.x` был пойман случай, где `sing-box` и трафик живы, но init-status показывает `not running`.
 

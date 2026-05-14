@@ -568,6 +568,48 @@ end
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
+        <h3>Применить SNI</h3>
+        <p>После подтверждения обновит Warren Reality inbound на VPS, пересоберёт VLESS, сохранит VPS report и заменит активный endpoint в Podkop.</p>
+        <div class="warren-form-grid">
+          <div>
+            <label>VPS-отчёт Warren</label>
+            <select name="selected_vps_report">
+              <option value="">автоматически выбрать последний</option>
+              <% for _, r in ipairs(reports or {}) do %>
+                <option value="<%=r.path%>" <% if conf and conf.SELECTED_VPS_REPORT == r.path then %>selected="selected"<% end %>><%=r.host ~= "" and r.host or r.name%></option>
+              <% end %>
+            </select>
+          </div>
+          <div>
+            <label>SNI-отчёт</label>
+            <select name="sni_report_path">
+              <option value="">последний отчёт</option>
+              <% for _, r in ipairs(sni_reports or {}) do %>
+                <option value="<%=r.path%>"><%=r.best_sni ~= "" and r.best_sni or r.name%><% if r.best_status ~= "" then %> — <%=r.best_status%><% end %></option>
+              <% end %>
+            </select>
+          </div>
+          <div>
+            <label>Источник SNI</label>
+            <select name="sni_apply_source">
+              <option value="best">лучший GOOD из отчёта</option>
+              <option value="manual">ручной ввод</option>
+            </select>
+          </div>
+          <div>
+            <label>Ручной SNI</label>
+            <input name="sni_new" type="text" placeholder="login.vk.com" />
+          </div>
+        </div>
+        <% if not sni_reports or #sni_reports == 0 then %>
+          <p class="warren-muted">SNI-отчётов пока нет. Можно применить ручной SNI, но для выбора лучшего GOOD сначала запусти проверку.</p>
+        <% end %>
+        <input type="hidden" name="token" value="<%=token%>" />
+        <input type="hidden" name="mode" value="sni_apply" />
+        <button class="btn cbi-button cbi-button-apply" type="submit" <% if not reports or #reports == 0 then %>disabled="disabled"<% end %>>Применить SNI</button>
+      </form>
+
+      <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Аварийный режим</h3>
         <p>Переключит Podkop на диагностический DNS-fallback и запустит повторную проверку, как в текущем сценарии диагностики.</p>
         <input type="hidden" name="token" value="<%=token%>" />

@@ -335,6 +335,12 @@ luci_apply_form_overrides() {
         VPS_ROOT_PASSWORD="${LUCI_VPS_ROOT_PASSWORD:-}"
       fi
       ;;
+    sni_apply)
+      SELECTED_VPS_REPORT="${LUCI_SELECTED_VPS_REPORT:-}"
+      SNI_APPLY_SOURCE="${LUCI_SNI_APPLY_SOURCE:-best}"
+      SNI_NEW="${LUCI_SNI_NEW:-}"
+      SNI_REPORT_PATH="${LUCI_SNI_REPORT_PATH:-}"
+      ;;
   esac
 
   if [ -n "${LUCI_BROWSER_EPOCH:-}" ]; then
@@ -422,6 +428,9 @@ show_mode_banner() {
       say "${YELLOW}INFO${NC}  SNI-checker подготовит и запустит на VPS read-only проверку кандидатов для Reality."
       say "3x-ui, Xray, firewall и конфиги трогаться не будут."
       ;;
+    sni_apply)
+      say "${YELLOW}INFO${NC}  Применение SNI обновит Warren Reality inbound, VLESS report и Podkop после подтверждения."
+      ;;
     naiveproxy_wip)
       say "${YELLOW}INFO${NC}  Здесь будет сценарий настройки NaiveProxy."
       ;;
@@ -446,7 +455,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       return 0
       ;;
     *)
@@ -801,6 +810,7 @@ run_service_mode() {
     vps) run_vps_flow ;;
     podkop_backup) add_podkop_backup_channel ;;
     sni_checker) run_sni_checker_flow ;;
+    sni_apply) run_sni_apply_flow ;;
     naiveproxy_wip) run_naiveproxy_wip_flow ;;
     shadowsocks_fallback_wip) run_shadowsocks_fallback_wip_flow ;;
     rf_bundle_wip) run_rf_bundle_wip_flow ;;
@@ -849,6 +859,9 @@ main() {
     LUCI_VPS_ROOT_PASSWORD="${VPS_ROOT_PASSWORD:-}"
     LUCI_TG_BOT_TOKEN="${TG_BOT_TOKEN:-}"
     LUCI_TG_BOT_CHAT_ID="${TG_BOT_CHAT_ID:-}"
+    LUCI_SNI_APPLY_SOURCE="${SNI_APPLY_SOURCE:-}"
+    LUCI_SNI_NEW="${SNI_NEW:-}"
+    LUCI_SNI_REPORT_PATH="${SNI_REPORT_PATH:-}"
     LUCI_AMZ_CLIENT_NAME="${AMZ_CLIENT_NAME:-}"
     LUCI_QOS_CLIENT_NAME="${QOS_CLIENT_NAME:-}"
     LUCI_QOS_PROFILE="${QOS_PROFILE:-}"
@@ -868,6 +881,7 @@ main() {
 
   if [ "${WARREN_LUCI_REQUEST:-}" = "1" ]; then
     load_conf_if_exists || true
+    luci_apply_form_overrides
   elif [ -f "$CONF" ]; then
     load_conf
     if mode_is_one_shot_service || ! should_resume_current_mode; then

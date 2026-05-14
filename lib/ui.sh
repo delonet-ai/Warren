@@ -345,10 +345,11 @@ menu() {
   say "10) Telegram-бот для Podkop"
   say "11) Диагностика Podkop/VPS"
   say "12) Проверка SNI-кандидатов Reality"
-  say "13) NaiveProxy (WIP, Milestone 12)"
-  say "14) Shadowsocks fallback (WIP, Milestone 8)"
+  say "13) Применить SNI к VPS/Podkop"
+  say "14) NaiveProxy (WIP, Milestone 12)"
+  say "15) Shadowsocks fallback (WIP, Milestone 8)"
   say "99) Установить всё из РФ сегмента (WIP, Milestone 10)"
-  ask "Ввод (0-14, 99)" MENU_CHOICE "0"
+  ask "Ввод (0-15, 99)" MENU_CHOICE "0"
 
   case "$MENU_CHOICE" in
     0) MODE="auto" ;;
@@ -364,8 +365,9 @@ menu() {
     10) MODE="tg_bot" ;;
     11) MODE="diagnostics" ;;
     12) MODE="sni_checker" ;;
-    13) MODE="naiveproxy_wip" ;;
-    14) MODE="shadowsocks_fallback_wip" ;;
+    13) MODE="sni_apply" ;;
+    14) MODE="naiveproxy_wip" ;;
+    15) MODE="shadowsocks_fallback_wip" ;;
     99) MODE="rf_bundle_wip" ;;
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
@@ -386,7 +388,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|sni_checker|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       SELECTED_MODE="$MODE"
       load_conf_if_exists || true
       MODE="$SELECTED_MODE"
