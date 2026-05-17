@@ -50,13 +50,13 @@ English version is also available below: see [English](#english).
 - `Доустановить Amnezia в Podkop`
 - `QoS для Amnezia`
 - `Управление Amnezia клиентами`
-- `Remote Admin` (`WIP, Milestone 9`)
+- `Remote Admin` (`WIP, Milestone 7`)
 - `USB модем настрой` (`WIP, Milestone 11`)
 - `Telegram-бот для Podkop`
 - `Диагностика Podkop/VPS`
 - `Проверка SNI-кандидатов Reality`
 - `NaiveProxy` (`WIP, Milestone 12`)
-- `Shadowsocks fallback` (`WIP, Milestone 8`)
+- `Shadowsocks fallback` (`WIP, Milestone 9`)
 - `Установить всё из РФ сегмента` (`WIP, Milestone 10`)
 
 ### Где Warren хранит данные
@@ -177,14 +177,14 @@ Acceptance:
 
 Telegram bot не блокирует этот milestone: сервис ставится и стартует, но live Telegram API зависит от доступности Telegram с маршрута роутера.
 
-#### Milestone 7 — Self SNI
+#### Milestone 7 — Remote Admin
+Отдельный будущий дизайн безопасного удалённого доступа к роутеру. До реализации нужно зафиксировать, какие VPS/домены участвуют, как роутеры авторизуются и как Mac-контроль открывает туннель.
+
+#### Milestone 8 — Self SNI
 Отдельный будущий дизайн для самостоятельной проверки/подбора SNI. До реализации нужно зафиксировать, где выполняется проверка, меняет ли она конфиг автоматически и как результат попадает в Podkop/3x-ui.
 
-#### Milestone 8 — Shadowsocks Fallback
+#### Milestone 9 — Shadowsocks Fallback
 Будущий fallback-сценарий на Shadowsocks. Сейчас shell и LuCI показывают только WIP-placeholder и ничего не меняют.
-
-#### Milestone 9 — Remote Admin
-Будущий безопасный удалённый доступ к роутеру. Сейчас это WIP-placeholder.
 
 #### Milestone 10 — RF Bundle
 Будущая установка Warren из локального bundle или другого доступного ресурса внутри РФ-сегмента. Сейчас пункт `99` ничего не меняет.
@@ -273,7 +273,7 @@ The project stays on `sh` and is intended to be modularized into multiple shell 
 - `Manage Amnezia clients`
   Create, list, show config/QR, revoke, and remove clients.
 - `Remote Admin`
-  Work in progress placeholder for Milestone 9.
+  Work in progress placeholder for Milestone 7.
 - `USB modem setup`
   Work in progress placeholder for Milestone 11.
 
@@ -369,25 +369,7 @@ Target behavior:
 
 Telegram bot does not block this milestone: the service can be installed and started, but live Telegram API access depends on router-side reachability to Telegram.
 
-#### 7. Self SNI
-Status: `WIP`
-
-Target idea:
-- design a standalone SNI selection/checking scenario,
-- decide whether it runs on the router, VPS, or both,
-- decide whether it only recommends values or also applies them.
-
-This area needs a separate design pass before implementation.
-
-#### 8. Shadowsocks fallback
-Status: `WIP`
-
-Target idea:
-- add Shadowsocks as a fallback strategy separate from the current VLESS-based Podkop path.
-
-Until Milestone 8 starts, shell and LuCI only show placeholders and do not change router state.
-
-#### 9. Remote Admin
+#### 7. Remote Admin
 Status: `WIP`
 
 Target idea:
@@ -397,6 +379,24 @@ Target idea:
 - likely depend on an outbound tunnel model rather than inbound access to the router.
 
 This area needs a separate design pass before implementation.
+
+#### 8. Self SNI
+Status: `WIP`
+
+Target idea:
+- design a standalone SNI selection/checking scenario,
+- decide whether it runs on the router, VPS, or both,
+- decide whether it only recommends values or also applies them.
+
+This area needs a separate design pass before implementation.
+
+#### 9. Shadowsocks fallback
+Status: `WIP`
+
+Target idea:
+- add Shadowsocks as a fallback strategy separate from the current VLESS-based Podkop path.
+
+Until Milestone 9 starts, shell and LuCI only show placeholders and do not change router state.
 
 #### 10. RF bundle
 Status: `WIP`
@@ -478,7 +478,7 @@ lib/usb_modem.sh
 - `lib/qos.sh`
   Traffic shaping and policy profiles.
 - `lib/remote_admin.sh`
-  Placeholder module for future remote admin flows.
+  Remote Admin bootstrap, router agent install, VPS helper install, and on-demand tunnel orchestration.
 - `lib/usb_modem.sh`
   Placeholder module for modem-related flows.
 
@@ -503,9 +503,21 @@ Near-term:
 - close Milestone 6 diagnostics, SNI checker, Podkop health, and LuCI parity checks.
 
 Later:
-- Milestone 7: Self SNI,
-- Milestone 8: Shadowsocks fallback,
-- Milestone 9: Remote Admin,
+- Milestone 7: Remote Admin,
+- Milestone 8: Self SNI,
+- Milestone 9: Shadowsocks fallback,
 - Milestone 10: RF bundle,
 - Milestone 11: USB modem,
 - Milestone 12: NaiveProxy.
+
+### Milestone 7 Direction
+
+Remote Admin v1 is designed as a rendezvous flow:
+- router polls one or more VPS endpoints,
+- VPS keeps a live router catalog and a short request queue,
+- a Mac control script can request a router and wait for the tunnel,
+- once the tunnel is up, SSH and LuCI are available through localhost forwards.
+
+The first implementation path keeps the control plane fully SSH-based so it works behind CGNAT and does not require an externally reachable router IP.
+
+The Mac-side control script lives in `tools/remote-admin/warren-remote-control.sh` and reads `~/.config/warren/remote-admin.conf` by default. A starter config is provided in `tools/remote-admin/remote-admin.conf.example`.

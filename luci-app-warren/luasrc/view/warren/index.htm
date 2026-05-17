@@ -618,11 +618,11 @@ end
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>Remote Admin (WIP, Milestone 9)</h3>
-        <p class="warren-muted">Черновой раздел для будущего удалённого администрирования. Сейчас ничего не меняет.</p>
+        <h3>Remote Admin (WIP, Milestone 7)</h3>
+        <p class="warren-muted">On-demand reverse tunnel: router polls VPS endpoints, VPS keeps a router catalog, and the Mac control script can request a router and open LuCI через localhost-forward.</p>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="remote_admin" />
-        <button class="btn cbi-button" type="submit">Открыть WIP</button>
+        <button class="btn cbi-button" type="submit">Установить Remote Admin</button>
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
@@ -642,7 +642,7 @@ end
       </form>
 
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
-        <h3>Shadowsocks fallback (WIP, Milestone 8)</h3>
+        <h3>Shadowsocks fallback (WIP, Milestone 9)</h3>
         <p class="warren-muted">Placeholder для будущего fallback-сценария на Shadowsocks. Сейчас ничего не меняет.</p>
         <input type="hidden" name="token" value="<%=token%>" />
         <input type="hidden" name="mode" value="shadowsocks_fallback_wip" />

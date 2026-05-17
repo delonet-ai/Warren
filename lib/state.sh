@@ -41,6 +41,16 @@ save_conf() {
     printf "VPS_ROOT_PASSWORD=%s\n" "$(quote_sh "${VPS_ROOT_PASSWORD:-}")"
     printf "SELECTED_VPS_REPORT=%s\n" "$(quote_sh "${SELECTED_VPS_REPORT:-}")"
     printf "AUTO_VPS_SOURCE=%s\n" "$(quote_sh "${AUTO_VPS_SOURCE:-}")"
+    printf "REMOTE_ADMIN_ROUTER_ID=%s\n" "$(quote_sh "${REMOTE_ADMIN_ROUTER_ID:-}")"
+    printf "REMOTE_ADMIN_ROUTER_NAME=%s\n" "$(quote_sh "${REMOTE_ADMIN_ROUTER_NAME:-}")"
+    printf "REMOTE_ADMIN_ENDPOINTS=%s\n" "$(quote_sh "${REMOTE_ADMIN_ENDPOINTS:-}")"
+    printf "REMOTE_ADMIN_VPS_USER=%s\n" "$(quote_sh "${REMOTE_ADMIN_VPS_USER:-}")"
+    printf "REMOTE_ADMIN_POLL_INTERVAL=%s\n" "$(quote_sh "${REMOTE_ADMIN_POLL_INTERVAL:-}")"
+    printf "REMOTE_ADMIN_REQUEST_TTL=%s\n" "$(quote_sh "${REMOTE_ADMIN_REQUEST_TTL:-}")"
+    printf "REMOTE_ADMIN_MAC_LUCI_PORT=%s\n" "$(quote_sh "${REMOTE_ADMIN_MAC_LUCI_PORT:-}")"
+    printf "REMOTE_ADMIN_LOCAL_SSH_PORT=%s\n" "$(quote_sh "${REMOTE_ADMIN_LOCAL_SSH_PORT:-}")"
+    printf "REMOTE_ADMIN_LOCAL_LUCI_PORT=%s\n" "$(quote_sh "${REMOTE_ADMIN_LOCAL_LUCI_PORT:-}")"
+    printf "REMOTE_ADMIN_ROUTER_KEY_PATH=%s\n" "$(quote_sh "${REMOTE_ADMIN_ROUTER_KEY_PATH:-}")"
   } > "$CONF"
   chmod 600 "$CONF" 2>/dev/null || true
 }
@@ -50,7 +60,7 @@ conf_set() {
   val="$2"
 
   case "$key" in
-    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|AWG_ENDPOINT|VPS_HOST|VPS_SSH_PORT|VPS_ROOT_PASSWORD|SELECTED_VPS_REPORT|AUTO_VPS_SOURCE) ;;
+    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|AWG_ENDPOINT|VPS_HOST|VPS_SSH_PORT|VPS_ROOT_PASSWORD|SELECTED_VPS_REPORT|AUTO_VPS_SOURCE|REMOTE_ADMIN_ROUTER_ID|REMOTE_ADMIN_ROUTER_NAME|REMOTE_ADMIN_ENDPOINTS|REMOTE_ADMIN_VPS_USER|REMOTE_ADMIN_POLL_INTERVAL|REMOTE_ADMIN_REQUEST_TTL|REMOTE_ADMIN_MAC_LUCI_PORT|REMOTE_ADMIN_LOCAL_SSH_PORT|REMOTE_ADMIN_LOCAL_LUCI_PORT|REMOTE_ADMIN_ROUTER_KEY_PATH) ;;
     *) fail "Неизвестный ключ конфига: $key" ;;
   esac
 
@@ -105,6 +115,16 @@ capture_runtime_inputs() {
   runtime_state_set "vps_root_password" "${VPS_ROOT_PASSWORD:-}"
   runtime_state_set "selected_vps_report" "${SELECTED_VPS_REPORT:-}"
   runtime_state_set "auto_vps_source" "${AUTO_VPS_SOURCE:-}"
+  runtime_state_set "remote_admin_router_id" "${REMOTE_ADMIN_ROUTER_ID:-}"
+  runtime_state_set "remote_admin_router_name" "${REMOTE_ADMIN_ROUTER_NAME:-}"
+  runtime_state_set "remote_admin_endpoints" "${REMOTE_ADMIN_ENDPOINTS:-}"
+  runtime_state_set "remote_admin_vps_user" "${REMOTE_ADMIN_VPS_USER:-}"
+  runtime_state_set "remote_admin_poll_interval" "${REMOTE_ADMIN_POLL_INTERVAL:-}"
+  runtime_state_set "remote_admin_request_ttl" "${REMOTE_ADMIN_REQUEST_TTL:-}"
+  runtime_state_set "remote_admin_mac_luci_port" "${REMOTE_ADMIN_MAC_LUCI_PORT:-}"
+  runtime_state_set "remote_admin_local_ssh_port" "${REMOTE_ADMIN_LOCAL_SSH_PORT:-}"
+  runtime_state_set "remote_admin_local_luci_port" "${REMOTE_ADMIN_LOCAL_LUCI_PORT:-}"
+  runtime_state_set "remote_admin_router_key_path" "${REMOTE_ADMIN_ROUTER_KEY_PATH:-}"
 }
 
 cleanup_runtime_state() {
