@@ -335,6 +335,19 @@ luci_apply_form_overrides() {
         VPS_ROOT_PASSWORD="${LUCI_VPS_ROOT_PASSWORD:-}"
       fi
       ;;
+    remote_admin|remote_admin_config)
+      REMOTE_ADMIN_ROUTER_ID="${LUCI_REMOTE_ADMIN_ROUTER_ID:-}"
+      REMOTE_ADMIN_ROUTER_NAME="${LUCI_REMOTE_ADMIN_ROUTER_NAME:-}"
+      REMOTE_ADMIN_ENDPOINTS="${LUCI_REMOTE_ADMIN_ENDPOINTS:-}"
+      REMOTE_ADMIN_VPS_USER="${LUCI_REMOTE_ADMIN_VPS_USER:-}"
+      REMOTE_ADMIN_POLL_INTERVAL="${LUCI_REMOTE_ADMIN_POLL_INTERVAL:-}"
+      REMOTE_ADMIN_REQUEST_TTL="${LUCI_REMOTE_ADMIN_REQUEST_TTL:-}"
+      REMOTE_ADMIN_MAC_LUCI_PORT="${LUCI_REMOTE_ADMIN_MAC_LUCI_PORT:-}"
+      REMOTE_ADMIN_LOCAL_SSH_PORT="${LUCI_REMOTE_ADMIN_LOCAL_SSH_PORT:-}"
+      REMOTE_ADMIN_LOCAL_LUCI_PORT="${LUCI_REMOTE_ADMIN_LOCAL_LUCI_PORT:-}"
+      REMOTE_ADMIN_ROUTER_KEY_PATH="${LUCI_REMOTE_ADMIN_ROUTER_KEY_PATH:-}"
+      REMOTE_ADMIN_ENABLED="${LUCI_REMOTE_ADMIN_ENABLED:-1}"
+      ;;
     sni_apply)
       SELECTED_VPS_REPORT="${LUCI_SELECTED_VPS_REPORT:-}"
       SNI_APPLY_SOURCE="${LUCI_SNI_APPLY_SOURCE:-best}"
@@ -421,6 +434,9 @@ show_mode_banner() {
     qos_private)
       say "${YELLOW}INFO${NC}  QoS для Amnezia управляет DSCP-профилями клиентов через nft."
       ;;
+    remote_admin|remote_admin_config|remote_admin_poll_now|remote_admin_router_install|remote_admin_vps_install)
+      say "${YELLOW}INFO${NC}  Remote Admin можно сначала сохранить как конфиг, а router/VPS helper'ы поставить отдельными шагами."
+      ;;
     amnezia_client_create|amnezia_client_delete|manage_private)
       say "${YELLOW}INFO${NC}  Управление Amnezia-клиентами работает через тот же backend, что shell, LuCI и TG."
       ;;
@@ -455,7 +471,7 @@ mode_target_state() {
 
 mode_is_one_shot_service() {
   case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|remote_admin_config|remote_admin_poll_now|remote_admin_router_install|remote_admin_vps_install|remote_admin_console|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       return 0
       ;;
     *)
@@ -804,6 +820,12 @@ run_podkop_flow() {
   esac
 }
 
+run_remote_admin_console() {
+  remote_control="${SCRIPT_DIR}/tools/remote-admin/warren-remote-control.sh"
+  [ -x "$remote_control" ] || [ -r "$remote_control" ] || fail "Mac Remote Admin control script not found: $remote_control"
+  exec sh "$remote_control"
+}
+
 run_service_mode() {
   case "$MODE" in
     initialize) install_warren_luci_ui ;;
@@ -817,6 +839,11 @@ run_service_mode() {
     qos_private) run_qos_flow ;;
     amnezia_client_create) run_amnezia_client_create_flow ;;
     amnezia_client_delete) run_amnezia_client_delete_flow ;;
+    remote_admin_config) run_remote_admin_config_flow ;;
+    remote_admin_poll_now) remote_admin_poll_now_flow ;;
+    remote_admin_router_install) remote_admin_install_router_agent ;;
+    remote_admin_vps_install) remote_admin_install_vps_helper ;;
+    remote_admin_console) run_remote_admin_console ;;
     remote_admin) run_remote_admin_flow ;;
     usb_modem) run_usb_modem_flow ;;
     tg_bot) run_tg_bot_flow ;;
@@ -832,6 +859,13 @@ run_service_mode() {
 }
 
 main() {
+  if [ "${WARREN_CLI_ARG1:-}" = "remote" ]; then
+    remote_control="${SCRIPT_DIR}/tools/remote-admin/warren-remote-control.sh"
+    [ -x "$remote_control" ] || [ -r "$remote_control" ] || fail "Mac Remote Admin control script not found: $remote_control"
+    shift 1
+    exec sh "$remote_control" "$@"
+  fi
+
   warren_maybe_offer_update "$@"
 
   if [ "${WARREN_CLI_ARG1:-}" = "--apply-qos" ]; then
@@ -859,6 +893,16 @@ main() {
     LUCI_VPS_ROOT_PASSWORD="${VPS_ROOT_PASSWORD:-}"
     LUCI_TG_BOT_TOKEN="${TG_BOT_TOKEN:-}"
     LUCI_TG_BOT_CHAT_ID="${TG_BOT_CHAT_ID:-}"
+    LUCI_REMOTE_ADMIN_ROUTER_ID="${REMOTE_ADMIN_ROUTER_ID:-}"
+    LUCI_REMOTE_ADMIN_ROUTER_NAME="${REMOTE_ADMIN_ROUTER_NAME:-}"
+    LUCI_REMOTE_ADMIN_ENDPOINTS="${REMOTE_ADMIN_ENDPOINTS:-}"
+    LUCI_REMOTE_ADMIN_VPS_USER="${REMOTE_ADMIN_VPS_USER:-}"
+    LUCI_REMOTE_ADMIN_POLL_INTERVAL="${REMOTE_ADMIN_POLL_INTERVAL:-}"
+    LUCI_REMOTE_ADMIN_REQUEST_TTL="${REMOTE_ADMIN_REQUEST_TTL:-}"
+    LUCI_REMOTE_ADMIN_MAC_LUCI_PORT="${REMOTE_ADMIN_MAC_LUCI_PORT:-}"
+    LUCI_REMOTE_ADMIN_LOCAL_SSH_PORT="${REMOTE_ADMIN_LOCAL_SSH_PORT:-}"
+    LUCI_REMOTE_ADMIN_LOCAL_LUCI_PORT="${REMOTE_ADMIN_LOCAL_LUCI_PORT:-}"
+    LUCI_REMOTE_ADMIN_ROUTER_KEY_PATH="${REMOTE_ADMIN_ROUTER_KEY_PATH:-}"
     LUCI_SNI_APPLY_SOURCE="${SNI_APPLY_SOURCE:-}"
     LUCI_SNI_NEW="${SNI_NEW:-}"
     LUCI_SNI_REPORT_PATH="${SNI_REPORT_PATH:-}"
@@ -922,4 +966,4 @@ main() {
   say "Если был ребут — просто запусти тот же скрипт снова, он продолжит."
 }
 
-main
+main "$@"

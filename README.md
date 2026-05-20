@@ -83,7 +83,7 @@ English version is also available below: see [English](#english).
 - `IP только с VPN` — управление `Fully Routed IPs`: весь трафик таких клиентов принудительно идёт через выбранную секцию.
 - `Выбор Endpoint` — кнопка `Auto` включает URLTest по всем сохранённым endpoints, ниже идут кнопки с IP/host текущих endpoints.
 - `Редактор Endpoint` — добавление и удаление endpoints.
-- При добавлении endpoint бот предлагает новые VPS-отчёты из `/etc/warren/vps/reports`, которые создаёт режим `Настрой мне VPS`, или кнопку `Ввести свой`.
+- При добавлении endpoint бот предлагает новые VPS-отчёты из `/etc/warren/vps/reports`, которые создаёт режим `Настрой мне VPS` вместе с Remote Admin, или кнопку `Ввести свой`.
 - В IP-разделах кнопка с IP удаляет его из списка, а `Добавить новый` переводит бота в режим ввода IP или подсети одной строкой.
 - `Статус` показывает оба IP-списка: `IP без VPN` и `IP только с VPN`.
 - `Amnezia клиенты` — список, создание, QR/config и удаление AmneziaWG-клиентов.
@@ -178,7 +178,13 @@ Acceptance:
 Telegram bot не блокирует этот milestone: сервис ставится и стартует, но live Telegram API зависит от доступности Telegram с маршрута роутера.
 
 #### Milestone 7 — Remote Admin
-Отдельный будущий дизайн безопасного удалённого доступа к роутеру. До реализации нужно зафиксировать, какие VPS/домены участвуют, как роутеры авторизуются и как Mac-контроль открывает туннель.
+Mac-driven Remote Admin уже реализуется как отдельный control plane:
+- Mac хранит VPS profiles локально и запускает `warren remote`;
+- VPS держит helper и каталог роутеров;
+- роутер поднимает on-demand reverse tunnel и отвечает на polling;
+- LuCI и SSH доступны через localhost forwards.
+
+Осталось довести unattended daemon heartbeat и полировку статусов `status/list`, чтобы они всегда отражали живой туннель и живой polling loop.
 
 #### Milestone 8 — Self SNI
 Отдельный будущий дизайн для самостоятельной проверки/подбора SNI. До реализации нужно зафиксировать, где выполняется проверка, меняет ли она конфиг автоматически и как результат попадает в Podkop/3x-ui.
@@ -194,6 +200,9 @@ Telegram bot не блокирует этот milestone: сервис стави
 
 #### Milestone 12 — NaiveProxy
 Будущий отдельный сценарий настройки NaiveProxy. Сейчас это WIP-placeholder.
+
+#### Milestone 13 — NetData + Statistics
+Будущая замена `luci-app-nlbwmon` на NetData с `luci-app-statistics` как частью набора мониторинга. Сейчас это WIP-placeholder и ничего не меняет.
 
 ---
 
@@ -225,6 +234,7 @@ The repository already contains a working bootstrap script and is evolving into 
 - VPS setup,
 - Podkop configuration,
 - private remote access,
+- Mac-driven Remote Admin control plane,
 - future client/QoS/admin workflows.
 
 ### Installation
@@ -273,7 +283,7 @@ The project stays on `sh` and is intended to be modularized into multiple shell 
 - `Manage Amnezia clients`
   Create, list, show config/QR, revoke, and remove clients.
 - `Remote Admin`
-  Work in progress placeholder for Milestone 7.
+  Mac-driven remote access scaffold for Milestone 7, with VPS helper, router agent, and on-demand tunnel orchestration.
 - `USB modem setup`
   Work in progress placeholder for Milestone 11.
 
@@ -518,6 +528,80 @@ Remote Admin v1 is designed as a rendezvous flow:
 - a Mac control script can request a router and wait for the tunnel,
 - once the tunnel is up, SSH and LuCI are available through localhost forwards.
 
+Fresh `Настрой мне VPS` runs now include the VPS-side Remote Admin helper, so a new server is ready for on-demand access immediately after the normal 3x-ui/VLESS setup.
+The LuCI view also has a separate Remote Admin config card, so endpoint lists and local ports can be saved before any router/VPS live test.
+
 The first implementation path keeps the control plane fully SSH-based so it works behind CGNAT and does not require an externally reachable router IP.
 
-The Mac-side control script lives in `tools/remote-admin/warren-remote-control.sh` and reads `~/.config/warren/remote-admin.conf` by default. A starter config is provided in `tools/remote-admin/remote-admin.conf.example`.
+The Mac-side control script lives in `tools/remote-admin/warren-remote-control.sh` and is also available through `warren remote` when running from the repository checkout.
+
+Mac Remote Admin stores VPS profiles as separate `0600` files in `~/.config/warren/remote-admin/vps.d/<name>.conf`. The interactive entrypoint is:
+
+```sh
+sh warren.sh remote
+```
+
+The same console is also available from the base Warren menu:
+
+```sh
+sh warren.sh
+# then choose: 16) Remote Admin Console (Mac)
+```
+
+The CLI backend supports:
+
+```sh
+sh warren.sh remote vps add
+sh warren.sh remote vps list
+sh warren.sh remote vps check --vps <name>
+sh warren.sh remote vps bootstrap --vps <name>
+sh warren.sh remote routers --vps <name>
+sh warren.sh remote connect --vps <name> --router <router-id>
+sh warren.sh remote close --vps <name> --router <router-id>
+sh warren.sh remote router install-agent --vps <name> --host <openwrt-host>
+```
+
+### Empty Router + Empty VPS Scenario
+
+This is the recommended end-to-end regression path for a fresh OpenWrt router and a freshly reinstalled VPS.
+
+#### Preconditions
+- Router is flashed with a clean OpenWrt image.
+- VPS is a clean Ubuntu/Debian install with root SSH access.
+- Mac has access to the Warren checkout and SSH reachability to both hosts.
+
+#### Canonical flow
+1. On the router, run `sh warren.sh`.
+2. Choose `0) Полный авторежим`.
+3. Confirm that the automatic path completes:
+   - basic setup,
+   - overlay/expand-root,
+   - Podkop,
+   - Amnezia/QoS,
+   - diagnostics tools,
+   - SNI checker/apply readiness,
+   - LuCI parity,
+   - Telegram bot if it is enabled in the current auto-flow.
+4. Run `Настрой мне VPS` from the same Warren session or immediately after it.
+5. Confirm that VPS setup completes:
+   - 3x-ui installation,
+   - VLESS + Reality generation,
+   - VPS report generation,
+   - Remote Admin helper installation,
+   - `/var/lib/warren-remote` creation,
+   - cron cleanup installation.
+6. On the Mac, open `sh warren.sh remote`.
+7. Add a VPS profile for the fresh server.
+8. Run `vps bootstrap` or `vps install-helper` if the helper is missing.
+9. Install the router agent through the Remote Admin console.
+10. Create a test request, wait for polling, and verify that the reverse tunnel appears.
+11. Open LuCI through localhost forwards.
+12. Run `close` and confirm the tunnel and request disappear cleanly.
+13. Reboot the router and verify that the base state comes back normally.
+
+#### Pass criteria
+- Empty router bootstraps without manual file edits.
+- Empty VPS receives Warren remote components automatically.
+- Remote Admin becomes usable only after the router/VPS parts are in place.
+- `list`, `status`, `request`, and `close` all work on the VPS helper.
+- Mac-driven Remote Admin can reach router SSH and LuCI through localhost.

@@ -44,9 +44,9 @@ install_full_pkg_list() {
   essential_pkgs="$common_pkgs ip-full"
 
   if pkg_manager_is_apk; then
-    optional_pkgs="nano-full wget-ssl nftables-json"
+    optional_pkgs="nano-full wget-ssl nftables-json luci-app-nlbwmon"
   else
-    optional_pkgs="nano-full wget-ssl nftables-json"
+    optional_pkgs="nano-full wget-ssl nftables-json luci-app-nlbwmon"
   fi
 
   # shellcheck disable=SC2086
@@ -65,7 +65,19 @@ install_full_pkg_list() {
     fi
   fi
 
+  enable_nlbwmon_service
+
   done_ "Установлен полный список пакетов"
+}
+
+enable_nlbwmon_service() {
+  [ -x /etc/init.d/nlbwmon ] || return 0
+
+  if /etc/init.d/nlbwmon enable >/dev/null 2>&1; then
+    done_ "nlbwmon включён"
+  else
+    warn "Не удалось включить nlbwmon"
+  fi
 }
 
 overlay_report_and_prepare_expand() {

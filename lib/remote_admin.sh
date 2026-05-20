@@ -64,13 +64,14 @@ remote_admin_defaults_sync() {
   [ -n "${REMOTE_ADMIN_ROUTER_NAME:-}" ] || REMOTE_ADMIN_ROUTER_NAME="$(remote_admin_default_router_name)"
   [ -n "${REMOTE_ADMIN_ENDPOINTS:-}" ] || REMOTE_ADMIN_ENDPOINTS="$(remote_admin_default_endpoint)"
   [ -n "${REMOTE_ADMIN_VPS_USER:-}" ] || REMOTE_ADMIN_VPS_USER="$(remote_admin_default_vps_user)"
-  [ -n "${REMOTE_ADMIN_POLL_INTERVAL:-}" ] || REMOTE_ADMIN_POLL_INTERVAL="30"
+  [ -n "${REMOTE_ADMIN_POLL_INTERVAL:-}" ] || REMOTE_ADMIN_POLL_INTERVAL="300"
   [ -n "${REMOTE_ADMIN_REQUEST_TTL:-}" ] || REMOTE_ADMIN_REQUEST_TTL="900"
   [ -n "${REMOTE_ADMIN_MAC_LUCI_PORT:-}" ] || REMOTE_ADMIN_MAC_LUCI_PORT="8081"
   [ -n "${REMOTE_ADMIN_MAC_SSH_PORT:-}" ] || REMOTE_ADMIN_MAC_SSH_PORT="2201"
   [ -n "${REMOTE_ADMIN_LOCAL_SSH_PORT:-}" ] || REMOTE_ADMIN_LOCAL_SSH_PORT="2201"
   [ -n "${REMOTE_ADMIN_LOCAL_LUCI_PORT:-}" ] || REMOTE_ADMIN_LOCAL_LUCI_PORT="8081"
   [ -n "${REMOTE_ADMIN_ROUTER_KEY_PATH:-}" ] || REMOTE_ADMIN_ROUTER_KEY_PATH="$(vps_key_file 2>/dev/null || printf "%s/remote-admin/router_ed25519" "$(remote_admin_base_dir)")"
+  [ -n "${REMOTE_ADMIN_ENABLED:-}" ] || REMOTE_ADMIN_ENABLED="1"
 }
 
 remote_admin_save_config() {
@@ -82,6 +83,9 @@ remote_admin_save_config() {
   conf_set REMOTE_ADMIN_POLL_INTERVAL "$REMOTE_ADMIN_POLL_INTERVAL"
   conf_set REMOTE_ADMIN_REQUEST_TTL "$REMOTE_ADMIN_REQUEST_TTL"
   conf_set REMOTE_ADMIN_MAC_LUCI_PORT "$REMOTE_ADMIN_MAC_LUCI_PORT"
+  conf_set REMOTE_ADMIN_LOCAL_SSH_PORT "$REMOTE_ADMIN_LOCAL_SSH_PORT"
+  conf_set REMOTE_ADMIN_LOCAL_LUCI_PORT "$REMOTE_ADMIN_LOCAL_LUCI_PORT"
+  conf_set REMOTE_ADMIN_ROUTER_KEY_PATH "$REMOTE_ADMIN_ROUTER_KEY_PATH"
 }
 
 remote_admin_summary() {
@@ -92,7 +96,7 @@ remote_admin_summary() {
   say "  router_name: ${REMOTE_ADMIN_ROUTER_NAME:-unknown}"
   say "  endpoints: ${REMOTE_ADMIN_ENDPOINTS:-unknown}"
   say "  vps_user: ${REMOTE_ADMIN_VPS_USER:-root}"
-  say "  poll interval: ${REMOTE_ADMIN_POLL_INTERVAL:-30}s"
+  say "  poll interval: ${REMOTE_ADMIN_POLL_INTERVAL:-300}s"
   say "  request ttl: ${REMOTE_ADMIN_REQUEST_TTL:-900}s"
   say "  mac browser port: ${REMOTE_ADMIN_MAC_LUCI_PORT:-8081}"
   if [ -n "${REMOTE_ADMIN_ROUTER_KEY_PATH:-}" ]; then
@@ -125,6 +129,8 @@ STATE_DIR="${WARREN_REMOTE_ADMIN_RUNTIME_DIR:-/var/run/warren-remote-admin}"
 LOG_FILE="${WARREN_REMOTE_ADMIN_LOG_FILE:-/tmp/warren-remote-admin.log}"
 PID_FILE="${STATE_DIR}/tunnel.pid"
 CURRENT_PORTS_FILE="${STATE_DIR}/tunnel.ports"
+DAEMON_PID_FILE="${STATE_DIR}/daemon.pid"
+LAST_POLL_FILE="${STATE_DIR}/last-poll.env"
 
 now_epoch() {
   date +%s 2>/dev/null || echo 0
@@ -236,6 +242,16 @@ stop_tunnel() {
   rm -f "$PID_FILE" "$CURRENT_PORTS_FILE" >/dev/null 2>&1 || true
 }
 
+write_last_poll() {
+  {
+    printf "LAST_POLL_AT=%s\n" "$(now_epoch)"
+    printf "LAST_POLL_ACTION=%s\n" "${1:-}"
+    printf "LAST_POLL_ENDPOINT=%s\n" "${2:-}"
+    printf "LAST_POLL_RESULT=%s\n" "${3:-}"
+    printf "LAST_POLL_REQUEST_ID=%s\n" "${4:-}"
+  } > "$LAST_POLL_FILE"
+}
+
 tunnel_running() {
   if pid="$(current_pid 2>/dev/null || true)"; then
     kill -0 "$pid" >/dev/null 2>&1
@@ -261,20 +277,18 @@ start_tunnel() {
     stop_tunnel
   fi
 
-  tunnel_cmd="ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -i \"$REMOTE_ADMIN_ROUTER_KEY_PATH\" -p \"$endpoint_port\" -R 127.0.0.1:${tunnel_ssh_port}:127.0.0.1:22 -R 127.0.0.1:${tunnel_luci_port}:127.0.0.1:80 ${REMOTE_ADMIN_VPS_USER}@${endpoint_host}"
-
   if command -v autossh >/dev/null 2>&1; then
-    nohup autossh -M 0 -N \
-      -o ExitOnForwardFailure=yes \
-      -o ServerAliveInterval=20 \
-      -o ServerAliveCountMax=3 \
-      -i "$REMOTE_ADMIN_ROUTER_KEY_PATH" \
-      -p "$endpoint_port" \
-      -R "127.0.0.1:${tunnel_ssh_port}:127.0.0.1:22" \
-      -R "127.0.0.1:${tunnel_luci_port}:127.0.0.1:80" \
-      "${REMOTE_ADMIN_VPS_USER}@${endpoint_host}" >>"$LOG_FILE" 2>&1 &
+    tunnel_cmd="exec autossh -M 0 -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -i \"$REMOTE_ADMIN_ROUTER_KEY_PATH\" -p \"$endpoint_port\" -R 127.0.0.1:${tunnel_ssh_port}:127.0.0.1:22 -R 127.0.0.1:${tunnel_luci_port}:127.0.0.1:80 ${REMOTE_ADMIN_VPS_USER}@${endpoint_host}"
   else
-    nohup sh -c "$tunnel_cmd" >>"$LOG_FILE" 2>&1 &
+    tunnel_cmd="exec ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -i \"$REMOTE_ADMIN_ROUTER_KEY_PATH\" -p \"$endpoint_port\" -R 127.0.0.1:${tunnel_ssh_port}:127.0.0.1:22 -R 127.0.0.1:${tunnel_luci_port}:127.0.0.1:80 ${REMOTE_ADMIN_VPS_USER}@${endpoint_host}"
+  fi
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid sh -c "$tunnel_cmd" >>"$LOG_FILE" 2>&1 </dev/null &
+  elif command -v nohup >/dev/null 2>&1; then
+    nohup sh -c "$tunnel_cmd" >>"$LOG_FILE" 2>&1 </dev/null &
+  else
+    sh -c "$tunnel_cmd" >>"$LOG_FILE" 2>&1 </dev/null &
   fi
 
   pid="$!"
@@ -305,6 +319,20 @@ report_status() {
   printf "REQUEST_TTL=%s\n" "${REMOTE_ADMIN_REQUEST_TTL:-}"
   printf "LOCAL_SSH_PORT=%s\n" "${REMOTE_ADMIN_LOCAL_SSH_PORT:-}"
   printf "LOCAL_LUCI_PORT=%s\n" "${REMOTE_ADMIN_LOCAL_LUCI_PORT:-}"
+  if [ -r "$LAST_POLL_FILE" ]; then
+    sed -n 's/^LAST_POLL_AT=/LAST_POLL_AT=/p;s/^LAST_POLL_ACTION=/LAST_POLL_ACTION=/p;s/^LAST_POLL_ENDPOINT=/LAST_POLL_ENDPOINT=/p;s/^LAST_POLL_RESULT=/LAST_POLL_RESULT=/p;s/^LAST_POLL_REQUEST_ID=/LAST_POLL_REQUEST_ID=/p' "$LAST_POLL_FILE"
+  fi
+  if [ -s "$DAEMON_PID_FILE" ]; then
+    daemon_pid="$(cat "$DAEMON_PID_FILE" 2>/dev/null || true)"
+    printf "DAEMON_PID=%s\n" "$daemon_pid"
+    if kill -0 "$daemon_pid" >/dev/null 2>&1; then
+      printf "DAEMON_STATUS=up\n"
+    else
+      printf "DAEMON_STATUS=down\n"
+    fi
+  else
+    printf "DAEMON_STATUS=unknown\n"
+  fi
   if tunnel_running; then
     printf "TUNNEL_STATUS=up\n"
     sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1 | sed 's/^/TUNNEL_SSH_PORT=/'
@@ -377,17 +405,20 @@ poll_once() {
       for endpoint in $(endpoint_candidates); do
         helper_call "$endpoint" tunnel-up "$REMOTE_ADMIN_ROUTER_ID" "$request_id" "$tunnel_ssh_port" "$tunnel_luci_port" >/dev/null 2>&1 && break || true
       done
+      write_last_poll "OPEN" "$chosen_endpoint" "tunnel-up" "$request_id"
       ;;
     CLOSE)
       stop_tunnel
       for endpoint in $(endpoint_candidates); do
         helper_call "$endpoint" tunnel-down "$REMOTE_ADMIN_ROUTER_ID" "$request_id" >/dev/null 2>&1 && break || true
       done
+      write_last_poll "CLOSE" "$chosen_endpoint" "tunnel-down" "$request_id"
       ;;
     NONE|"")
       if ! tunnel_running; then
         rm -f "$PID_FILE" "$CURRENT_PORTS_FILE" >/dev/null 2>&1 || true
       fi
+      write_last_poll "NONE" "$chosen_endpoint" "idle" "$request_id"
       ;;
   esac
 }
@@ -395,6 +426,8 @@ poll_once() {
 daemon_loop() {
   load_config || exit 1
   ensure_state_dir
+  printf "%s\n" "$$" > "$DAEMON_PID_FILE"
+  trap 'rm -f "$DAEMON_PID_FILE" >/dev/null 2>&1 || true' EXIT INT TERM
   log "daemon starting for ${REMOTE_ADMIN_ROUTER_ID:-unknown}"
   while :; do
     poll_once || true
@@ -563,7 +596,14 @@ request_create() {
   tunnel_luci_port="$(printf "%s" "$ports" | awk '{print $2}')"
   request_id="$(date +%Y%m%d%H%M%S)-$(sanitize_id "$router_id")"
   request_at="$(now_epoch)"
-  request_expires=$((request_at + ttl))
+  case "$ttl" in
+    ''|*[!0-9]*) ttl=900 ;;
+  esac
+  if [ "$ttl" -le 0 ]; then
+    request_expires=0
+  else
+    request_expires=$((request_at + ttl))
+  fi
   request_file_path="$(request_file "$router_id")"
   write_env "$request_file_path" \
     "ROUTER_ID=${router_id}" \
@@ -609,6 +649,9 @@ request_state() {
   . "$file"
   now="$(now_epoch)"
   case "${REQUEST_EXPIRES:-0}" in
+    0)
+      return 0
+      ;;
     ''|*[!0-9]*) return 1 ;;
   esac
   if [ "$now" -gt "$REQUEST_EXPIRES" ]; then
@@ -758,6 +801,7 @@ cleanup() {
     # shellcheck disable=SC1090
     . "$file"
     case "${REQUEST_EXPIRES:-0}" in
+      0) continue ;;
       ''|*[!0-9]*) continue ;;
     esac
     if [ "$now" -gt "$REQUEST_EXPIRES" ]; then
@@ -912,6 +956,34 @@ remote_admin_install_vps_helper() {
   vps_step_done "VPS Remote Admin helper установлен"
 }
 
+remote_admin_install_vps_bundle() {
+  remote_admin_defaults_sync
+  remote_admin_save_config
+  remote_admin_install_router_agent || fail "Не удалось установить router-side Remote Admin"
+}
+
+remote_admin_poll_now_flow() {
+  remote_admin_defaults_sync
+  say ""
+  say "Remote Admin: immediate poll"
+  if [ ! -x "$(remote_admin_router_agent_path)" ]; then
+    fail "Router agent is missing. Install Remote Admin on the router first."
+  fi
+  if /usr/bin/warren-remote-agent poll >/dev/null 2>&1; then
+    done_ "Remote Admin poll triggered"
+  else
+    warn "Poll returned no response or no endpoint answered yet."
+    done_ "Remote Admin poll triggered"
+  fi
+}
+
+remote_admin_config_only() {
+  remote_admin_defaults_sync
+  remote_admin_save_config
+  remote_admin_report_status
+  done_ "Remote Admin settings saved"
+}
+
 remote_admin_report_status() {
   remote_admin_summary
   say "  router agent: $( [ -x "$(remote_admin_router_agent_path)" ] && printf installed || printf missing )"
@@ -932,6 +1004,12 @@ run_remote_admin_flow() {
   say "  3) When requested, router opens reverse SSH ports for SSH and LuCI."
   say "  4) On the Mac, use tools/remote-admin/warren-remote-control.sh to request and open the UI."
 
+  if ! detect_pkg_manager >/dev/null 2>&1; then
+    warn "На этой системе нет OpenWrt package manager. Сохраняю только Remote Admin config, без установки router/VPS helper'ов."
+    remote_admin_config_only || fail "Не удалось сохранить настройки Remote Admin"
+    return 0
+  fi
+
   if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_ROOT_PASSWORD:-}" ]; then
     warn "VPS host/password is not fully configured yet. Router install will still prepare local files."
     remote_admin_install_router_agent || fail "Не удалось установить router-side Remote Admin"
@@ -950,4 +1028,10 @@ run_remote_admin_flow() {
   say "Router ID: ${REMOTE_ADMIN_ROUTER_ID}"
   say "VPS endpoint: ${REMOTE_ADMIN_ENDPOINTS}"
   done_ "Remote Admin scaffold installed for router and VPS"
+}
+
+run_remote_admin_config_flow() {
+  say ""
+  say "Remote Admin: save configuration only"
+  remote_admin_config_only || fail "Не удалось сохранить настройки Remote Admin"
 }

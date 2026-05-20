@@ -340,7 +340,7 @@ menu() {
   say "5) Доустановить Amnezia в Podkop"
   say "6) QoS для Amnezia"
   say "7) Управление Amnezia клиентами"
-  say "8) Remote Admin (WIP, Milestone 7)"
+  say "8) Remote Admin"
   say "9) USB модем настрой (WIP, Milestone 11)"
   say "10) Telegram-бот для Podkop"
   say "11) Диагностика Podkop/VPS"
@@ -348,8 +348,9 @@ menu() {
   say "13) Применить SNI к VPS/Podkop"
   say "14) NaiveProxy (WIP, Milestone 12)"
   say "15) Shadowsocks fallback (WIP, Milestone 9)"
+  say "16) Remote Admin Console (Mac)"
   say "99) Установить всё из РФ сегмента (WIP, Milestone 10)"
-  ask "Ввод (0-15, 99)" MENU_CHOICE "0"
+  ask "Ввод (0-16, 99)" MENU_CHOICE "0"
 
   case "$MENU_CHOICE" in
     0) MODE="auto" ;;
@@ -368,6 +369,7 @@ menu() {
     13) MODE="sni_apply" ;;
     14) MODE="naiveproxy_wip" ;;
     15) MODE="shadowsocks_fallback_wip" ;;
+    16) MODE="remote_admin_console" ;;
     99) MODE="rf_bundle_wip" ;;
     *) fail "Неверный выбор: $MENU_CHOICE" ;;
   esac
@@ -388,7 +390,7 @@ menu() {
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
   case "$MODE" in
-    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|usb_modem|tg_bot|diagnostics|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|remote_admin_console|usb_modem|tg_bot|diagnostics|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       SELECTED_MODE="$MODE"
       load_conf_if_exists || true
       MODE="$SELECTED_MODE"

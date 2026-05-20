@@ -232,6 +232,27 @@ local function podkop_status()
   }
 end
 
+local function remote_admin_status()
+  local conf = read_conf_table()
+  local router_agent = shell_read("[ -x /usr/bin/warren-remote-agent ] && echo installed || echo missing")
+  local router_init = shell_read("[ -x /etc/init.d/warren-remote-admin ] && echo installed || echo missing")
+  local router_conf = shell_read("[ -r /etc/warren/warren-remote-admin.conf ] && echo installed || echo missing")
+  local daemon_status = shell_read("[ -x /usr/bin/warren-remote-agent ] && /usr/bin/warren-remote-agent status 2>/dev/null | sed -n 's/^DAEMON_STATUS=//p' | head -n1")
+  local tunnel_status = shell_read("[ -x /usr/bin/warren-remote-agent ] && /usr/bin/warren-remote-agent status 2>/dev/null | sed -n 's/^TUNNEL_STATUS=//p' | head -n1")
+  local last_poll = shell_read("[ -x /usr/bin/warren-remote-agent ] && /usr/bin/warren-remote-agent status 2>/dev/null | sed -n 's/^LAST_POLL_AT=//p' | head -n1")
+  local vps_target = shell_read("VPS_HOST=''; [ -r /etc/warren/warren.conf ] && . /etc/warren/warren.conf >/dev/null 2>&1; [ -n \"$VPS_HOST\" ] && echo configured || echo missing")
+  return {
+    router_agent = router_agent ~= "" and router_agent or "missing",
+    router_init = router_init ~= "" and router_init or "missing",
+    router_conf = router_conf ~= "" and router_conf or "missing",
+    daemon_status = daemon_status ~= "" and daemon_status or "unknown",
+    tunnel_status = tunnel_status ~= "" and tunnel_status or "down",
+    last_poll = last_poll ~= "" and last_poll or "",
+    vps_target = vps_target ~= "" and vps_target or "missing",
+    poll_interval = conf and conf.REMOTE_ADMIN_POLL_INTERVAL or "300"
+  }
+end
+
 local function annotate_reports_for_podkop(reports, podkop)
   local available_backup_count = 0
   for _, report in ipairs(reports or {}) do
@@ -411,7 +432,17 @@ local function write_form_env()
     SNI_REPORT_PATH = "sni_report_path",
     AMZ_CLIENT_NAME = "amz_client_name",
     QOS_CLIENT_NAME = "qos_client_name",
-    QOS_PROFILE = "qos_profile"
+    QOS_PROFILE = "qos_profile",
+    REMOTE_ADMIN_ROUTER_ID = "remote_admin_router_id",
+    REMOTE_ADMIN_ROUTER_NAME = "remote_admin_router_name",
+    REMOTE_ADMIN_ENDPOINTS = "remote_admin_endpoints",
+    REMOTE_ADMIN_VPS_USER = "remote_admin_vps_user",
+    REMOTE_ADMIN_POLL_INTERVAL = "remote_admin_poll_interval",
+    REMOTE_ADMIN_REQUEST_TTL = "remote_admin_request_ttl",
+    REMOTE_ADMIN_MAC_LUCI_PORT = "remote_admin_mac_luci_port",
+    REMOTE_ADMIN_LOCAL_SSH_PORT = "remote_admin_local_ssh_port",
+    REMOTE_ADMIN_LOCAL_LUCI_PORT = "remote_admin_local_luci_port",
+    REMOTE_ADMIN_ROUTER_KEY_PATH = "remote_admin_router_key_path"
   }
   local lines = {"WARREN_LUCI_FORM=1"}
   for env_name, form_name in pairs(allowed) do
@@ -447,9 +478,20 @@ local function validate_run_form(mode)
   local amz_client_name = trim(http.formvalue("amz_client_name") or "")
   local qos_client_name = trim(http.formvalue("qos_client_name") or "")
   local qos_profile = trim(http.formvalue("qos_profile") or "")
+  local remote_admin_router_id = trim(http.formvalue("remote_admin_router_id") or "")
+  local remote_admin_router_name = trim(http.formvalue("remote_admin_router_name") or "")
+  local remote_admin_endpoints = trim(http.formvalue("remote_admin_endpoints") or "")
+  local remote_admin_vps_user = trim(http.formvalue("remote_admin_vps_user") or "")
+  local remote_admin_poll_interval = trim(http.formvalue("remote_admin_poll_interval") or "")
+  local remote_admin_request_ttl = trim(http.formvalue("remote_admin_request_ttl") or "")
+  local remote_admin_mac_luci_port = trim(http.formvalue("remote_admin_mac_luci_port") or "")
+  local remote_admin_local_ssh_port = trim(http.formvalue("remote_admin_local_ssh_port") or "")
+  local remote_admin_local_luci_port = trim(http.formvalue("remote_admin_local_luci_port") or "")
+  local remote_admin_router_key_path = trim(http.formvalue("remote_admin_router_key_path") or "")
   local sni_apply_source = trim(http.formvalue("sni_apply_source") or "")
   local sni_new = trim(http.formvalue("sni_new") or "")
   local sni_report_path = trim(http.formvalue("sni_report_path") or "")
+  local conf = read_conf_table()
 
   if mode == "amnezia_client_create" or mode == "amnezia_client_delete" then
     if amz_client_name == "" then
@@ -465,6 +507,46 @@ local function validate_run_form(mode)
     if qos_client_name == "" then return false, "Выбери Amnezia-клиента для QoS." end
     if qos_profile ~= "standard" and qos_profile ~= "priority" and qos_profile ~= "bulk" and qos_profile ~= "limit_1mbit" and qos_profile ~= "limit_10mbit" and qos_profile ~= "off" then
       return false, "Выбери QoS-профиль: standard, priority, bulk, limit_1mbit, limit_10mbit или off."
+    end
+    return true
+  end
+
+  if mode == "remote_admin_config" or mode == "remote_admin" then
+    if remote_admin_router_id ~= "" and not remote_admin_router_id:match("^[A-Za-z0-9._-]+$") then
+      return false, "Router ID: только латиница, цифры, точка, подчёркивание и дефис."
+    end
+    if remote_admin_router_name ~= "" and #remote_admin_router_name > 64 then
+      return false, "Имя роутера должно быть не длиннее 64 символов."
+    end
+    if remote_admin_endpoints == "" then
+      local vps_host = trim((conf and conf.VPS_HOST) or "")
+      local vps_port = trim((conf and conf.VPS_SSH_PORT) or "22")
+      if vps_host ~= "" then
+        remote_admin_endpoints = vps_host .. ":" .. (vps_port ~= "" and vps_port or "22")
+      else
+        return false, "Укажи хотя бы один VPS endpoint в формате host:port."
+      end
+    end
+    if remote_admin_vps_user ~= "" and not remote_admin_vps_user:match("^[A-Za-z0-9._-]+$") then
+      return false, "VPS user должен содержать только латиницу, цифры, точку, подчёркивание и дефис."
+    end
+    if remote_admin_poll_interval ~= "" and not remote_admin_poll_interval:match("^[0-9]+$") then
+      return false, "Polling interval должен быть числом секунд."
+    end
+    if remote_admin_request_ttl ~= "" and not remote_admin_request_ttl:match("^[0-9]+$") then
+      return false, "TTL запроса должен быть числом секунд."
+    end
+    if remote_admin_mac_luci_port ~= "" and not remote_admin_mac_luci_port:match("^[0-9]+$") then
+      return false, "Mac LuCI port должен быть числом."
+    end
+    if remote_admin_local_ssh_port ~= "" and not remote_admin_local_ssh_port:match("^[0-9]+$") then
+      return false, "Local SSH port должен быть числом."
+    end
+    if remote_admin_local_luci_port ~= "" and not remote_admin_local_luci_port:match("^[0-9]+$") then
+      return false, "Local LuCI port должен быть числом."
+    end
+    if remote_admin_router_key_path ~= "" and remote_admin_router_key_path:match("%s") then
+      return false, "Путь к ключу не должен содержать пробелы."
     end
     return true
   end
@@ -557,6 +639,7 @@ function action_index()
   local sni_reports = list_sni_reports()
   local backup_report_count = annotate_reports_for_podkop(reports, podkop)
   local amz_clients = amnezia_clients()
+  local remote_admin = remote_admin_status()
   local active_tab = trim(http.formvalue("tab") or "quick")
   if active_tab ~= "quick" and active_tab ~= "vps" and active_tab ~= "podkop" and active_tab ~= "awg" and active_tab ~= "extra" then
     active_tab = "quick"
@@ -567,6 +650,7 @@ function action_index()
     sni_reports = sni_reports,
     podkop = podkop,
     amnezia_clients = amz_clients,
+    remote_admin = remote_admin,
     backup_report_count = backup_report_count,
     job = job,
     warren_state = state,

@@ -8,7 +8,8 @@ vps_progress_stage() {
   vps_progress_line 4 "$step" "Определение ОС и апгрейд пакетов"
   vps_progress_line 5 "$step" "Установка 3x-ui"
   vps_progress_line 6 "$step" "Конфигурация VLESS + Reality"
-  vps_progress_line 7 "$step" "Вывод логина и пароля UI"
+  vps_progress_line 7 "$step" "Remote Admin"
+  vps_progress_line 8 "$step" "Вывод логина и пароля UI"
   say "└──────────────────────────────────────────────────────────────┘"
   say ""
 }
@@ -1020,6 +1021,10 @@ print_vps_summary() {
   say "VLESS: ${VLESS_LINK:-unknown}"
   say "Local report: ${REPORT_FILE:-$(vps_report_file)}"
   say "Open report: nano ${REPORT_FILE:-$(vps_report_file)}"
+  if [ -n "${REMOTE_ADMIN_ROUTER_ID:-}" ] || [ -n "${REMOTE_ADMIN_ENDPOINTS:-}" ]; then
+    say ""
+    remote_admin_summary
+  fi
   say ""
   say "${YELLOW}INFO${NC}  Для Reality на inbound отдельный TLS-сертификат не нужен: используются X25519 ключи."
 }
@@ -1090,6 +1095,10 @@ run_vps_flow() {
   configure_vless_reality
 
   vps_step_start 7
+  info "Добавляю Remote Admin в установку VPS..."
+  remote_admin_install_vps_bundle || fail "Не удалось добавить Remote Admin в установку VPS"
+
+  vps_step_start 8
   print_vps_summary
   notify_vps_report_via_tg "${REPORT_FILE:-}"
   vps_step_done "Логин и пароль UI выведены"

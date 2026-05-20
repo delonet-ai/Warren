@@ -12,7 +12,7 @@ say() {
 done_() {
   say "${GREEN}DONE${NC}  $*"
   case "${MODE:-}" in
-    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|remote_admin_config|remote_admin_poll_now|remote_admin_router_install|remote_admin_vps_install|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       ;;
     *)
       print_progress
