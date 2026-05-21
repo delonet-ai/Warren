@@ -331,7 +331,11 @@ report_status() {
       printf "DAEMON_STATUS=down\n"
     fi
   else
-    printf "DAEMON_STATUS=unknown\n"
+    if ps w 2>/dev/null | grep -F "/usr/bin/warren-remote-agent daemon" >/dev/null 2>&1; then
+      printf "DAEMON_STATUS=up\n"
+    else
+      printf "DAEMON_STATUS=unknown\n"
+    fi
   fi
   if tunnel_running; then
     printf "TUNNEL_STATUS=up\n"
