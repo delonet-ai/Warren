@@ -228,6 +228,14 @@ current_pid() {
   cat "$PID_FILE" 2>/dev/null
 }
 
+discover_tunnel_pid() {
+  tunnel_ssh_port="${1:-}"
+  tunnel_luci_port="${2:-}"
+  ps w 2>/dev/null | awk -v ssh_port="$tunnel_ssh_port" -v luci_port="$tunnel_luci_port" '
+    index($0, "ssh -N") && index($0, "-R 127.0.0.1:" ssh_port ":127.0.0.1:22") && index($0, "-R 127.0.0.1:" luci_port ":127.0.0.1:80") { print $1; exit }
+  '
+}
+
 ports_from_file() {
   [ -r "$CURRENT_PORTS_FILE" ] || return 1
   sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" | head -n1
@@ -338,10 +346,17 @@ report_status() {
     fi
   fi
   if tunnel_running; then
+    tunnel_pid="$(current_pid 2>/dev/null || true)"
+    if [ -z "$tunnel_pid" ]; then
+      tunnel_pid="$(discover_tunnel_pid "$(sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)" "$(sed -n 's/^TUNNEL_LUCI_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)")"
+      if [ -n "$tunnel_pid" ]; then
+        printf "%s\n" "$tunnel_pid" > "$PID_FILE" 2>/dev/null || true
+      fi
+    fi
     printf "TUNNEL_STATUS=up\n"
     sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1 | sed 's/^/TUNNEL_SSH_PORT=/'
     sed -n 's/^TUNNEL_LUCI_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1 | sed 's/^/TUNNEL_LUCI_PORT=/'
-    printf "TUNNEL_PID=%s\n" "$(cat "$PID_FILE" 2>/dev/null || true)"
+    printf "TUNNEL_PID=%s\n" "${tunnel_pid:-$(cat "$PID_FILE" 2>/dev/null || true)}"
   else
     printf "TUNNEL_STATUS=down\n"
   fi
