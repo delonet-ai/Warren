@@ -238,6 +238,9 @@ local function remote_admin_status()
   local router_init = shell_read("[ -x /etc/init.d/warren-remote-admin ] && echo installed || echo missing")
   local router_conf = shell_read("[ -r /etc/warren/warren-remote-admin.conf ] && echo installed || echo missing")
   local daemon_status = shell_read("[ -x /usr/bin/warren-remote-agent ] && /usr/bin/warren-remote-agent status 2>/dev/null | sed -n 's/^DAEMON_STATUS=//p' | head -n1")
+  if daemon_status == "" or daemon_status == "unknown" then
+    daemon_status = shell_read("ps w 2>/dev/null | grep -F '/usr/bin/warren-remote-agent daemon' >/dev/null 2>&1 && echo up || echo unknown")
+  end
   local tunnel_status = shell_read("[ -x /usr/bin/warren-remote-agent ] && /usr/bin/warren-remote-agent status 2>/dev/null | sed -n 's/^TUNNEL_STATUS=//p' | head -n1")
   local last_poll = shell_read("[ -x /usr/bin/warren-remote-agent ] && /usr/bin/warren-remote-agent status 2>/dev/null | sed -n 's/^LAST_POLL_AT=//p' | head -n1")
   local vps_target = shell_read("VPS_HOST=''; [ -r /etc/warren/warren.conf ] && . /etc/warren/warren.conf >/dev/null 2>&1; [ -n \"$VPS_HOST\" ] && echo configured || echo missing")
