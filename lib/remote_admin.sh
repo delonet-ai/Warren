@@ -228,11 +228,20 @@ current_pid() {
   cat "$PID_FILE" 2>/dev/null
 }
 
+pid_is_alive() {
+  case "${1:-}" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$1" >/dev/null 2>&1
+}
+
 discover_tunnel_pid() {
   tunnel_ssh_port="${1:-}"
   tunnel_luci_port="${2:-}"
   ps w 2>/dev/null | awk -v ssh_port="$tunnel_ssh_port" -v luci_port="$tunnel_luci_port" '
-    index($0, "ssh -N") && index($0, "-R 127.0.0.1:" ssh_port ":127.0.0.1:22") && index($0, "-R 127.0.0.1:" luci_port ":127.0.0.1:80") { print $1; exit }
+    (index($0, "ssh") || index($0, "autossh")) &&
+    index($0, "-R 127.0.0.1:" ssh_port ":127.0.0.1:22") &&
+    index($0, "-R 127.0.0.1:" luci_port ":127.0.0.1:80") { print $1; exit }
   '
 }
 
@@ -262,8 +271,16 @@ write_last_poll() {
 
 tunnel_running() {
   if pid="$(current_pid 2>/dev/null || true)"; then
-    kill -0 "$pid" >/dev/null 2>&1
-    return "$?"
+    if pid_is_alive "$pid"; then
+      return 0
+    fi
+  fi
+  if [ -r "$CURRENT_PORTS_FILE" ]; then
+    tunnel_pid="$(discover_tunnel_pid "$(sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)" "$(sed -n 's/^TUNNEL_LUCI_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)")"
+    if pid_is_alive "$tunnel_pid"; then
+      printf "%s\n" "$tunnel_pid" > "$PID_FILE" 2>/dev/null || true
+      return 0
+    fi
   fi
   return 1
 }
@@ -347,6 +364,9 @@ report_status() {
   fi
   if tunnel_running; then
     tunnel_pid="$(current_pid 2>/dev/null || true)"
+    if ! pid_is_alive "$tunnel_pid"; then
+      tunnel_pid=""
+    fi
     if [ -z "$tunnel_pid" ]; then
       tunnel_pid="$(discover_tunnel_pid "$(sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)" "$(sed -n 's/^TUNNEL_LUCI_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)")"
       if [ -n "$tunnel_pid" ]; then
@@ -356,7 +376,11 @@ report_status() {
     printf "TUNNEL_STATUS=up\n"
     sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1 | sed 's/^/TUNNEL_SSH_PORT=/'
     sed -n 's/^TUNNEL_LUCI_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1 | sed 's/^/TUNNEL_LUCI_PORT=/'
-    printf "TUNNEL_PID=%s\n" "${tunnel_pid:-$(cat "$PID_FILE" 2>/dev/null || true)}"
+    if [ -z "$tunnel_pid" ]; then
+      tunnel_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+      pid_is_alive "$tunnel_pid" || tunnel_pid=""
+    fi
+    printf "TUNNEL_PID=%s\n" "$tunnel_pid"
   else
     printf "TUNNEL_STATUS=down\n"
   fi
@@ -920,6 +944,15 @@ remote_admin_install_router_agent() {
   remote_admin_install_prereqs
   remote_admin_defaults_sync
   mkdir -p "$(remote_admin_router_state_dir)" "$(remote_admin_router_log_dir)" "$(remote_admin_router_runtime_dir)" || fail "Не удалось создать каталоги Remote Admin"
+  router_key_dir="$(dirname "$REMOTE_ADMIN_ROUTER_KEY_PATH")"
+  mkdir -p "$router_key_dir" || fail "Не удалось создать каталог для router key"
+  if [ ! -s "$REMOTE_ADMIN_ROUTER_KEY_PATH" ]; then
+    command -v ssh-keygen >/dev/null 2>&1 || fail "Не найден ssh-keygen для генерации router key"
+    ssh-keygen -q -t ed25519 -N "" -f "$REMOTE_ADMIN_ROUTER_KEY_PATH" || fail "Не удалось сгенерировать router key"
+  fi
+  [ -s "$REMOTE_ADMIN_ROUTER_KEY_PATH.pub" ] || ssh-keygen -y -f "$REMOTE_ADMIN_ROUTER_KEY_PATH" > "$REMOTE_ADMIN_ROUTER_KEY_PATH.pub" || fail "Не удалось подготовить router public key"
+  chmod 600 "$REMOTE_ADMIN_ROUTER_KEY_PATH" 2>/dev/null || true
+  chmod 644 "$REMOTE_ADMIN_ROUTER_KEY_PATH.pub" 2>/dev/null || true
   remote_admin_save_config
 
   agent_path="$(remote_admin_router_agent_path)"
@@ -971,6 +1004,20 @@ remote_admin_install_vps_helper() {
   vps_ssh "mkdir -p /var/lib/warren-remote /usr/local/bin" || fail "Не удалось подготовить каталог warren-remote на VPS"
   vps_write_remote_file "$local_helper" "/usr/local/bin/warren-remote" || fail "Не удалось загрузить warren-remote helper на VPS"
   vps_ssh "chmod 700 /usr/local/bin/warren-remote && /usr/local/bin/warren-remote init" || fail "Не удалось инициализировать warren-remote на VPS"
+
+  if [ -s "$REMOTE_ADMIN_ROUTER_KEY_PATH.pub" ]; then
+    router_pubkey="$(cat "$REMOTE_ADMIN_ROUTER_KEY_PATH.pub" 2>/dev/null || true)"
+    if [ -n "$router_pubkey" ]; then
+      escaped_pubkey="$(quote_sh "$router_pubkey")"
+      vps_ssh_password "sh -lc 'umask 077; mkdir -p /root/.ssh; touch /root/.ssh/authorized_keys; grep -qxF $escaped_pubkey /root/.ssh/authorized_keys || printf \"%s\\n\" $escaped_pubkey >> /root/.ssh/authorized_keys; chmod 700 /root/.ssh; chmod 600 /root/.ssh/authorized_keys'" \
+        || warn "Не удалось автоматически добавить router pubkey в authorized_keys на VPS; проверяю key-based SSH-доступ"
+    fi
+  fi
+
+  if ! vps_ssh_key "printf '__WARREN_REMOTE_ADMIN_VPS_KEY_OK__\\n'"; then
+    fail "Не удалось подтвердить key-based SSH-доступ router -> VPS"
+  fi
+
   rm -f "$local_helper" >/dev/null 2>&1 || true
   vps_step_done "VPS Remote Admin helper установлен"
 }
