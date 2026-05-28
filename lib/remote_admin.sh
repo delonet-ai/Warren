@@ -108,13 +108,14 @@ remote_admin_install_prereqs() {
   missing=""
   command -v ssh >/dev/null 2>&1 || missing="$missing openssh-client"
   command -v curl >/dev/null 2>&1 || missing="$missing curl"
-  if [ -z "${WARREN_REMOTE_ADMIN_SKIP_AUTOSSH:-}" ] && ! command -v autossh >/dev/null 2>&1; then
-    missing="$missing autossh"
-  fi
 
   if [ -n "$missing" ]; then
     # shellcheck disable=SC2086
     pkg_ensure_installed $missing
+  fi
+
+  if [ -z "${WARREN_REMOTE_ADMIN_SKIP_AUTOSSH:-}" ] && ! command -v autossh >/dev/null 2>&1; then
+    warn "autossh не установлен; Remote Admin будет использовать обычный ssh fallback"
   fi
 }
 

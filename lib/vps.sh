@@ -768,12 +768,19 @@ collect_3xui_access_info() {
 }
 
 collect_3xui_api_token() {
-  api_token_info="$(vps_ssh_timeout 60 "sh -lc '/usr/local/x-ui/x-ui setting -getApiToken true 2>/dev/null || true'")"
-  PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | sed -n 's/.*apiToken: *//p' | head -n1 | tr -d '[:space:]')"
-  if [ -z "$PANEL_API_TOKEN" ]; then
-    api_token_info="$(vps_ssh_timeout 60 "sh -lc '/usr/local/x-ui/x-ui settings 2>/dev/null || true'")"
-    PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | sed -n 's/.*apiToken: *//p' | head -n1 | tr -d '[:space:]')"
-  fi
+  PANEL_API_TOKEN=""
+  attempt=0
+  while [ "$attempt" -lt 10 ]; do
+    api_token_info="$(vps_ssh_timeout 20 "sh -lc 'sqlite3 /etc/x-ui/x-ui.db \"select token from api_tokens where enabled=1 order by id desc limit 1;\" 2>/dev/null || true'")"
+    PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | head -n1 | tr -d '[:space:]')"
+    if [ -z "$PANEL_API_TOKEN" ]; then
+      api_token_info="$(vps_ssh_timeout 20 "sh -lc '/usr/local/x-ui/x-ui settings 2>/dev/null || true'")"
+      PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | sed -n 's/.*apiToken: *//p' | head -n1 | tr -d '[:space:]')"
+    fi
+    [ -n "$PANEL_API_TOKEN" ] && break
+    attempt=$((attempt + 1))
+    sleep 1
+  done
   [ -n "$PANEL_API_TOKEN" ] || return 1
   runtime_state_set "panel_api_token" "$PANEL_API_TOKEN"
 }
@@ -783,12 +790,14 @@ login_3xui_api() {
   PANEL_COOKIE_REMOTE="/tmp/warren-panel.cookie"
   login_script_local="$(vps_workspace_dir)/panel-login-attempt.sh"
   login_script_remote="/tmp/warren-panel-login-attempt.sh"
+  PANEL_CSRF_TOKEN=""
 
   panel_scheme="${PANEL_SCHEME:-https}"
   curl_tls_flag=""
   [ "$panel_scheme" = "https" ] && curl_tls_flag="-k"
   PANEL_CURL_FLAGS="$curl_tls_flag --http1.1"
   PANEL_API_BASE="${panel_scheme}://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}"
+  PANEL_BASE_URL="${panel_scheme}://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}/"
 
   {
     printf '#!/bin/sh\n'
@@ -797,21 +806,27 @@ login_3xui_api() {
     printf 'PANEL_PASSWORD=%s\n' "$(quote_sh "$PANEL_PASSWORD")"
     printf 'PANEL_CURL_FLAGS=%s\n' "$(quote_sh "$PANEL_CURL_FLAGS")"
     printf 'PANEL_API_BASE=%s\n' "$(quote_sh "$PANEL_API_BASE")"
+    printf 'PANEL_BASE_URL=%s\n' "$(quote_sh "$PANEL_BASE_URL")"
     printf 'PANEL_COOKIE_REMOTE=%s\n' "$(quote_sh "$PANEL_COOKIE_REMOTE")"
     printf 'PANEL_LOGIN_REMOTE=%s\n' "$(quote_sh "$login_json_remote")"
+    printf 'PANEL_CSRF_TOKEN=%s\n' "$(quote_sh "$PANEL_CSRF_TOKEN")"
+    printf 'page="$(curl $PANEL_CURL_FLAGS -fsS --connect-timeout 5 --max-time 20 -c "$PANEL_COOKIE_REMOTE" -b "$PANEL_COOKIE_REMOTE" "$PANEL_BASE_URL" 2>/dev/null || true)"\n'
+    printf 'PANEL_CSRF_TOKEN="$(printf "%%s" "$page" | sed -n '\''s/.*meta name="csrf-token" content="\\([^"]*\\)".*/\\1/p'\'' | head -n1)"\n'
+    printf 'if [ -z "$PANEL_CSRF_TOKEN" ]; then\n'
+    printf '  PANEL_CSRF_TOKEN="$(printf "%%s" "$page" | sed -n '\''s/.*csrf-token.*content="\\([^"]*\\)".*/\\1/p'\'' | head -n1)"\n'
+    printf 'fi\n'
     printf 'login_try() {\n'
     printf '  endpoint="$1"\n'
     printf '  mode="$2"\n'
-    printf '  rm -f "$PANEL_COOKIE_REMOTE" "$PANEL_LOGIN_REMOTE"\n'
     printf '  case "$mode" in\n'
     printf '    json)\n'
     printf '      cat > "$PANEL_LOGIN_REMOTE" <<EOFJSON\n'
     printf '{"username":"%s","password":"%s","twoFactorCode":""}\n' "$(json_escape "$PANEL_USERNAME")" "$(json_escape "$PANEL_PASSWORD")"
     printf 'EOFJSON\n'
-    printf '      resp="$(curl $PANEL_CURL_FLAGS -fsS --connect-timeout 5 --max-time 20 -c "$PANEL_COOKIE_REMOTE" -b "$PANEL_COOKIE_REMOTE" -H "Content-Type: application/json" -H "Accept: application/json, text/plain, */*" -H "X-Requested-With: XMLHttpRequest" -H "Origin: %s" -H "Referer: %s" --data @"$PANEL_LOGIN_REMOTE" "$endpoint" 2>/dev/null || true)"\n' "$panel_scheme://127.0.0.1:${PANEL_PORT}" '$endpoint'
+    printf '      resp="$(curl $PANEL_CURL_FLAGS -fsS --connect-timeout 5 --max-time 20 -c "$PANEL_COOKIE_REMOTE" -b "$PANEL_COOKIE_REMOTE" -H "Content-Type: application/json" -H "Accept: application/json, text/plain, */*" -H "X-Requested-With: XMLHttpRequest" -H "Origin: %s" -H "Referer: %s" ${PANEL_CSRF_TOKEN:+-H "X-CSRF-Token: $PANEL_CSRF_TOKEN"} --data @"$PANEL_LOGIN_REMOTE" "$endpoint" 2>/dev/null || true)"\n' "$panel_scheme://127.0.0.1:${PANEL_PORT}" "$PANEL_BASE_URL"
     printf '      ;;\n'
     printf '    form)\n'
-    printf '      resp="$(curl $PANEL_CURL_FLAGS -fsS --connect-timeout 5 --max-time 20 -c "$PANEL_COOKIE_REMOTE" -b "$PANEL_COOKIE_REMOTE" -H "Accept: application/json, text/plain, */*" -H "X-Requested-With: XMLHttpRequest" -H "Origin: %s" -H "Referer: %s" -F "username=$PANEL_USERNAME" -F "password=$PANEL_PASSWORD" -F "twoFactorCode=" "$endpoint" 2>/dev/null || true)"\n' "$panel_scheme://127.0.0.1:${PANEL_PORT}" '$endpoint'
+    printf '      resp="$(curl $PANEL_CURL_FLAGS -fsS --connect-timeout 5 --max-time 20 -c "$PANEL_COOKIE_REMOTE" -b "$PANEL_COOKIE_REMOTE" -H "Accept: application/json, text/plain, */*" -H "X-Requested-With: XMLHttpRequest" -H "Origin: %s" -H "Referer: %s" ${PANEL_CSRF_TOKEN:+-H "X-CSRF-Token: $PANEL_CSRF_TOKEN"} -F "username=$PANEL_USERNAME" -F "password=$PANEL_PASSWORD" -F "twoFactorCode=" "$endpoint" 2>/dev/null || true)"\n' "$panel_scheme://127.0.0.1:${PANEL_PORT}" "$PANEL_BASE_URL"
     printf '      ;;\n'
     printf '    *) return 1 ;;\n'
     printf '  esac\n'
@@ -833,10 +848,9 @@ login_3xui_api() {
 
   vps_write_remote_file "$login_script_local" "$login_script_remote" || fail "Не удалось загрузить login retry script на VPS"
 
-  login_resp="$(vps_ssh_timeout 60 "sh $(quote_sh "$login_script_remote")")" \
-    || fail "Не удалось войти в API 3x-ui"
+  login_resp="$(vps_ssh_timeout 60 "sh $(quote_sh "$login_script_remote")")" || return 1
 
-  printf "%s" "$login_resp" | grep -qi "LOGIN_ENDPOINT=\|LOGIN_MODE=\|success\|ok\|true" || fail "3x-ui login API вернул неожиданный ответ"
+  printf "%s" "$login_resp" | grep -qi "LOGIN_ENDPOINT=\|LOGIN_MODE=\|success\|ok\|true" || return 1
   collect_3xui_api_token || warn "Не удалось получить API token 3x-ui, буду использовать session cookie"
 }
 
@@ -950,29 +964,79 @@ purge_3xui_installation() {
 
 generate_reality_materials() {
   panel_curl_flags="${PANEL_CURL_FLAGS:---http1.1}"
-  panel_api_base="${PANEL_API_BASE:-${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}}"
-  panel_api_auth_header=""
+  panel_base_path="$(normalize_panel_base_path "${PANEL_BASE_PATH:-}")"
+  panel_api_base="${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${panel_base_path}"
+  panel_api_base="${panel_api_base%/}"
+  xray_script_local="$(vps_workspace_dir)/panel-xray-x25519.sh"
+  xray_script_remote="/tmp/warren-panel-xray-x25519.sh"
+
+  {
+    printf '#!/bin/sh\n'
+    printf 'set -eu\n'
+    printf 'if [ -x /usr/local/x-ui/bin/xray-linux-amd64 ]; then\n'
+    printf '  /usr/local/x-ui/bin/xray-linux-amd64 x25519\n'
+    printf 'elif command -v xray >/dev/null 2>&1; then\n'
+    printf '  xray x25519\n'
+    printf 'else\n'
+    printf '  exit 1\n'
+    printf 'fi\n'
+  } > "$xray_script_local" || fail "Не удалось подготовить xray fallback script"
+  chmod 700 "$xray_script_local" 2>/dev/null || true
+  vps_write_remote_file "$xray_script_local" "$xray_script_remote" || fail "Не удалось загрузить xray helper на VPS"
+
+  cert_resp="$(vps_ssh_timeout 20 "sh $(quote_sh "$xray_script_remote")" 2>/dev/null || true)"
+  if [ -n "$cert_resp" ]; then
+    say "${GREEN}DONE${NC}  Reality keys generated by local xray"
+  fi
+
+  if [ -z "${PANEL_API_TOKEN:-}" ]; then
+    collect_3xui_api_token || true
+  fi
+  if [ -z "${PANEL_API_TOKEN:-}" ]; then
+    say "${YELLOW}INFO${NC}  3x-ui API token still empty before Reality step"
+  else
+    say "${YELLOW}INFO${NC}  3x-ui API token loaded for Reality step"
+  fi
+  cert_cmd='curl --http1.1 -fsSL --connect-timeout 5 --max-time 30'
   if [ -n "${PANEL_API_TOKEN:-}" ]; then
-    panel_api_auth_header="-H $(quote_sh "Authorization: Bearer ${PANEL_API_TOKEN}")"
+    cert_cmd="$cert_cmd -H \"Authorization: Bearer ${PANEL_API_TOKEN}\""
   fi
+  cert_url="${panel_api_base}/panel/api/server/getNewX25519Cert"
+  cert_cmd="$cert_cmd \"${cert_url}\""
+  say "${YELLOW}INFO${NC}  Reality cert endpoint: $cert_url"
 
-  cert_resp=""
-  for cert_path in \
-    "${panel_api_base}/panel/api/server/getNewX25519Cert" \
-    "${panel_api_base}/panel/api/server/getNewX25519Cert/" \
-    "${panel_api_base}/api/server/getNewX25519Cert" \
-    "${panel_api_base}/api/server/getNewX25519Cert/"; do
-    cert_resp="$(vps_ssh_timeout 60 "sh -lc 'curl $panel_curl_flags -fsSL --connect-timeout 5 --max-time 30 ${panel_api_auth_header:+$panel_api_auth_header } -b $PANEL_COOKIE_REMOTE \"$cert_path\"'")" && break
+  if [ -z "$cert_resp" ]; then
+    say "${YELLOW}INFO${NC}  Local xray did not return data, trying 3x-ui API"
+  fi
+  cert_attempt=0
+  while [ -z "$cert_resp" ] && [ "$cert_attempt" -lt 5 ]; do
+    say "${YELLOW}INFO${NC}  Reality cert attempt $((cert_attempt + 1))/5"
+    cert_resp="$(vps_ssh_timeout 20 "sh -lc $(quote_sh "$cert_cmd")" 2>/dev/null || true)"
+    if [ -n "$cert_resp" ]; then
+      break
+    fi
+    cert_attempt=$((cert_attempt + 1))
+    sleep 2
   done
-  [ -n "$cert_resp" ] || fail "Не удалось сгенерировать X25519 ключи через API 3x-ui"
-
-  REALITY_PRIVATE_KEY="$(printf "%s" "$cert_resp" | json_get_first_string "privateKey" "private_key" "privatekey" "privateKeyValue")"
-  REALITY_PUBLIC_KEY="$(printf "%s" "$cert_resp" | json_get_first_string "publicKey" "public_key" "publickey" "publicKeyValue")"
-  if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
-    say "${YELLOW}INFO${NC}  Raw X25519 response: $cert_resp"
+  if [ -z "$cert_resp" ]; then
+    say "${YELLOW}INFO${NC}  Reality API returned empty response"
   fi
-  [ -n "$REALITY_PRIVATE_KEY" ] || fail "API 3x-ui не вернул privateKey для Reality"
-  [ -n "$REALITY_PUBLIC_KEY" ] || fail "API 3x-ui не вернул publicKey для Reality"
+  [ -n "$cert_resp" ] || fail "Не удалось сгенерировать X25519 ключи через API 3x-ui или локальный xray"
+
+  cert_text="$(printf "%s\n" "$cert_resp" | tr -d '\r')"
+  REALITY_PRIVATE_KEY="$(printf "%s" "$cert_text" | json_get_first_string "privateKey" "private_key" "privatekey" "privateKeyValue" 2>/dev/null || true)"
+  REALITY_PUBLIC_KEY="$(printf "%s" "$cert_text" | json_get_first_string "publicKey" "public_key" "publickey" "publicKeyValue" "Password" "password" "Password (PublicKey)" 2>/dev/null || true)"
+  if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
+    REALITY_PRIVATE_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^PrivateKey: *//p' | head -n1 | tr -d '[:space:]')"
+    REALITY_PUBLIC_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^Password (PublicKey): *//p' | head -n1 | tr -d '[:space:]')"
+  fi
+  if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
+    say "${YELLOW}INFO${NC}  Raw X25519 response: $cert_text"
+  else
+    say "${GREEN}DONE${NC}  Reality keys parsed successfully"
+  fi
+  [ -n "$REALITY_PRIVATE_KEY" ] || fail "Не удалось получить privateKey для Reality"
+  [ -n "$REALITY_PUBLIC_KEY" ] || fail "Не удалось получить publicKey для Reality"
 
   CLIENT_UUID="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || true)"
   [ -n "$CLIENT_UUID" ] || CLIENT_UUID="$(random_hex 8)-$(random_hex 4)-4$(random_hex 3)-a$(random_hex 3)-$(random_hex 12)"
@@ -1034,18 +1098,30 @@ EOF
 
 create_vless_reality_inbound() {
   panel_curl_flags="${PANEL_CURL_FLAGS:---http1.1}"
-  panel_api_base="${PANEL_API_BASE:-${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${PANEL_BASE_PATH}}"
-  panel_api_auth_header=""
-  if [ -n "${PANEL_API_TOKEN:-}" ]; then
-    panel_api_auth_header="-H $(quote_sh "Authorization: Bearer ${PANEL_API_TOKEN}")"
-  fi
+  panel_base_path="$(normalize_panel_base_path "${PANEL_BASE_PATH:-}")"
+  panel_api_base="${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${panel_base_path}"
+  panel_api_base="${panel_api_base%/}"
+  inbound_api_script_local="$(vps_workspace_dir)/panel-inbound-api.sh"
+  inbound_api_script_remote="/tmp/warren-panel-inbound-api.sh"
 
-  if [ -n "${INBOUND_ID:-}" ]; then
-    vps_ssh_timeout 60 "sh -lc 'curl $panel_curl_flags -fsSL --connect-timeout 5 --max-time 30 ${panel_api_auth_header:+$panel_api_auth_header } -b $PANEL_COOKIE_REMOTE -X POST ${panel_api_base}/panel/api/inbounds/del/${INBOUND_ID} >/dev/null'" \
-      || fail "Не удалось удалить предыдущий inbound перед пересозданием"
-  fi
+  {
+    printf '#!/bin/sh\n'
+    printf 'set -eu\n'
+    printf 'panel_api_base=%s\n' "$(quote_sh "$panel_api_base")"
+    printf 'inbound_json_remote=%s\n' "$(quote_sh "$inbound_json_remote")"
+    printf 'inbound_id=%s\n' "$(quote_sh "${INBOUND_ID:-}")"
+    printf 'token="$(sqlite3 /etc/x-ui/x-ui.db '\''select token from api_tokens where enabled=1 order by id desc limit 1;'\'' 2>/dev/null | head -n1 | tr -d '\''[:space:]'\'' || true)"\n'
+    printf '[ -n "$token" ] || { echo "missing 3x-ui api token" >&2; exit 1; }\n'
+    printf 'if [ -n "$inbound_id" ]; then\n'
+    printf '  curl --http1.1 -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -X POST "$panel_api_base/panel/api/inbounds/del/$inbound_id" >/dev/null 2>&1 || true\n'
+    printf 'fi\n'
+    printf 'curl --http1.1 -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -H "Content-Type: application/json" -X POST --data @"$inbound_json_remote" "$panel_api_base/panel/api/inbounds/add"\n'
+  } > "$inbound_api_script_local" || fail "Не удалось подготовить inbound API script"
+  chmod 700 "$inbound_api_script_local" 2>/dev/null || true
+  vps_write_remote_file "$inbound_api_script_local" "$inbound_api_script_remote" || fail "Не удалось загрузить inbound API script на VPS"
+  say "${YELLOW}INFO${NC}  3x-ui inbound add endpoint: ${panel_api_base}/panel/api/inbounds/add"
 
-  add_resp="$(vps_ssh_timeout 60 "sh -lc 'curl $panel_curl_flags -fsSL --connect-timeout 5 --max-time 30 ${panel_api_auth_header:+$panel_api_auth_header } -b $PANEL_COOKIE_REMOTE -H \"Content-Type: application/json\" -X POST --data @$inbound_json_remote ${panel_api_base}/panel/api/inbounds/add'")" \
+  add_resp="$(vps_ssh_timeout 60 "sh $(quote_sh "$inbound_api_script_remote")")" \
     || fail "Не удалось создать VLESS + Reality inbound через API 3x-ui"
 
   printf "%s" "$add_resp" | json_has_success_true || fail "API 3x-ui не подтвердил создание inbound"
@@ -1059,7 +1135,10 @@ build_vless_link() {
 }
 
 configure_vless_reality() {
-  login_3xui_api
+  if ! login_3xui_api; then
+    warn "Не удалось войти в web API 3x-ui; продолжаю через root-доступ и API token из SQLite"
+    collect_3xui_api_token || fail "Не удалось получить API token 3x-ui из SQLite"
+  fi
   generate_reality_materials
   create_vless_reality_payload
   create_vless_reality_inbound
