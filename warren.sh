@@ -960,6 +960,14 @@ main() {
     run_amnezia_private_flow
   fi
 
+  if [ "${MODE:-}" = "auto" ]; then
+    target="$(mode_target_state)"
+    st="$(get_state)"
+    if [ "$target" -gt 0 ] && [ "$st" -ge "$target" ]; then
+      conf_set MODE ""
+    fi
+  fi
+
   print_auto_final_summary
   cleanup_runtime_state
   done_ "Готово. State=$(get_state). Логи: $LOG"

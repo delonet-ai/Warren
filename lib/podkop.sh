@@ -19,6 +19,23 @@ install_podkop() {
   fi
 
   done_ "Podkop установлен/обновлён"
+  podkop_enable_deprecated_special_outbounds
+}
+
+podkop_enable_deprecated_special_outbounds() {
+  [ -x /etc/init.d/podkop ] || return 0
+  grep -q 'ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS' /etc/init.d/podkop 2>/dev/null && return 0
+
+  tmp="/tmp/podkop.init.$$"
+  awk '
+    { print }
+    /^    procd_open_instance$/ {
+      print "    procd_set_param env ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS=true"
+    }
+  ' /etc/init.d/podkop > "$tmp" || return 1
+  mv "$tmp" /etc/init.d/podkop || return 1
+  chmod 755 /etc/init.d/podkop 2>/dev/null || true
+  done_ "Podkop init patched for sing-box 1.12 compatibility"
 }
 
 podkop_require_existing_config() {
@@ -172,6 +189,8 @@ configure_podkop_community_lists() {
 }
 
 configure_podkop_full() {
+  podkop_enable_deprecated_special_outbounds
+
   if [ "${MODE:-}" = "auto" ]; then
     [ -n "${VLESS:-}" ] || fail "В авторежиме не подготовлена ссылка конфигурации для Podkop."
     proxy_link_supported "${VLESS:-}" || fail "В авторежиме подготовлена неподдерживаемая ссылка конфигурации для Podkop."

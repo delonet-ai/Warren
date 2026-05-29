@@ -238,7 +238,7 @@ warren_diag_podkop_nft_active() {
 warren_diag_sing_box_config_ok() {
   if [ -s /etc/sing-box/config.json ]; then
     if warren_diag_has_cmd sing-box; then
-      sing-box check -c /etc/sing-box/config.json >/dev/null 2>&1 && return 0
+      ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS=true sing-box check -c /etc/sing-box/config.json >/dev/null 2>&1 && return 0
       return 1
     fi
     return 0
@@ -362,7 +362,7 @@ warren_diag_capture_snapshot() {
   warren_diag_cmd "DNS config" sh -c 'cat /tmp/resolv.conf.d/resolv.conf.auto /etc/resolv.conf 2>&1'
   warren_diag_cmd "Listeners" sh -c 'ss -lntup 2>&1'
   warren_diag_cmd "Podkop init/runtime status" sh -c '/etc/init.d/podkop status 2>&1; ps w 2>/dev/null | grep -E "[s]ing-box|[p]odkop|[x]ray" || true'
-  warren_diag_cmd "sing-box config check" sh -c 'if command -v sing-box >/dev/null 2>&1 && [ -s /etc/sing-box/config.json ]; then sing-box check -c /etc/sing-box/config.json; elif [ -s /etc/sing-box/config.json ]; then echo "/etc/sing-box/config.json exists, sing-box binary not found"; elif [ -s /tmp/etc/sing-box/config.json ]; then echo "/tmp/etc/sing-box/config.json exists"; else echo "sing-box config not found"; fi'
+  warren_diag_cmd "sing-box config check" sh -c 'if command -v sing-box >/dev/null 2>&1 && [ -s /etc/sing-box/config.json ]; then ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS=true sing-box check -c /etc/sing-box/config.json; elif [ -s /etc/sing-box/config.json ]; then echo "/etc/sing-box/config.json exists, sing-box binary not found"; elif [ -s /tmp/etc/sing-box/config.json ]; then echo "/tmp/etc/sing-box/config.json exists"; else echo "sing-box config not found"; fi'
   warren_diag_cmd "Podkop log" sh -c 'logread -e podkop 2>&1 | tail -n 160'
   warren_diag_cmd "sing-box log" sh -c 'logread -e sing-box 2>&1 | tail -n 160'
   warren_diag_cmd "dnsmasq log" sh -c 'logread -e dnsmasq 2>&1 | tail -n 120'
