@@ -1025,8 +1025,7 @@ remote_admin_install_vps_helper() {
 
 remote_admin_install_vps_bundle() {
   remote_admin_defaults_sync
-  remote_admin_save_config
-  remote_admin_install_router_agent || fail "Не удалось установить router-side Remote Admin"
+  remote_admin_install_vps_helper || fail "Не удалось установить VPS-side Remote Admin helper"
 }
 
 remote_admin_poll_now_flow() {
