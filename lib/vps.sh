@@ -963,9 +963,14 @@ purge_3xui_installation() {
 }
 
 generate_reality_materials() {
-  panel_curl_flags="${PANEL_CURL_FLAGS:---http1.1}"
   panel_base_path="$(normalize_panel_base_path "${PANEL_BASE_PATH:-}")"
-  panel_api_base="${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${panel_base_path}"
+  panel_scheme="${PANEL_SCHEME:-https}"
+  panel_curl_flags="${PANEL_CURL_FLAGS:-}"
+  if [ -z "$panel_curl_flags" ]; then
+    panel_curl_flags="--http1.1"
+    [ "$panel_scheme" = "https" ] && panel_curl_flags="-k $panel_curl_flags"
+  fi
+  panel_api_base="${panel_scheme}://127.0.0.1:${PANEL_PORT}${panel_base_path}"
   panel_api_base="${panel_api_base%/}"
   cert_resp=""
 
@@ -1008,7 +1013,7 @@ generate_reality_materials() {
   else
     say "${YELLOW}INFO${NC}  3x-ui API token loaded for Reality step"
   fi
-  cert_cmd='curl --http1.1 -fsSL --connect-timeout 5 --max-time 30'
+  cert_cmd="curl ${panel_curl_flags} -fsSL --connect-timeout 5 --max-time 30"
   if [ -n "${PANEL_API_TOKEN:-}" ]; then
     cert_cmd="$cert_cmd -H \"Authorization: Bearer ${PANEL_API_TOKEN}\""
   fi
@@ -1109,9 +1114,14 @@ EOF
 }
 
 create_vless_reality_inbound() {
-  panel_curl_flags="${PANEL_CURL_FLAGS:---http1.1}"
   panel_base_path="$(normalize_panel_base_path "${PANEL_BASE_PATH:-}")"
-  panel_api_base="${PANEL_SCHEME:-https}://127.0.0.1:${PANEL_PORT}${panel_base_path}"
+  panel_scheme="${PANEL_SCHEME:-https}"
+  panel_curl_flags="${PANEL_CURL_FLAGS:-}"
+  if [ -z "$panel_curl_flags" ]; then
+    panel_curl_flags="--http1.1"
+    [ "$panel_scheme" = "https" ] && panel_curl_flags="-k $panel_curl_flags"
+  fi
+  panel_api_base="${panel_scheme}://127.0.0.1:${PANEL_PORT}${panel_base_path}"
   panel_api_base="${panel_api_base%/}"
   inbound_api_script_local="$(vps_workspace_dir)/panel-inbound-api.sh"
   inbound_api_script_remote="/tmp/warren-panel-inbound-api.sh"
@@ -1125,9 +1135,9 @@ create_vless_reality_inbound() {
     printf 'token="$(sqlite3 /etc/x-ui/x-ui.db '\''select token from api_tokens where enabled=1 order by id desc limit 1;'\'' 2>/dev/null | head -n1 | tr -d '\''[:space:]'\'' || true)"\n'
     printf '[ -n "$token" ] || { echo "missing 3x-ui api token" >&2; exit 1; }\n'
     printf 'if [ -n "$inbound_id" ]; then\n'
-    printf '  curl --http1.1 -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -X POST "$panel_api_base/panel/api/inbounds/del/$inbound_id" >/dev/null 2>&1 || true\n'
+    printf '  curl %s -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -X POST "$panel_api_base/panel/api/inbounds/del/$inbound_id" >/dev/null 2>&1 || true\n' "$panel_curl_flags"
     printf 'fi\n'
-    printf 'curl --http1.1 -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -H "Content-Type: application/json" -X POST --data @"$inbound_json_remote" "$panel_api_base/panel/api/inbounds/add"\n'
+    printf 'curl %s -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -H "Content-Type: application/json" -X POST --data @"$inbound_json_remote" "$panel_api_base/panel/api/inbounds/add"\n' "$panel_curl_flags"
   } > "$inbound_api_script_local" || fail "Не удалось подготовить inbound API script"
   chmod 700 "$inbound_api_script_local" 2>/dev/null || true
   vps_write_remote_file "$inbound_api_script_local" "$inbound_api_script_remote" || fail "Не удалось загрузить inbound API script на VPS"
