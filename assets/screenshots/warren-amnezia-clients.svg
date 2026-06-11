@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="748" viewBox="0 0 980 748">
+<rect width="100%" height="100%" rx="18" fill="#111318"/>
+<rect x="0" y="0" width="100%" height="42" rx="18" fill="#20242c"/>
+<circle cx="28" cy="21" r="7" fill="#ff5f56"/>
+<circle cx="52" cy="21" r="7" fill="#ffbd2e"/>
+<circle cx="76" cy="21" r="7" fill="#27c93f"/>
+<text x="50%" y="28" text-anchor="middle" font-family="Menlo, Monaco, Consolas, monospace" font-size="14" fill="#aeb6c2">Warren TUI</text>
+<g font-family="Menlo, Monaco, Consolas, monospace" font-size="22" fill="#e7edf4">
+<text x="38" y="82" fill="#e7edf4">╔══════════════════════════════════════════════════════════════╗</text>
+<text x="38" y="114" fill="#e7edf4">║                         Warren Setup                         ║</text>
+<text x="38" y="146" fill="#e7edf4">╚══════════════════════════════════════════════════════════════╝</text>
+<text x="38" y="178" fill="#e7edf4"></text>
+<text x="38" y="210" fill="#f5f7fa">Главное меню:</text>
+<text x="38" y="242" fill="#e7edf4">5) Доустановить Amnezia в Podkop</text>
+<text x="38" y="274" fill="#e7edf4">6) QoS для Amnezia</text>
+<text x="38" y="306" fill="#e7edf4">7) Управление Amnezia клиентами</text>
+<text x="38" y="338" fill="#e7edf4">8) Remote Admin</text>
+<text x="38" y="370" fill="#e7edf4">...</text>
+<text x="38" y="402" fill="#8bd3ff">Ввод (0-16, 99) [0]: 7</text>
+<text x="38" y="434" fill="#e7edf4"></text>
+<text x="38" y="466" fill="#f5f7fa">=== Управление Private / Amnezia (awg0) ===</text>
+<text x="38" y="498" fill="#e7edf4">1) Показать список клиентов</text>
+<text x="38" y="530" fill="#e7edf4">2) Показать QR для клиента</text>
+<text x="38" y="562" fill="#e7edf4">3) Показать текстовый конфиг клиента</text>
+<text x="38" y="594" fill="#e7edf4">4) Создать нового клиента</text>
+<text x="38" y="626" fill="#e7edf4">5) Удалить клиента</text>
+<text x="38" y="658" fill="#e7edf4">0) Назад</text>
+<text x="38" y="690" fill="#8bd3ff">Выбор [1]: _</text>
+</g>
+</svg>
