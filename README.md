@@ -154,6 +154,23 @@ English version is also available below: see [English](#english).
 - проверить enable hooks для `nlbwmon` и `collectd`;
 - обновить roadmap и UI так, чтобы они ссылались на эту схему, а не на NetData.
 
+#### Milestone 14 — Version Pinning
+Статус: `planned`.
+
+Что осталось:
+- зафиксировать версии OpenWrt-пакетов для `24.x` и `25.x`, чтобы `opkg`/`apk` не тянули неожиданные апдейты;
+- зафиксировать версию `3x-ui` и связанных VPS helper-скриптов, которые уже прошли live test;
+- зафиксировать совместимые версии `sing-box`/`xray` и Reality key generation path;
+- зафиксировать версии LuCI app/controller/view файлов, которые используются в базовом install;
+- зафиксировать версию `warren-remote`, router agent и Mac control script как совместимый набор;
+- хранить список поддерживаемых версий в одном месте, чтобы installer и diagnostics могли проверять совместимость до запуска;
+- отдельно пометить в документации, что новые upstream-релизы не должны попадать в production install без повторного теста всего сценария.
+
+Что это дает:
+- одинаковое поведение на fresh install и на повторной установке;
+- меньше регрессий из-за API/CLI несовместимости upstream;
+- явный контроль над тем, какие именно версии считаются tested and supported.
+
 ### Где Warren хранит данные
 
 Постоянные данные Warren на роутере теперь лежат в двух каталогах:
@@ -614,7 +631,8 @@ Later:
 - Milestone 10: RF bundle,
 - Milestone 11: USB modem,
 - Milestone 12: NaiveProxy,
-- Milestone 13: Monitoring with `luci-app-nlbwmon` + `luci-app-statistics`.
+- Milestone 13: Monitoring with `luci-app-nlbwmon` + `luci-app-statistics`,
+- Milestone 14: Version pinning for all tested packages and helpers.
 
 ### Milestone 7 Direction
 
