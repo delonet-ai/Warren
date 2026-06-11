@@ -386,12 +386,64 @@ Telegram bot не блокирует milestone: сервис ставится и
 
 Статус: `WIP placeholder`.
 
-Что осталось:
+Цель milestone — установка Warren без GitHub, OpenWrt downloads и других внешних
+remote services во время install, если доступен заранее подготовленный
+РФ-доступный mirror. Основной источник для первого варианта — Yandex mirror.
 
-- собрать локальный Warren bundle: `warren.sh`, `lib`, `assets`, LuCI files;
-- добавить install from local bundle;
-- добавить install from РФ-доступного mirror/source;
-- оставить пункт `99` безопасным, пока bundle не выбран.
+Архитектура:
+
+- минимальный RF launcher:
+  - POSIX shell, только код, нужный до `expand-root` и его выполнения;
+  - скачивает RF catalog, проверяет SHA256, определяет OpenWrt release,
+    package manager, target и arch;
+  - скачивает только `base-preexpand` до расширения overlay;
+  - сохраняет state и после reboot продолжает post-expand установку;
+- RF catalog/manifest:
+  - содержит версию Warren, supported targets, список bundles, размеры,
+    sha256, зависимости и install order;
+  - URL должны быть прямыми HTTP download links, совместимыми с BusyBox `wget`;
+  - если Yandex Disk не даёт стабильную прямую ссылку, использовать Yandex
+    Object Storage или другой РФ-доступный direct-download mirror;
+- модульные архивы вместо одного большого bundle:
+  - `base-preexpand` — только пакеты и скрипты, нужные для preflight,
+    проверки времени/package manager и `expand-root`;
+  - `base-postexpand` — полный базовый набор Warren после расширения overlay;
+  - `warren-core` — `warren.sh`, `lib`, `assets`, `VERSION`, LuCI runtime files;
+  - `podkop` — pinned Podkop installer и его offline dependencies;
+  - `amneziawg` — `kmod-amneziawg`, `amneziawg-tools`, LuCI protocol/app
+    packages строго под OpenWrt release, kernel, target и arch;
+  - optional bundles: `luci`, `tg-bot`, `remote-admin`, `sni-checker`,
+    `diagnostics`;
+  - `vps` — VPS-side offline bundle для `3x-ui` installer/assets и Warren VPS
+    helper без GitHub raw.
+
+Первый supported scope:
+
+- NanoPi R5S/R5C;
+- OpenWrt `24.10.x` через `opkg`/`.ipk`;
+- OpenWrt `25.12.x` через `apk`/`.apk`;
+- router-side и VPS-side offline bundles.
+
+Правила install flow:
+
+- пункт `99` остаётся безопасным: если RF catalog или подходящий bundle не
+  выбран/не найден, Warren только показывает ошибку и ничего не меняет;
+- RF mode не ходит в GitHub/OpenWrt/GitHub releases, если нужные artifacts есть
+  в mirror;
+- если bundle не подходит под текущие OpenWrt release, package manager,
+  target/arch или AWG kernel ABI, установка останавливается до изменений;
+- большие компоненты скачиваются только после успешного `expand-root` и reboot.
+
+Acceptance checks:
+
+- fresh install на R5S/R5C OpenWrt `24.10.x`: pre-expand, reboot,
+  post-expand, Warren menu;
+- fresh install на R5S/R5C OpenWrt `25.12.x`: pre-expand, reboot,
+  post-expand, Warren menu;
+- отказ на неверный arch/target/kernel для AmneziaWG;
+- отказ на повреждённый bundle или SHA256 mismatch до установки;
+- resume после reboot продолжает RF flow, а не начинает заново;
+- Podkop, AmneziaWG и VPS setup устанавливаются без GitHub/raw external fetch.
 
 ### Milestone 11 — USB Modem
 
