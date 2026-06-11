@@ -50,7 +50,7 @@ English version is also available below: see [English](#english).
 - `Доустановить Amnezia в Podkop`
 - `QoS для Amnezia`
 - `Управление Amnezia клиентами`
-- `Remote Admin` (`WIP, Milestone 7`)
+- `Remote Admin`
 - `USB модем настрой` (`WIP, Milestone 11`)
 - `Telegram-бот для Podkop`
 - `Диагностика Podkop/VPS`
@@ -58,6 +58,101 @@ English version is also available below: see [English](#english).
 - `NaiveProxy` (`WIP, Milestone 12`)
 - `Shadowsocks fallback` (`WIP, Milestone 9`)
 - `Установить всё из РФ сегмента` (`WIP, Milestone 10`)
+
+### Основной источник задач
+
+Этот раздел главнее остальных roadmap-описаний в README. Если ниже есть расхождение, приоритет у этого списка.
+
+#### Milestone 5 — Amnezia + QoS Live
+Статус: `done`.
+
+Что осталось:
+- regression после fresh install;
+- проверить `Amnezia` client create/list/config/QR/delete;
+- проверить QoS profiles `apply/off`;
+- проверить сохранение после reboot.
+
+#### Milestone 6 — Diagnostics, SNI Checker, LuCI Parity
+Статус: `implemented`, требуется live regression.
+
+Что осталось:
+- прогнать diagnostics на живом Podkop после fresh install;
+- проверить emergency DNS fallback;
+- проверить SNI checker read-only flow;
+- проверить SNI apply flow: backup, update VPS inbound, update report, update Podkop;
+- убедиться, что `podkop status`, `sing-box`, nft/routing rules, DNS и реальная связность согласованы;
+- проверить, что LuCI и shell показывают одинаковый статус.
+
+#### Milestone 7 — Remote Admin
+Статус: `implemented`, требуется стабилизация.
+
+Что осталось:
+- добить VPS Reality provisioning resilience;
+- закрепить 3x-ui version pin и API fallback;
+- проверить fresh VPS reinstall: 3x-ui, VLESS Reality, Warren report, `warren-remote`;
+- проверить router agent install на чистом OpenWrt;
+- проверить polling `300s` и кнопку `Проверить сейчас`;
+- проверить Mac flow: list routers, request, tunnel, open LuCI, close;
+- убедиться, что после `auto`-прогона `warren` снова показывает меню.
+
+#### Milestone 8 — Self SNI
+Статус: `design + implementation needed`.
+
+Что осталось:
+- оформить отдельный shell/LuCI сценарий `Self SNI`;
+- связать результат с существующим SNI report;
+- добавить безопасный apply в Podkop/3x-ui;
+- добавить rollback backup.
+
+#### Milestone 9 — Shadowsocks Fallback
+Статус: `WIP placeholder`.
+
+Что осталось:
+- определить формат fallback report;
+- добавить установку/настройку Shadowsocks на VPS;
+- добавить Podkop backup channel apply;
+- добавить LuCI card/status.
+
+#### Milestone 10 — RF Bundle
+Статус: `WIP placeholder`.
+
+Что осталось:
+- собрать локальный Warren bundle: `warren.sh`, `lib`, `assets`, LuCI files;
+- добавить install from local bundle;
+- добавить install from РФ-доступного mirror/source;
+- оставить пункт `99` безопасным, пока bundle не выбран.
+
+#### Milestone 11 — USB Modem
+Статус: `WIP placeholder`.
+
+Что осталось:
+- detect modem: USB device, network interface, uqmi/mbim/ppp availability;
+- режимы: primary uplink или backup uplink;
+- UCI network/firewall setup;
+- status/diagnostics в shell и LuCI;
+- rollback к обычному WAN.
+
+#### Milestone 12 — NaiveProxy
+Статус: `WIP placeholder`.
+
+Что осталось:
+- отдельный сценарий настройки NaiveProxy на VPS;
+- генерация client config/report;
+- интеграция с Podkop как отдельный proxy source;
+- LuCI card/status.
+
+#### Milestone 13 — Monitoring
+Статус: `planned`.
+
+Финальное решение:
+- `luci-app-nlbwmon` остаётся для traffic per client;
+- `luci-app-statistics` остаётся для общей системной статистики;
+- NetData не включается в базовый install по умолчанию.
+
+Что осталось:
+- проверить `opkg` на `24.x` и `apk` на `25.x`;
+- проверить enable hooks для `nlbwmon` и `collectd`;
+- обновить roadmap и UI так, чтобы они ссылались на эту схему, а не на NetData.
 
 ### Где Warren хранит данные
 
@@ -178,7 +273,7 @@ Acceptance:
 Telegram bot не блокирует этот milestone: сервис ставится и стартует, но live Telegram API зависит от доступности Telegram с маршрута роутера.
 
 #### Milestone 7 — Remote Admin
-Mac-driven Remote Admin уже реализуется как отдельный control plane:
+Mac-driven Remote Admin уже реализован как отдельный control plane:
 - Mac хранит VPS profiles локально и запускает `warren remote`;
 - VPS держит helper и каталог роутеров;
 - роутер поднимает on-demand reverse tunnel и отвечает на polling;
@@ -201,8 +296,8 @@ Mac-driven Remote Admin уже реализуется как отдельный 
 #### Milestone 12 — NaiveProxy
 Будущий отдельный сценарий настройки NaiveProxy. Сейчас это WIP-placeholder.
 
-#### Milestone 13 — NetData + Statistics
-Будущая замена `luci-app-nlbwmon` на NetData с `luci-app-statistics` как частью набора мониторинга. Сейчас это WIP-placeholder и ничего не меняет.
+#### Milestone 13 — Monitoring
+`luci-app-nlbwmon` остаётся для traffic per client, `luci-app-statistics` остаётся для общей системной статистики. NetData не входит в базовую установку. Сейчас это planned и ничего не меняет.
 
 ---
 
@@ -510,19 +605,20 @@ Sensitive data rules:
 ### Roadmap Snapshot
 
 Near-term:
-- close Milestone 6 diagnostics, SNI checker, Podkop health, and LuCI parity checks.
+- close Milestone 6 diagnostics, SNI checker, Podkop health, and LuCI parity checks;
+- stabilize Milestone 7 Remote Admin on fresh VPS/router installs.
 
 Later:
-- Milestone 7: Remote Admin,
 - Milestone 8: Self SNI,
 - Milestone 9: Shadowsocks fallback,
 - Milestone 10: RF bundle,
 - Milestone 11: USB modem,
-- Milestone 12: NaiveProxy.
+- Milestone 12: NaiveProxy,
+- Milestone 13: Monitoring with `luci-app-nlbwmon` + `luci-app-statistics`.
 
 ### Milestone 7 Direction
 
-Remote Admin v1 is designed as a rendezvous flow:
+Remote Admin v1 is implemented as a rendezvous flow:
 - router polls one or more VPS endpoints,
 - VPS keeps a live router catalog and a short request queue,
 - a Mac control script can request a router and wait for the tunnel,
