@@ -9,6 +9,16 @@ say() {
   printf "%b\n" "$*"
 }
 
+warren_done_sleep() {
+  [ "${WARREN_LUCI_REQUEST:-0}" = "1" ] && return 0
+  sleep "${WARREN_DONE_SLEEP:-5}"
+}
+
+warren_warn_sleep() {
+  [ "${WARREN_LUCI_REQUEST:-0}" = "1" ] && return 0
+  sleep "${WARREN_WARN_SLEEP:-5}"
+}
+
 done_() {
   say "${GREEN}DONE${NC}  $*"
   case "${MODE:-}" in
@@ -18,7 +28,7 @@ done_() {
       print_progress
       ;;
   esac
-  sleep 5
+  warren_done_sleep
 }
 
 info() {
@@ -27,7 +37,7 @@ info() {
 
 warn() {
   say "${YELLOW}WARN${NC}  $*"
-  sleep 5
+  warren_warn_sleep
 }
 
 fail() {
@@ -43,18 +53,46 @@ quote_sh() {
   printf "'%s'" "$(printf "%s" "$1" | sed "s/'/'\\\\''/g")"
 }
 
+warren_wget_retry() {
+  _wwr_url="$1"
+  _wwr_out="$2"
+  _wwr_sha="${3:-}"
+  _wwr_label="${4:-$1}"
+  _wwr_attempt=0
+
+  while [ "$_wwr_attempt" -lt 3 ]; do
+    if [ "$_wwr_attempt" -gt 0 ]; then
+      _wwr_delay=$((_wwr_attempt * 5))
+      warn "Повтор загрузки $_wwr_attempt/2: $_wwr_label (задержка ${_wwr_delay}s)"
+      sleep "$_wwr_delay"
+    fi
+    if wget -qO "$_wwr_out" "$_wwr_url" 2>/dev/null; then
+      if [ -n "$_wwr_sha" ]; then
+        _wwr_actual="$(sha256sum "$_wwr_out" 2>/dev/null | awk '{print $1}')"
+        if [ "$_wwr_actual" = "$_wwr_sha" ]; then
+          return 0
+        fi
+        warn "SHA256 mismatch для $_wwr_label: ожидался $_wwr_sha, получен ${_wwr_actual:-unknown}"
+        rm -f "$_wwr_out" 2>/dev/null || true
+      else
+        return 0
+      fi
+    fi
+    _wwr_attempt=$((_wwr_attempt + 1))
+  done
+
+  fail "Не удалось загрузить $_wwr_label после 3 попыток: $_wwr_url"
+}
+
 download_file() {
   url="$1"
   out="$2"
   expected_sha="$3"
   label="$4"
 
-  wget -qO "$out" "$url" || fail "Не удалось скачать $label: $url"
+  warren_wget_retry "$url" "$out" "${expected_sha:-}" "$label"
 
-  if [ -n "$expected_sha" ]; then
-    actual_sha="$(sha256sum "$out" | awk '{print $1}')"
-    [ "$actual_sha" = "$expected_sha" ] || fail "SHA256 mismatch для $label: ожидался $expected_sha, получен $actual_sha"
-  else
+  if [ -z "$expected_sha" ]; then
     warn "$label скачан без SHA256-проверки. Для жёсткой верификации задай ${label}_SHA256."
   fi
 }
@@ -113,14 +151,21 @@ openwrt_release_version() {
 
 openwrt_release_supported() {
   rel="$(openwrt_release_version)"
-  printf "%s" "$rel" | grep -Eq '^(24\.10|25\.12)(\.|$)'
+  printf "%s" "$rel" | grep -Eq '^(24|25)\.'
+}
+
+pkg_invalidate_installed_cache() {
+  WARREN_PKG_INSTALLED_CACHE=""
 }
 
 pkg_is_installed() {
   pkg="$1"
 
   if pkg_manager_is_opkg; then
-    opkg list-installed 2>/dev/null | grep -q "^${pkg} "
+    if [ -z "${WARREN_PKG_INSTALLED_CACHE:-}" ]; then
+      WARREN_PKG_INSTALLED_CACHE="$(opkg list-installed 2>/dev/null)"
+    fi
+    printf "%s\n" "$WARREN_PKG_INSTALLED_CACHE" | grep -q "^${pkg} "
     return "$?"
   fi
 
@@ -152,7 +197,9 @@ pkg_install_packages() {
 
   if pkg_manager_is_opkg; then
     opkg install "$@"
-    return "$?"
+    _rc="$?"
+    pkg_invalidate_installed_cache
+    return "$_rc"
   fi
 
   if pkg_manager_is_apk; then
@@ -169,7 +216,9 @@ pkg_install_local_file() {
 
   if pkg_manager_is_opkg; then
     opkg install "$pkg_path"
-    return "$?"
+    _rc="$?"
+    pkg_invalidate_installed_cache
+    return "$_rc"
   fi
 
   if pkg_manager_is_apk; then

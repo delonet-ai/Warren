@@ -7,7 +7,7 @@ set -e
 
 TTY="${TTY:-/dev/tty}"
 EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-https://openwrt.org/_export/code/docs/guide-user/advanced/expand_root?codeblock=0}"
-PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh}"
+PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-}"
 EXPAND_ROOT_SHA256="${EXPAND_ROOT_SHA256:-}"
 PODKOP_INSTALL_SHA256="${PODKOP_INSTALL_SHA256:-}"
 WARREN_RAW_BASE_URL="${WARREN_RAW_BASE_URL:-${BOOTSTRAP_RAW_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main}}"
@@ -18,6 +18,8 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || echo ".")
 WARREN_DEV_DIR_DEFAULT="${SCRIPT_DIR}/.warren-dev"
 WARREN_CLI_ARG1="${1:-}"
 WARREN_CLI_ARG2="${2:-}"
+
+WARREN_LIB_LIST="common.sh versions.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh"
 
 migrate_legacy_file_if_missing() {
   legacy_path="$1"
@@ -130,11 +132,23 @@ warren_install_bootstrap_file() {
   if [ -r "$src_path" ]; then
     cp "$src_path" "$tmp_path" || warren_die "Не удалось скопировать $src_path"
   elif [ "$force_remote" = "1" ] && [ -n "$src_url" ]; then
-    wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
+    _wibf_attempt=0
+    while [ "$_wibf_attempt" -lt 3 ]; do
+      [ "$_wibf_attempt" -gt 0 ] && sleep $((_wibf_attempt * 5))
+      wget -qO "$tmp_path" "$src_url" 2>/dev/null && break
+      _wibf_attempt=$((_wibf_attempt + 1))
+      [ "$_wibf_attempt" -lt 3 ] || warren_die "Не удалось скачать после 3 попыток: $src_url"
+    done
   elif [ -r "$dst_path" ]; then
     return 0
   elif [ -n "$src_url" ]; then
-    wget -qO "$tmp_path" "$src_url" || warren_die "Не удалось скачать $src_url"
+    _wibf_attempt=0
+    while [ "$_wibf_attempt" -lt 3 ]; do
+      [ "$_wibf_attempt" -gt 0 ] && sleep $((_wibf_attempt * 5))
+      wget -qO "$tmp_path" "$src_url" 2>/dev/null && break
+      _wibf_attempt=$((_wibf_attempt + 1))
+      [ "$_wibf_attempt" -lt 3 ] || warren_die "Не удалось скачать после 3 попыток: $src_url"
+    done
   else
     warren_die "Не найден локальный файл и URL для $dst_path"
   fi
@@ -162,7 +176,7 @@ warren_bootstrap_install_persistent_app() {
   fi
   chmod 700 "$app_script" 2>/dev/null || true
 
-  for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
+  for lib in $WARREN_LIB_LIST; do
     if [ "$force_remote" = "1" ]; then
       warren_install_bootstrap_file "" "$lib_dir/$lib" "$WARREN_LIB_BASE_URL/$lib" "$force_remote"
     else
@@ -237,7 +251,13 @@ fetch_lib() {
 
   mkdir -p "$LIB_CACHE_DIR" || warren_die "Не удалось создать каталог библиотек: $LIB_CACHE_DIR"
   cached_path="$LIB_CACHE_DIR/$name"
-  wget -qO "$cached_path" "$WARREN_LIB_BASE_URL/$name" || warren_die "Не удалось скачать библиотеку: $name"
+  _attempt=0
+  while [ "$_attempt" -lt 3 ]; do
+    [ "$_attempt" -gt 0 ] && sleep $((_attempt * 5))
+    wget -qO "$cached_path" "$WARREN_LIB_BASE_URL/$name" 2>/dev/null && break
+    _attempt=$((_attempt + 1))
+    [ "$_attempt" -lt 3 ] || warren_die "Не удалось скачать библиотеку после 3 попыток: $name"
+  done
   echo "$cached_path"
 }
 
@@ -265,7 +285,13 @@ fetch_asset() {
 
   mkdir -p "$ASSET_CACHE_DIR" || warren_die "Не удалось создать каталог ассетов: $ASSET_CACHE_DIR"
   cached_path="$ASSET_CACHE_DIR/$name"
-  wget -qO "$cached_path" "$WARREN_ASSET_BASE_URL/$name" || warren_die "Не удалось скачать ассет: $name"
+  _attempt=0
+  while [ "$_attempt" -lt 3 ]; do
+    [ "$_attempt" -gt 0 ] && sleep $((_attempt * 5))
+    wget -qO "$cached_path" "$WARREN_ASSET_BASE_URL/$name" 2>/dev/null && break
+    _attempt=$((_attempt + 1))
+    [ "$_attempt" -lt 3 ] || warren_die "Не удалось скачать ассет после 3 попыток: $name"
+  done
   echo "$cached_path"
 }
 
@@ -275,7 +301,11 @@ source_lib() {
   . "$lib_path"
 }
 
+WARREN_VERSION="$(warren_local_version)"
+
 source_lib common.sh
+source_lib versions.sh
+warren_versions_apply_defaults
 source_lib ui.sh
 source_lib state.sh
 source_lib basic.sh
@@ -290,8 +320,6 @@ source_lib tg_bot.sh
 source_lib diagnostics.sh
 source_lib sni_checker.sh
 source_lib luci.sh
-
-WARREN_VERSION="$(warren_local_version)"
 
 warren_maybe_offer_update() {
   warren_should_check_updates || return 0
@@ -470,13 +498,9 @@ mode_target_state() {
 }
 
 mode_is_one_shot_service() {
-  case "$MODE" in
-    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|remote_admin_config|remote_admin_poll_now|remote_admin_router_install|remote_admin_vps_install|remote_admin_console|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
+  case "${MODE:-}" in
+    basic|auto|add_private|podkop_setup) return 1 ;;
+    *) return 0 ;;
   esac
 }
 

@@ -518,7 +518,7 @@ upgrade_vps_packages() {
 
 install_3xui() {
   info "Установка 3x-ui может занять некоторое время. Процесс идёт, пожалуйста подождите..."
-  xui_release_tag="${WARREN_3XUI_RELEASE_TAG:-v3.1.0}"
+  xui_release_tag="${WARREN_3XUI_RELEASE_TAG:-${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.1.0}}"
   vps_ssh_timeout 1200 "sh -lc '
     log=/tmp/warren-3xui-install.log
     rcfile=/tmp/warren-3xui-install.rc

@@ -1,11 +1,10 @@
 check_openwrt() {
   rel="$(openwrt_release_version)"
   [ -n "$rel" ] || fail "Не удалось определить версию OpenWrt."
-  openwrt_release_supported || fail "Нужен OpenWrt 24.10.x или 25.12.x (сейчас: ${rel:-unknown})."
 
   pm="$(pkg_manager 2>/dev/null || true)"
-  [ -n "$pm" ] || fail "Не удалось определить пакетный менеджер OpenWrt."
-  done_ "OpenWrt версия: $rel, пакетный менеджер: $pm"
+  warren_check_pkg_manager_matches_openwrt "$rel" "$pm"
+  done_ "OpenWrt версия: $rel (семейство $(warren_openwrt_family "$rel")), пакетный менеджер: $pm"
 }
 
 check_inet() {

@@ -6,8 +6,8 @@ AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX}.1"
 AWG_STAGE_DIR="${AWG_STAGE_DIR:-/tmp/amneziawg}"
 AWG_LISTEN_PORT="${AWG_LISTEN_PORT:-51820}"
 
-AWG_PACKAGE_SOURCE_DEFAULT="${AWG_PACKAGE_SOURCE_DEFAULT:-slava-shchipunov}"
-AWG_REPO_BASE_SLAVA="${AWG_REPO_BASE_SLAVA:-https://github.com/Slava-Shchipunov/awg-openwrt/releases/download}"
+AWG_PACKAGE_SOURCE_DEFAULT="${AWG_PACKAGE_SOURCE_DEFAULT:-${WARREN_AWG_PACKAGE_SOURCE:-slava-shchipunov}}"
+AWG_REPO_BASE_SLAVA="${AWG_REPO_BASE_SLAVA:-${WARREN_AWG_REPO_BASE_SLAVA:-https://github.com/Slava-Shchipunov/awg-openwrt/releases/download}}"
 
 AWG_JC_DEFAULT="${AWG_JC_DEFAULT:-4}"
 AWG_JMIN_DEFAULT="${AWG_JMIN_DEFAULT:-40}"
@@ -46,33 +46,61 @@ detect_openwrt_target() {
 }
 
 resolve_awg_protocol_version() {
-  major="$(printf "%s" "$AWG_OPENWRT_VERSION" | cut -d. -f1)"
-  minor="$(printf "%s" "$AWG_OPENWRT_VERSION" | cut -d. -f2)"
-  patch="$(printf "%s" "$AWG_OPENWRT_VERSION" | cut -d. -f3)"
-  AWG_PROTOCOL_VERSION="1.0"
-
-  if [ "$major" -gt 24 ] || \
-     { [ "$major" -eq 24 ] && [ "$minor" -gt 10 ]; } || \
-     { [ "$major" -eq 24 ] && [ "$minor" -eq 10 ] && [ "$patch" -ge 3 ]; } || \
-     { [ "$major" -eq 23 ] && [ "$minor" -eq 5 ] && [ "$patch" -ge 6 ]; }
-  then
-    AWG_PROTOCOL_VERSION="2.0"
+  AWG_PROTOCOL_VERSION="$(warren_awg_protocol_version_for_release "$AWG_OPENWRT_VERSION")"
+  case "$AWG_PROTOCOL_VERSION" in
+    2.0)
     AWG_LUCI_PACKAGE="luci-proto-amneziawg"
-  else
+      ;;
+    *)
     AWG_LUCI_PACKAGE="luci-app-amneziawg"
-  fi
+      ;;
+  esac
 }
 
 resolve_awg_package_source() {
   AWG_PACKAGE_SOURCE="${AWG_PACKAGE_SOURCE:-$AWG_PACKAGE_SOURCE_DEFAULT}"
   case "$AWG_PACKAGE_SOURCE" in
     slava-shchipunov)
+      WARREN_AWG_PACKAGE_SOURCE="$AWG_PACKAGE_SOURCE"
+      WARREN_AWG_REPO_BASE_SLAVA="$AWG_REPO_BASE_SLAVA"
       AWG_RELEASE_TAG="v${AWG_OPENWRT_VERSION}"
       AWG_RELEASE_BASE_URL="${AWG_REPO_BASE_SLAVA}/${AWG_RELEASE_TAG}"
       ;;
     *)
       fail "Неизвестный источник пакетов AmneziaWG: $AWG_PACKAGE_SOURCE"
       ;;
+  esac
+}
+
+resolve_awg_selected_release() {
+  pm="$(pkg_manager 2>/dev/null || true)"
+  warren_check_pkg_manager_matches_openwrt "$AWG_OPENWRT_VERSION" "$pm"
+
+  selected="$(warren_awg_select_release "$AWG_OPENWRT_VERSION" "$pm" "$AWG_OPENWRT_ARCH" "$AWG_OPENWRT_TARGET_MAIN" "$AWG_OPENWRT_SUBTARGET" | sed -n '1p')" || true
+  [ -n "$selected" ] || fail "Не найден AmneziaWG release для OpenWrt ${AWG_OPENWRT_VERSION} (${AWG_OPENWRT_ARCH}, ${AWG_OPENWRT_TARGET_MAIN}/${AWG_OPENWRT_SUBTARGET}) в ${AWG_REPO_BASE_SLAVA}."
+
+  AWG_SELECTED_OPENWRT_VERSION="$(printf "%s" "$selected" | cut -d'|' -f1)"
+  AWG_RELEASE_MATCH_STATUS="$(printf "%s" "$selected" | cut -d'|' -f2)"
+
+  if [ "$AWG_RELEASE_MATCH_STATUS" = "fallback" ]; then
+    warn "Для OpenWrt ${AWG_OPENWRT_VERSION} не найден exact AmneziaWG release. Ближайший same-family fallback: ${AWG_SELECTED_OPENWRT_VERSION}."
+    if [ "${WARREN_LUCI_REQUEST:-0}" != "1" ]; then
+      ask "Попробовать AmneziaWG fallback v${AWG_SELECTED_OPENWRT_VERSION}? Package manager всё равно проверит kernel/deps. (y/n)" AWG_FALLBACK_CONFIRM "y"
+      case "$AWG_FALLBACK_CONFIRM" in
+        y|Y) ;;
+        *) fail "AmneziaWG fallback отменён пользователем." ;;
+      esac
+    else
+      info "LuCI mode: AmneziaWG fallback v${AWG_SELECTED_OPENWRT_VERSION} применяется автоматически."
+    fi
+  fi
+
+  AWG_RELEASE_TAG="v${AWG_SELECTED_OPENWRT_VERSION}"
+  AWG_RELEASE_BASE_URL="${AWG_REPO_BASE_SLAVA}/${AWG_RELEASE_TAG}"
+  AWG_PROTOCOL_VERSION="$(warren_awg_protocol_version_for_release "$AWG_SELECTED_OPENWRT_VERSION")"
+  case "$AWG_PROTOCOL_VERSION" in
+    2.0) AWG_LUCI_PACKAGE="luci-proto-amneziawg" ;;
+    *) AWG_LUCI_PACKAGE="luci-app-amneziawg" ;;
   esac
 }
 
@@ -84,7 +112,7 @@ verify_awg_prereqs() {
 }
 
 awg_pkg_postfix() {
-  printf "_v%s_%s_%s_%s" "$AWG_OPENWRT_VERSION" "$AWG_OPENWRT_ARCH" "$AWG_OPENWRT_TARGET_MAIN" "$AWG_OPENWRT_SUBTARGET"
+  printf "_v%s_%s_%s_%s" "${AWG_SELECTED_OPENWRT_VERSION:-$AWG_OPENWRT_VERSION}" "$AWG_OPENWRT_ARCH" "$AWG_OPENWRT_TARGET_MAIN" "$AWG_OPENWRT_SUBTARGET"
 }
 
 is_awg_pkg_installed() {
@@ -103,8 +131,9 @@ awg_package_extensions() {
 download_awg_package() {
   pkg_name="$1"
   postfix="$(awg_pkg_postfix)"
+  pm="$(pkg_manager 2>/dev/null || true)"
 
-  for ext in $(awg_package_extensions); do
+  for ext in $(warren_awg_package_extensions_for_pm "$pm"); do
     pkg_file="${pkg_name}${postfix}.${ext}"
     pkg_url="${AWG_RELEASE_BASE_URL}/${pkg_file}"
     pkg_path="${AWG_STAGE_DIR}/${pkg_file}"
@@ -171,6 +200,7 @@ install_amneziawg() {
   resolve_awg_protocol_version
   resolve_awg_package_source
   mkdir -p "$AWG_STAGE_DIR" || fail "Не удалось создать временный каталог для пакетов AmneziaWG"
+  resolve_awg_selected_release
 
   say ""
   say "=== AmneziaWG preflight ==="
@@ -180,6 +210,7 @@ install_amneziawg() {
   say "AWG protocol generation: ${AWG_PROTOCOL_VERSION}"
   say "Package source: ${AWG_PACKAGE_SOURCE}"
   say "Expected release tag: ${AWG_RELEASE_TAG}"
+  say "Release match: ${AWG_RELEASE_MATCH_STATUS:-exact}"
   say "Release base URL: ${AWG_RELEASE_BASE_URL}"
   say ""
 

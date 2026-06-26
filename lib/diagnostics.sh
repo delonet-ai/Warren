@@ -222,6 +222,116 @@ warren_diag_check_proxy_engine() {
   warren_diag_bad "proxy engine: не найден запущенный sing-box/xray"
 }
 
+warren_diag_cmd_version() {
+  cmd="$1"
+  shift
+  if command -v "$cmd" >/dev/null 2>&1; then
+    "$cmd" "$@" 2>/dev/null | head -n1
+  else
+    printf "%s" "missing"
+  fi
+}
+
+warren_diag_check_reality_generation_paths() {
+  if command -v sing-box >/dev/null 2>&1; then
+    if sing-box generate reality-keypair >/dev/null 2>&1; then
+      warren_diag_ok "Reality generation: sing-box generate reality-keypair работает"
+    else
+      warren_diag_warn "Reality generation: sing-box найден, но generate reality-keypair не сработал"
+    fi
+  else
+    warren_diag_warn "Reality generation: sing-box не найден локально"
+  fi
+
+  if [ -x /usr/local/x-ui/bin/xray-linux-amd64 ]; then
+    if /usr/local/x-ui/bin/xray-linux-amd64 x25519 >/dev/null 2>&1; then
+      warren_diag_ok "Reality generation: bundled 3x-ui xray x25519 работает"
+    else
+      warren_diag_warn "Reality generation: bundled 3x-ui xray найден, но x25519 не сработал"
+    fi
+  elif command -v xray >/dev/null 2>&1; then
+    if xray x25519 >/dev/null 2>&1; then
+      warren_diag_ok "Reality generation: xray x25519 работает"
+    else
+      warren_diag_warn "Reality generation: xray найден, но x25519 не сработал"
+    fi
+  else
+    warren_diag_warn "Reality generation: локальный xray не найден"
+  fi
+}
+
+warren_diag_report_version_policy() {
+  rel="$(openwrt_release_version 2>/dev/null || true)"
+  pm="$(pkg_manager 2>/dev/null || true)"
+  family="$(warren_openwrt_family "$rel" 2>/dev/null || true)"
+  expected_pm="$(warren_expected_pkg_manager_for_release "$rel" 2>/dev/null || true)"
+
+  warren_diag_section "VERSION POLICY"
+  warren_diag_line "$(warren_version_policy_summary)"
+  warren_diag_line "openwrt_release=${rel:-unknown}"
+  warren_diag_line "openwrt_family=${family:-unsupported}"
+  warren_diag_line "pkg_manager=${pm:-unknown}"
+  warren_diag_line "expected_pkg_manager=${expected_pm:-unknown}"
+  warren_diag_line "podkop_install_url=${PODKOP_INSTALL_URL:-$(warren_podkop_install_url_default)}"
+  warren_diag_line "3xui_expected_tag=${WARREN_3XUI_RELEASE_TAG:-${WARREN_3XUI_PINNED_RELEASE_TAG:-unknown}}"
+  warren_diag_line "warren_version=${WARREN_VERSION:-unknown}"
+  warren_diag_line "remote_admin_protocol=${WARREN_REMOTE_ADMIN_PROTOCOL_VERSION:-unknown}"
+
+  if [ -n "$expected_pm" ] && [ "$pm" = "$expected_pm" ]; then
+    warren_diag_ok "Version policy: OpenWrt ${rel} uses expected package manager ${pm}"
+  else
+    warren_diag_bad "Version policy: OpenWrt/package-manager mismatch release=${rel:-unknown} pm=${pm:-unknown} expected=${expected_pm:-unknown}"
+  fi
+
+  warren_diag_section "AMNEZIAWG VERSION POLICY"
+  awg_target="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.target' 2>/dev/null || true)"
+  awg_arch="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.arch' 2>/dev/null || true)"
+  if [ -z "$awg_arch" ] && [ -r /etc/apk/arch ]; then
+    awg_arch="$(sed -n '1p' /etc/apk/arch | tr -d '\r')"
+  fi
+  awg_target_main="$(printf "%s" "$awg_target" | cut -d/ -f1)"
+  awg_subtarget="$(printf "%s" "$awg_target" | cut -d/ -f2)"
+  awg_protocol="$(warren_awg_protocol_version_for_release "$rel" 2>/dev/null || true)"
+  awg_selected=""
+  if [ -n "$rel" ] && [ -n "$pm" ] && [ -n "$awg_arch" ] && [ -n "$awg_target_main" ] && [ -n "$awg_subtarget" ]; then
+    awg_selected="$(warren_awg_select_release "$rel" "$pm" "$awg_arch" "$awg_target_main" "$awg_subtarget" | sed -n '1p')" || true
+  fi
+  awg_release="$(printf "%s" "$awg_selected" | cut -d'|' -f1)"
+  awg_match="$(printf "%s" "$awg_selected" | cut -d'|' -f2)"
+  warren_diag_line "awg_source=${WARREN_AWG_PACKAGE_SOURCE:-slava-shchipunov}"
+  warren_diag_line "awg_router_release=${rel:-unknown}"
+  warren_diag_line "awg_arch=${awg_arch:-unknown}"
+  warren_diag_line "awg_target=${awg_target:-unknown}"
+  warren_diag_line "awg_protocol=${awg_protocol:-unknown}"
+  warren_diag_line "awg_selected_release=${awg_release:-missing}"
+  warren_diag_line "awg_release_match=${awg_match:-missing}"
+  warren_diag_line "awg_binary=$(warren_diag_cmd_version awg --version)"
+  warren_diag_line "awg_netifd_proto=$([ -f /lib/netifd/proto/amneziawg.sh ] && printf present || printf missing)"
+  warren_diag_line "awg_uci_proto=$(uci -q get network.awg0.proto 2>/dev/null || printf missing)"
+
+  case "$awg_match" in
+    exact) warren_diag_ok "AmneziaWG: exact release v${awg_release} exists for this router" ;;
+    fallback) warren_diag_warn "AmneziaWG: exact release missing, same-family fallback v${awg_release} is available" ;;
+    *) warren_diag_bad "AmneziaWG: no exact or same-family fallback release found for this router" ;;
+  esac
+
+  if command -v awg >/dev/null 2>&1; then
+    warren_diag_ok "AmneziaWG: awg binary installed"
+  else
+    warren_diag_warn "AmneziaWG: awg binary not installed"
+  fi
+  if [ -f /lib/netifd/proto/amneziawg.sh ]; then
+    warren_diag_ok "AmneziaWG: netifd proto installed"
+  else
+    warren_diag_warn "AmneziaWG: netifd proto not installed"
+  fi
+  if uci -q get network.awg0.proto 2>/dev/null | grep -qx 'amneziawg'; then
+    warren_diag_ok "AmneziaWG: UCI awg0 proto=amneziawg"
+  else
+    warren_diag_warn "AmneziaWG: UCI awg0 proto is not configured"
+  fi
+}
+
 warren_diag_sing_box_running() {
   pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1
 }
@@ -338,6 +448,7 @@ warren_diag_capture_snapshot() {
   warren_diag_line "time=$(date +'%F %T %z')"
   warren_diag_line "hostname=$(hostname 2>/dev/null || true)"
   warren_diag_line "mode=${MODE:-unknown}"
+  warren_diag_report_version_policy
 
   proxy_links_file="/tmp/warren-diag-proxies.$$"
   warren_diag_proxy_links > "$proxy_links_file" 2>/dev/null || true
@@ -373,6 +484,7 @@ warren_diag_capture_snapshot() {
   warren_diag_check_podkop_runtime
   warren_diag_check_podkop_defaults
   warren_diag_check_proxy_engine
+  warren_diag_check_reality_generation_paths
 
   warren_diag_check_ping "WAN gateway" "$wan_gw"
   warren_diag_check_ping "Public IP 9.9.9.9" "9.9.9.9"

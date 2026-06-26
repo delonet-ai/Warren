@@ -79,7 +79,7 @@ install_warren_libs() {
   target_dir="/usr/lib/warren/lib"
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
-  for lib in common.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
+  for lib in common.sh versions.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
     target_path="$target_dir/$lib"
     if source_path="$(luci_persistent_source "lib/$lib")"; then
       if [ "$source_path" != "$target_path" ]; then

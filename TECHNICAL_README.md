@@ -288,9 +288,122 @@ Pass criteria:
 - `list`, `status`, `request`, and `close` work on the VPS helper.
 - Mac-driven Remote Admin can reach router SSH and LuCI through localhost.
 
+## Архитектурные наблюдения и технический долг
+
+Этот раздел фиксирует выявленные проблемы и зоны риска без привязки к конкретному milestone. Каждый пункт помечен приоритетом: `P1` — критично, `P2` — важно, `P3` — желательно.
+
+### Безопасность
+
+**[P1] Config file sourcing — выполнение произвольного кода**
+
+`load_conf_if_exists` делает `. "$CONF"`, то есть исполняет файл `/etc/warren/warren.conf` как shell-скрипт. Любой процесс с root-правами, который может записать в этот файл, получает code execution при следующем запуске Warren. Правильное решение — заменить sourcing на безопасный parser `key=value` (grep/sed/awk), который читает только перечисленные ключи и игнорирует всё остальное. Затрагивает: `lib/state.sh`.
+
+**[P1] SHA256 не проверяется при загрузке lib-файлов и самообновлении**
+
+`fetch_lib` и `warren_bootstrap_install_persistent_app 1` скачивают файлы через `wget -qO` без проверки целостности. MITM или компрометация GitHub CDN дадут выполнение произвольного кода на роутере. Решение: хранить SHA256 manifest в `VERSION` или отдельном `SUMS.txt` и проверять каждый файл после загрузки. Затрагивает: `warren.sh` (fetch_lib, warren_install_bootstrap_file).
+
+**[P2] `eval` в `ask()` для присвоения переменной**
+
+`eval "$var=$(quote_sh "$ans")"` в `lib/ui.sh` безопасен, пока `$var` приходит из кода, а не из пользовательского ввода. Но при будущем рефакторинге эту инвариантность легко нарушить. Правильная замена — `printf '%s\n' "$ans" > /tmp/warren-ask-tmp.$$; read ...` через именованный pipe или присвоение через `typeset`/отдельный helper.
+
+### Надёжность
+
+**[P1] Сетевые операции без retry**
+
+Все `wget`-вызовы в `download_file`, `fetch_lib`, `fetch_asset` и `warren_install_bootstrap_file` — single-shot. Временные сбои DNS, CDN или сети (особенно частые в РФ) приводят к hard fail и прерванной установке. Решение: `warren_wget_retry` helper с экспоненциальным backoff (3 попытки: 0s, 5s, 15s). Затрагивает: `lib/common.sh`.
+
+**[P2] State file записывается неатомарно**
+
+`set_state` в `lib/state.sh` делает `echo "$1" > "$STATE"`, после чего вызывает `sync`. При потере питания между записью и sync файл может оказаться пустым или усечённым, что сломает resume. Решение — tmp+mv паттерн (уже используется в `warren_install_bootstrap_file`):
+```sh
+set_state() { printf "%s\n" "$1" > "${STATE}.tmp" && mv "${STATE}.tmp" "$STATE"; sync; }
+```
+
+**[P2] `opkg list-installed` вызывается N раз без кэширования**
+
+`pkg_is_installed` запускает `opkg list-installed | grep` для каждого пакета отдельно. При проверке списка из 10+ пакетов это N тяжёлых вызовов. Решение: при первом вызове сохранить вывод в переменную `WARREN_PKG_INSTALLED_CACHE` и проверять по ней. Затрагивает: `lib/common.sh`.
+
+**[P3] Жёстко закодированные `sleep 5` в `done_()` и `warn()`**
+
+Каждый успешный шаг добавляет 5 секунд паузы. В LuCI-режиме и при автоматическом прогоне это бессмысленные задержки. Решение: ввести `WARREN_DONE_SLEEP` (default 5) и `WARREN_WARN_SLEEP` (default 5); в LuCI-режиме и при `WARREN_NONINTERACTIVE=1` автоматически устанавливать в 0. Затрагивает: `lib/common.sh`.
+
+**[P3] Список lib-файлов дублируется в двух местах**
+
+Явный список lib-файлов присутствует в `warren_bootstrap_install_persistent_app` (строка ~165 в `warren.sh`) и в блоке `source_lib` (строки 280–296). При добавлении нового модуля нужно не забыть обновить оба места. Решение: определить список один раз как `WARREN_LIB_LIST` в начале `warren.sh` и использовать в обоих местах.
+
+### Совместимость
+
+**[P2] `openwrt_release_supported()` проверяет только `24.10.*` и `25.12.*`**
+
+Семейство определяется по minor-версии (`24.10`, `25.12`), поэтому `24.05`, `25.05` или будущий `25.07` считаются неизвестными и Warren падает. Правило должно быть шире: все релизы семейства `24.*` используют `opkg`, все `25.*` используют `apk`. Это покрывает любой minor-релиз внутри уже существующих major-семейств без изменения кода. Для семейств `26.x+` — отдельная политика (Milestone 18). Затрагивает: `lib/versions.sh`, `lib/common.sh`.
+
+**[P3] `mode_is_one_shot_service()` — дублированный список режимов**
+
+Список режимов в `mode_is_one_shot_service()` и `run_service_mode()` нужно поддерживать синхронно. При добавлении нового режима легко забыть один из списков. Решение: `run_service_mode` возвращает код 1 для неизвестного режима, и это уже есть (`*) return 1 ;;`). `mode_is_one_shot_service` может быть производным от факта, что режим не входит в `basic|auto|add_private|podkop_setup|manage_private`.
+
+### Инструменты разработки
+
+**[P2] `tools/wg-vless-chain-diagnostics.sh` недоступен из меню Warren**
+
+Мощный Mac-side инструмент диагностики цепочки WireGuard→OpenWrt→Podkop→VLESS находится в `tools/` и требует знания о его существовании. Его можно было бы запускать через `warren remote diag` или как подпункт пункта 11 «Диагностика».
+
+**[P3] Нет мониторинга работоспособности Podkop после setup**
+
+После завершения установки Warren больше не следит за Podkop. Если `sing-box` упадёт (OOM, kernel panic, конфликт портов), пользователь узнает об этом только заметив, что интернет перестал работать правильно.
+
+**[P3] Нет структурированного лога ошибок**
+
+`warren.log` — append-only плоский текст. Нет способа быстро увидеть «что падало» по всем прогонам, не читая весь файл. JSON-строка с результатом каждого прогона (timestamp, mode, ok/fail, last_error) позволила бы быстро диагностировать проблемы.
+
+---
+
 ## Milestones разработки
 
 Этот раздел является основным источником задач и статусов roadmap.
+
+### Milestone 4 — OpenWrt Family Broadening
+
+Статус: `planned`.
+
+Цель milestone — поддержать любой minor-релиз внутри семейств `24.x` и `25.x`, а не только `24.10` и `25.12`. Семейства не расширяются: `26.x+` — отдельная политика (Milestone 18).
+
+Текущее поведение:
+
+- `warren_openwrt_family("24.10.3")` → `"24.10"` — OK;
+- `warren_openwrt_family("24.05.0")` → fail — неправильно;
+- `warren_openwrt_family("25.07.0")` → fail — неправильно;
+- `warren_check_pkg_manager_matches_openwrt` падает на любом релизе с неизвестным семейством.
+
+Целевое поведение:
+
+- любой `24.x.y` → семейство `24`, package manager `opkg`;
+- любой `25.x.y` → семейство `25`, package manager `apk`;
+- `openwrt_release_supported()` возвращает true для любого `24.*` и `25.*`;
+- AmneziaWG exact/fallback resolver получает `rel` как есть и уже умеет работать с патч-версиями; нужно убедиться, что `warren_openwrt_family` не используется как ограничитель внутри AWG resolver-а.
+
+Что меняется в коде:
+
+- `warren_openwrt_family()` в `lib/versions.sh`: заменить case `24.10.*|24.10` и `25.12.*|25.12` на `24.*` и `25.*`:
+  ```sh
+  case "$rel" in
+    24.*) printf "%s" "24"; return 0 ;;
+    25.*) printf "%s" "25"; return 0 ;;
+  esac
+  ```
+- `warren_expected_pkg_manager_for_release()`: case по семейству `24` → `opkg`, `25` → `apk`;
+- `openwrt_release_supported()` в `lib/common.sh`: расширить regex с `'^(24\.10|25\.12)(\.|$)'` до `'^(24|25)\.'`;
+- `warren_awg_protocol_version_for_release()`: логика уже параметрична по `major.minor.patch`, не использует семейство напрямую — проверить, что всё корректно для новых minor-версий;
+- `WARREN_SUPPORTED_OPENWRT_FAMILIES` в `lib/versions.sh`: обновить значение с `"24.10 25.12"` на `"24 25"`;
+- все диагностические сообщения, упоминающие конкретные minor-версии, обновить.
+
+Acceptance:
+
+- `warren_openwrt_family "24.05.0"` → `"24"`;
+- `warren_openwrt_family "25.07.2"` → `"25"`;
+- `check_openwrt` проходит без ошибок на `24.05.x` с `opkg` и на `25.07.x` с `apk`;
+- AmneziaWG exact/fallback resolver корректно работает на `24.05.x` (ищет tag `v24.05.x`);
+- diagnostics report содержит корректный `openwrt_family` для нового релиза;
+- `24.10.x` и `25.12.x` ведут себя как раньше — без регрессий.
 
 ### Milestone 5 — Amnezia + QoS Live
 
@@ -334,6 +447,12 @@ Acceptance:
 
 Telegram bot не блокирует milestone: сервис ставится и стартует, но live Telegram API зависит от доступности Telegram с маршрута роутера.
 
+Дополнения (добавлены по результатам архитектурного анализа):
+
+- интегрировать `tools/wg-vless-chain-diagnostics.sh` как подпункт диагностики или `warren remote diag`; сейчас инструмент доступен только тем, кто знает о директории `tools/`;
+- добавить JSON-строку результата прогона диагностики (`timestamp`, `mode`, `ok_count`, `warn_count`, `bad_count`, `last_error`) в конец лог-файла, чтобы можно было быстро агрегировать историю без чтения всего лога;
+- добавить режим быстрой проверки `diagnostics --quick`: только active checks без полного snapshot (время, podkop runtime, proxy TCP), завершается за 10–15 секунд.
+
 ### Milestone 7 — Remote Admin
 
 Статус: `implemented`, требуется стабилизация.
@@ -355,6 +474,11 @@ Telegram bot не блокирует milestone: сервис ставится и
 - проверить Mac flow: list routers, request, tunnel, open LuCI, close;
 - убедиться, что после `auto`-прогона `warren` снова показывает меню;
 - довести unattended daemon heartbeat и статусы `status/list`.
+
+Дополнения (добавлены по результатам архитектурного анализа):
+
+- добавить rotation по нескольким VPS endpoints в Remote Admin polling: если основной VPS недоступен, агент пробует следующий из списка `REMOTE_ADMIN_ENDPOINTS`; это уже поддержано конфигом, нужно убедиться, что fallback в агенте действительно работает и покрыт regression;
+- добавить индикатор статуса Remote Admin в LuCI sidebar (подключён / ожидает / недоступен) без отдельного запроса; достаточно читать локальный state file агента.
 
 ### Milestone 8 — Self SNI
 
@@ -514,3 +638,135 @@ Acceptance checks:
 - меньше регрессий из-за API/CLI несовместимости upstream;
 - явный контроль над тем, какие именно версии считаются tested and supported;
 - безопасный AWG fallback без смешивания пакетов разных OpenWrt-семейств.
+
+### Milestone 15 — Network Resilience & Download Integrity
+
+Статус: `planned`.
+
+Цель milestone — сделать сетевые операции Warren устойчивыми к временным сбоям и проверяемыми по целостности. Особенно важно для пользователей из РФ, где CDN и raw.githubusercontent.com периодически недоступны.
+
+Retry/backoff:
+
+- ввести `warren_wget_retry url out [expected_sha [label]]` в `lib/common.sh`;
+- стратегия: 3 попытки с задержками 0s, 5s, 15s;
+- при исчерпании попыток — `fail` с понятным сообщением;
+- применить к `download_file`, `fetch_lib`, `fetch_asset` и `warren_install_bootstrap_file`;
+- в самообновлении (`warren_bootstrap_install_persistent_app 1`) также использовать retry.
+
+SHA256 manifest для Warren-файлов:
+
+- добавить `SUMS.txt` рядом с `VERSION` в репозитории; формат: `sha256  filename` (одна строка на файл);
+- при загрузке lib-файлов и самообновлении проверять SHA256 после скачивания;
+- manifest сам проверяется по SHA256, подписанному в `VERSION` (или отдельной записи);
+- если SHA256 не совпадает, скачанный файл удаляется и Warren падает с явным сообщением;
+- переменная `WARREN_SKIP_HASH_CHECK=1` позволяет обойти проверку в dev-режиме.
+
+Acceptance:
+
+- симуляция временного обрыва сети: Warren повторяет попытку и продолжает установку;
+- подмена lib-файла в download: Warren обнаруживает несоответствие SHA256 и останавливается;
+- dev-режим с `WARREN_SKIP_HASH_CHECK=1` проходит без manifest;
+- самообновление проверяет SHA256 перед заменой `warren.sh`.
+
+### Milestone 16 — Security Hardening
+
+Статус: `planned`.
+
+Цель milestone — устранить архитектурные уязвимости, которые существуют независимо от того, что Warren работает с root-правами.
+
+Safe config parser:
+
+- заменить `. "$CONF"` в `load_conf_if_exists` на безопасный читатель: `grep -E '^KEY=' conf | sed ...`;
+- читать только явно перечисленные ключи из whitelist;
+- нераспознанные строки игнорировать, а не выполнять;
+- `save_conf` остаётся генерирующим shell-совместимый формат для backward compat с существующими конфигами;
+- миграция прозрачна: старый конфиг в shell-формате читается новым parser-ом корректно, если не содержит дополнительных команд.
+
+Очистка VPS_ROOT_PASSWORD:
+
+- после успешного завершения VPS setup вызывать `conf_set VPS_ROOT_PASSWORD ""`;
+- добавить примечание в VPS report: пароль был сохранён во время настройки и удалён из конфига после завершения;
+- пользователь всегда может найти пароль в VPS report (`/etc/warren/vps/reports/*.txt`), пока файл отчёта существует.
+
+Аудит `eval`:
+
+- в `ask()` (`lib/ui.sh`) заменить `eval "$var=$(quote_sh "$ans")"` на helper `warren_set_var name value`, который использует `export` или промежуточный файл, а не eval;
+- в `conf_set` (`lib/state.sh`) также убрать `eval`; заменить на явное присвоение через case/switch или вспомогательную функцию без eval.
+
+Логирование чувствительных данных:
+
+- добавить фильтр в `log()`: строки, содержащие `PASSWORD`, `TOKEN`, `SECRET`, заменять на `***` перед записью в `warren.log`;
+- применить аналогичный фильтр к `info`, `warn`, `done_` если они пишут в лог.
+
+Acceptance:
+
+- файл `warren.conf` с дополнительными shell-командами не приводит к их выполнению при load_conf;
+- `VPS_ROOT_PASSWORD` отсутствует в `warren.conf` после завершения VPS setup;
+- `warren.log` не содержит plaintext паролей или токенов;
+- `warren.conf` с предыдущими версиями читается корректно.
+
+### Milestone 17 — Podkop Watchdog
+
+Статус: `planned`.
+
+Цель milestone — обеспечить автоматическое восстановление Podkop/sing-box после сбоя без участия пользователя.
+
+Watchdog daemon:
+
+- реализовать как отдельный `/etc/init.d/warren-watchdog` service;
+- проверка через cron или встроенный loop с интервалом `WARREN_WATCHDOG_INTERVAL` (default 60s);
+- health check: `pgrep sing-box`, `ip rule show | grep podkop`, ping через proxy (опционально);
+- при обнаружении отказа: `WARREN_WATCHDOG_RESTART_DELAY` секунд ожидания, затем `/etc/init.d/podkop restart`;
+- экспоненциальный backoff при повторных сбоях: 60s, 120s, 300s, потом остановка и alert;
+- счётчик перезапусков сбрасывается при стабильной работе дольше `WARREN_WATCHDOG_STABLE_WINDOW` (default 600s).
+
+Уведомления:
+
+- если настроен Telegram-бот, watchdog отправляет сообщение при перезапуске Podkop;
+- формат: `[Warren Watchdog] Podkop перезапущен на <hostname> в <time>. Причина: sing-box не найден.`
+- при исчерпании попыток: уведомление с пометкой «требуется ручное вмешательство».
+
+Статус в LuCI:
+
+- добавить watchdog status в LuCI card: включён/выключен, последний перезапуск, счётчик;
+- кнопки: включить, выключить, сбросить счётчик.
+
+Управление из shell:
+
+- `warren --watchdog status` — показать состояние;
+- `warren --watchdog enable/disable` — включить/выключить;
+- watchdog включается автоматически в конце `auto`-прогона и `podkop_setup` flow.
+
+Acceptance:
+
+- при kill sing-box watchdog его перезапускает в течение `WARREN_WATCHDOG_INTERVAL * 2` секунд;
+- после 3 быстрых сбоев подряд watchdog переходит в backoff и не перезапускает бесконечно;
+- Telegram-уведомление о перезапуске приходит если бот настроен;
+- watchdog выживает после reboot роутера;
+- `warren --watchdog status` корректно показывает состояние из shell и LuCI.
+
+### Milestone 18 — OpenWrt 26.x+ Graceful Compatibility
+
+Статус: `planned`.
+
+Цель milestone — Warren не должен категорически отказываться запускаться на семействах `26.x` и выше, которые не существовали при написании кода. Поддержка `24.x` и `25.x` закрыта Milestone 4.
+
+Graceful degradation для семейств `26.x+`:
+
+- при семействе `26.*` и выше Warren выводит `WARN` вместо `FAIL`;
+- предлагает продолжение с подтверждением: `Продолжить на непроверенном OpenWrt <rel>? (y/n)`;
+- Warren определяет package manager эвристически (`command -v apk` → apk, иначе `command -v opkg` → opkg);
+- diagnostics report помечает семейство как `unknown/graceful` в блоке VERSION POLICY;
+- `WARREN_ALLOW_UNKNOWN_OPENWRT=1` убирает интерактивный prompt для CI и автоматических прогонов.
+
+AmneziaWG на неизвестном семействе:
+
+- AmneziaWG exact/fallback resolver параметризован по release и pm; при graceful mode получает реальный pm из системы;
+- если exact release для `26.x` не найден в `Slava-Shchipunov/awg-openwrt`, Warren сообщает об этом явно вместо молчаливого fail-а.
+
+Acceptance:
+
+- Warren запускается на условном `26.01.0` с предупреждением, но без краша;
+- при `WARREN_ALLOW_UNKNOWN_OPENWRT=1` нет интерактивного prompt;
+- diagnostics отчёт содержит корректный VERSION POLICY блок для `26.x`;
+- `24.x` и `25.x` не затронуты (покрыты Milestone 4).

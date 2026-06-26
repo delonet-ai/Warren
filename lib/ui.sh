@@ -151,6 +151,10 @@ ask() {
   var="$2"
   def="${3:-}"
 
+  case "$var" in
+    ''|*[!A-Za-z0-9_]*) fail "ask: недопустимое имя переменной: $var" ;;
+  esac
+
   if { [ -r "$TTY" ] && [ -w "$TTY" ] && : > "$TTY"; } 2>/dev/null; then
     [ -n "$def" ] && printf "%s [%s]: " "$prompt" "$def" > "$TTY" || printf "%s: " "$prompt" > "$TTY"
     if ! IFS= read -r ans < "$TTY"; then

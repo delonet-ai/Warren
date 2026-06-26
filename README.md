@@ -86,4 +86,11 @@ wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main
 - закрепить мониторинг через `luci-app-nlbwmon` и `luci-app-statistics`;
 - продолжить политику версий для критичных компонентов: Podkop installer, `3x-ui`, AmneziaWG packages, Warren bundle и Remote Admin protocol.
 
+Запланированные улучшения ядра:
+
+- добавить retry с backoff для всех сетевых операций и SHA256-проверку при загрузке lib-файлов и самообновлении (Milestone 15);
+- заменить sourcing конфига через `. "$CONF"` на безопасный key=value parser; очищать `VPS_ROOT_PASSWORD` из конфига после завершения VPS setup (Milestone 16);
+- добавить Podkop Watchdog с автоматическим перезапуском sing-box, backoff при повторных сбоях и опциональным Telegram-уведомлением (Milestone 17);
+- обеспечить graceful degradation на будущих релизах OpenWrt вместо жёсткого отказа (Milestone 18).
+
 Подробная техническая документация, политика зависимостей, внутренние сценарии и milestones разработки находятся в [TECHNICAL_README.md](TECHNICAL_README.md).

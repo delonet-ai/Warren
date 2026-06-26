@@ -13,18 +13,48 @@ json_escape() {
 }
 
 set_state() {
-  echo "$1" > "$STATE"
+  printf "%s\n" "$1" > "${STATE}.tmp" || return 1
+  mv "${STATE}.tmp" "$STATE"
   sync
 }
 
+_conf_safe_read_key() {
+  _csk_key="$1"
+  _csk_file="$2"
+  _csk_line="$(grep -m1 "^${_csk_key}=" "$_csk_file" 2>/dev/null)" || return 0
+  [ -n "$_csk_line" ] || return 0
+  case "${_csk_line#${_csk_key}=}" in
+    \'*) eval "$_csk_line" ;;
+  esac
+}
+
 load_conf_if_exists() {
-  if [ -f "$CONF" ]; then
-    # shellcheck disable=SC1090
-    . "$CONF"
-    normalize_mode
-    return 0
-  fi
-  return 1
+  [ -f "$CONF" ] || return 1
+  _conf_safe_read_key MODE "$CONF"
+  _conf_safe_read_key VLESS "$CONF"
+  _conf_safe_read_key LIST_RU "$CONF"
+  _conf_safe_read_key LIST_CF "$CONF"
+  _conf_safe_read_key LIST_META "$CONF"
+  _conf_safe_read_key LIST_GOOGLE_AI "$CONF"
+  _conf_safe_read_key AWG_ENDPOINT "$CONF"
+  _conf_safe_read_key VPS_HOST "$CONF"
+  _conf_safe_read_key VPS_SSH_PORT "$CONF"
+  _conf_safe_read_key VPS_ROOT_PASSWORD "$CONF"
+  _conf_safe_read_key SELECTED_VPS_REPORT "$CONF"
+  _conf_safe_read_key AUTO_VPS_SOURCE "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_ROUTER_ID "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_ROUTER_NAME "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_ENDPOINTS "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_VPS_USER "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_POLL_INTERVAL "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_REQUEST_TTL "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_MAC_LUCI_PORT "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_LOCAL_SSH_PORT "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_LOCAL_LUCI_PORT "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_ROUTER_KEY_PATH "$CONF"
+  _conf_safe_read_key REMOTE_ADMIN_ENABLED "$CONF"
+  normalize_mode
+  return 0
 }
 
 save_conf() {
@@ -61,11 +91,32 @@ conf_set() {
   val="$2"
 
   case "$key" in
-    MODE|VLESS|LIST_RU|LIST_CF|LIST_META|LIST_GOOGLE_AI|AWG_ENDPOINT|VPS_HOST|VPS_SSH_PORT|VPS_ROOT_PASSWORD|SELECTED_VPS_REPORT|AUTO_VPS_SOURCE|REMOTE_ADMIN_ROUTER_ID|REMOTE_ADMIN_ROUTER_NAME|REMOTE_ADMIN_ENDPOINTS|REMOTE_ADMIN_VPS_USER|REMOTE_ADMIN_POLL_INTERVAL|REMOTE_ADMIN_REQUEST_TTL|REMOTE_ADMIN_MAC_LUCI_PORT|REMOTE_ADMIN_LOCAL_SSH_PORT|REMOTE_ADMIN_LOCAL_LUCI_PORT|REMOTE_ADMIN_ROUTER_KEY_PATH|REMOTE_ADMIN_ENABLED) ;;
+    MODE) MODE="$val" ;;
+    VLESS) VLESS="$val" ;;
+    LIST_RU) LIST_RU="$val" ;;
+    LIST_CF) LIST_CF="$val" ;;
+    LIST_META) LIST_META="$val" ;;
+    LIST_GOOGLE_AI) LIST_GOOGLE_AI="$val" ;;
+    AWG_ENDPOINT) AWG_ENDPOINT="$val" ;;
+    VPS_HOST) VPS_HOST="$val" ;;
+    VPS_SSH_PORT) VPS_SSH_PORT="$val" ;;
+    VPS_ROOT_PASSWORD) VPS_ROOT_PASSWORD="$val" ;;
+    SELECTED_VPS_REPORT) SELECTED_VPS_REPORT="$val" ;;
+    AUTO_VPS_SOURCE) AUTO_VPS_SOURCE="$val" ;;
+    REMOTE_ADMIN_ROUTER_ID) REMOTE_ADMIN_ROUTER_ID="$val" ;;
+    REMOTE_ADMIN_ROUTER_NAME) REMOTE_ADMIN_ROUTER_NAME="$val" ;;
+    REMOTE_ADMIN_ENDPOINTS) REMOTE_ADMIN_ENDPOINTS="$val" ;;
+    REMOTE_ADMIN_VPS_USER) REMOTE_ADMIN_VPS_USER="$val" ;;
+    REMOTE_ADMIN_POLL_INTERVAL) REMOTE_ADMIN_POLL_INTERVAL="$val" ;;
+    REMOTE_ADMIN_REQUEST_TTL) REMOTE_ADMIN_REQUEST_TTL="$val" ;;
+    REMOTE_ADMIN_MAC_LUCI_PORT) REMOTE_ADMIN_MAC_LUCI_PORT="$val" ;;
+    REMOTE_ADMIN_LOCAL_SSH_PORT) REMOTE_ADMIN_LOCAL_SSH_PORT="$val" ;;
+    REMOTE_ADMIN_LOCAL_LUCI_PORT) REMOTE_ADMIN_LOCAL_LUCI_PORT="$val" ;;
+    REMOTE_ADMIN_ROUTER_KEY_PATH) REMOTE_ADMIN_ROUTER_KEY_PATH="$val" ;;
+    REMOTE_ADMIN_ENABLED) REMOTE_ADMIN_ENABLED="$val" ;;
     *) fail "Неизвестный ключ конфига: $key" ;;
   esac
 
-  eval "$key=$(quote_sh "$val")"
   save_conf
 }
 
