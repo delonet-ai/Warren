@@ -142,6 +142,47 @@ confirm() {
   read -r _confirm_dummy || true
 }
 
+# ── load .env (project root) ─────────────────────────────────────────────────
+env_file="$PROJECT_DIR/.env"
+if [ -r "$env_file" ]; then
+  # shellcheck disable=SC1090
+  . "$env_file"
+fi
+
+# ── prompt for missing required vars ─────────────────────────────────────────
+prompt_secret() {
+  label="$1"
+  printf "%s: " "$label" >&2
+  stty -echo 2>/dev/null || true
+  read -r _ps_val
+  stty echo 2>/dev/null || true
+  printf "\n" >&2
+  printf "%s" "$_ps_val"
+}
+
+prompt_plain() {
+  label="$1"
+  default="${2:-}"
+  if [ -n "$default" ]; then
+    printf "%s [%s]: " "$label" "$default" >&2
+  else
+    printf "%s: " "$label" >&2
+  fi
+  read -r _pp_val
+  [ -n "$_pp_val" ] || _pp_val="$default"
+  printf "%s" "$_pp_val"
+}
+
+if [ -z "${VPS_HOST:-}" ]; then
+  VPS_HOST="$(prompt_plain "VPS host/IP" "")"
+fi
+if [ -z "${VPS_PASS:-}" ]; then
+  VPS_PASS="$(prompt_secret "VPS root password")"
+fi
+if [ -z "${VPS_PORT:-}" ]; then
+  VPS_PORT="$(prompt_plain "VPS SSH port" "22")"
+fi
+
 # ── validate inputs ───────────────────────────────────────────────────────────
 [ "$SKIP_FLASH" = "1" ] || [ -n "$FW_FAMILY" ] || die "--fw 24|25 обязателен (или --skip-flash)"
 if [ "$SKIP_FLASH" != "1" ]; then
