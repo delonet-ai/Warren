@@ -69,7 +69,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/versions.sh
 
-- `warren_openwrt_family`, `warren_openwrt_family_supported`, `warren_openwrt_release_graceful`, `warren_expected_pkg_manager_for_release`, `warren_check_pkg_manager_matches_openwrt`, `warren_awg_release_family`, `warren_podkop_install_url_default`, `warren_versions_apply_defaults`, `warren_awg_protocol_version_for_release`, `warren_awg_packages_for_protocol`, `warren_awg_release_base_url`, `warren_awg_package_extensions_for_pm`, `warren_awg_pkg_postfix_for`, `warren_awg_patch_number`, `warren_awg_candidate_releases`, `warren_awg_probe_url`, `warren_awg_resolve_package_url`, `warren_awg_release_has_packages`, `warren_awg_select_release`, `warren_version_policy_summary`
+- `warren_openwrt_family`, `warren_openwrt_family_supported`, `warren_openwrt_release_graceful`, `warren_expected_pkg_manager_for_release`, `warren_check_pkg_manager_matches_openwrt`, `warren_awg_release_family`, `warren_podkop_install_url_default`, `warren_versions_apply_defaults`, `warren_awg_protocol_version_for_release`, `warren_awg_packages_for_protocol`, `warren_awg_release_base_url`, `warren_awg_package_extensions_for_pm`, `warren_awg_pkg_postfix_for`, `warren_awg_patch_number`, `warren_awg_candidate_releases`, `warren_awg_probe_url`, `warren_awg_resolve_package_url`, `warren_awg_release_has_packages`, `warren_openwrt_release_kernel`, `warren_awg_fallback_kernel_matches`, `warren_awg_select_release`, `warren_version_policy_summary`
 
 ## lib/vps.sh
 
@@ -117,7 +117,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## tests/run.sh
 
-- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
+- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
 
 ## tools/build-router-upload.sh
 

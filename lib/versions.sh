@@ -167,9 +167,12 @@ warren_awg_candidate_releases() {
 
 warren_awg_probe_url() {
   url="$1"
-  # Existence check only: never download the package, and bound each attempt.
+  # Existence check only: never download the package. Retry with backoff: right
+  # after a Podkop restart DNS/routing can be down for a few seconds, and a
+  # transient failure must not push the resolver onto a wrong-kernel fallback.
   attempt=1
-  while [ "$attempt" -le 2 ]; do
+  while [ "$attempt" -le 3 ]; do
+    [ "$attempt" -eq 1 ] || sleep "$(warren_retry_delay "$attempt")"
     warren_wget -q --spider "$url" 2>/dev/null && return 0
     attempt=$((attempt + 1))
   done
@@ -215,6 +218,33 @@ warren_awg_release_has_packages() {
   return 0
 }
 
+# Kernel version an OpenWrt release ships for a target, e.g. "6.12.94".
+warren_openwrt_release_kernel() {
+  release="$1"
+  target_main="$2"
+  subtarget="$3"
+  profiles_tmp="${AWG_STAGE_DIR:-/tmp/amneziawg}/profiles.$$"
+  mkdir -p "$(dirname "$profiles_tmp")" 2>/dev/null || return 1
+  warren_wget -qO "$profiles_tmp" \
+    "${WARREN_OPENWRT_DOWNLOADS_URL:-https://downloads.openwrt.org}/releases/${release}/targets/${target_main}/${subtarget}/profiles.json" \
+    2>/dev/null || { rm -f "$profiles_tmp"; return 1; }
+  kernel="$(tr -d '\n' < "$profiles_tmp" | sed -n 's/.*"linux_kernel"[^}]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  rm -f "$profiles_tmp" 2>/dev/null || true
+  [ -n "$kernel" ] || return 1
+  printf "%s" "$kernel"
+}
+
+# kmod-amneziawg only loads on the exact kernel it was built for, so a fallback
+# release is usable only when it ships the running kernel.
+warren_awg_fallback_kernel_matches() {
+  candidate="$1"
+  target_main="$2"
+  subtarget="$3"
+  running_kernel="${WARREN_RUNNING_KERNEL:-$(uname -r 2>/dev/null)}"
+  candidate_kernel="$(warren_openwrt_release_kernel "$candidate" "$target_main" "$subtarget")" || return 1
+  [ "$candidate_kernel" = "$running_kernel" ]
+}
+
 warren_awg_select_release() {
   exact_release="$1"
   pm="$2"
@@ -230,7 +260,8 @@ warren_awg_select_release() {
   warren_awg_candidate_releases "$exact_release" | while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
     [ "$candidate" != "$exact_release" ] || continue
-    if warren_awg_release_has_packages "$candidate" "$pm" "$arch" "$target_main" "$subtarget"; then
+    if warren_awg_release_has_packages "$candidate" "$pm" "$arch" "$target_main" "$subtarget" &&
+      warren_awg_fallback_kernel_matches "$candidate" "$target_main" "$subtarget"; then
       printf "%s|fallback\n" "$candidate"
       exit 0
     fi
