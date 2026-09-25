@@ -71,6 +71,14 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/podkop.sh"
 # shellcheck disable=SC1091
+. "$PROJECT_DIR/lib/vps_report.sh"
+# shellcheck disable=SC1091
+. "$PROJECT_DIR/lib/vps_ssh.sh"
+# shellcheck disable=SC1091
+. "$PROJECT_DIR/lib/vps_3xui.sh"
+# shellcheck disable=SC1091
+. "$PROJECT_DIR/lib/vps_reality.sh"
+# shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/vps.sh"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/watchdog.sh"

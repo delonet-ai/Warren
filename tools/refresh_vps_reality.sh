@@ -19,7 +19,7 @@ AUTO_STATE_STORE="${AUTO_STATE_STORE:-/tmp/warren-runtime.tsv}"
   exit 1
 }
 
-for lib in common.sh state.sh ui.sh vps.sh; do
+for lib in common.sh state.sh ui.sh vps_report.sh vps_ssh.sh vps_3xui.sh vps_reality.sh vps.sh; do
   . "$WARREN_LIB_DIR/$lib"
 done
 

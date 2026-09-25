@@ -45,7 +45,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 | 0 | `auto` | state-flow → 100 | basic + LuCI + VPS/report + podkop + watchdog | warren.sh |
 | 1 | `basic` | state-flow → 75 | `run_basic_flow` | lib/basic.sh |
 | 2 | `initialize` | one-shot | `install_warren_luci_ui` | lib/luci.sh |
-| 3 | `vps` | one-shot | `run_vps_flow` | lib/vps.sh |
+| 3 | `vps` | one-shot | `run_vps_flow` | lib/vps.sh (+ `vps_report`, `vps_ssh`, `vps_3xui`, `vps_reality`) |
 | 4 | `podkop_setup` / `podkop_backup` | state-flow → 95 / one-shot | `run_podkop_flow` / `add_podkop_backup_channel` | lib/podkop.sh |
 | 5 | `add_private` | state-flow → 120 | `run_amnezia_private_flow` | lib/amnezia.sh, lib/amneziawg.sh |
 | 6 | `qos_private` | one-shot | `run_qos_flow` | lib/qos.sh |
@@ -86,7 +86,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 |---|---|---|
 | `/etc/warren/warren.conf` | `KEY='value'`; читается whitelist-парсером без source | lib/state.sh (`warren_assign_config_key`, `save_conf`, `conf_set`) |
 | `/etc/warren/warren.state` | integer state, atomic tmp+mv | lib/state.sh |
-| `/etc/warren/vps/{reports,keys}` | VPS reports (0600, содержат доступы), SSH keys | lib/vps.sh |
+| `/etc/warren/vps/{reports,keys}` | VPS reports (0600, содержат доступы), SSH keys | lib/vps_report.sh, lib/vps_ssh.sh |
 | `/etc/warren/sni-checker/` | кандидаты, отчёты, backups SNI apply | lib/sni_checker.sh |
 | `/etc/warren/warren-tg-bot.conf`, `warren-vless-endpoints` | TG bot config, endpoint store | lib/tg_bot.sh |
 | `/etc/warren/warren-watchdog.{conf,state}` | watchdog | lib/watchdog.sh |
@@ -147,6 +147,6 @@ AmneziaWG — exact `v${DISTRIB_RELEASE}` из `Slava-Shchipunov/awg-openwrt`, �
 единая проверка Podkop `payload/podkop-health.sh`, безопасный парсер конфига Remote Admin agent.
 
 1. **Общий runtime для payload-ов** (`log`, `now_epoch`, `safe_text`) и переиспользование AWG/QoS в tg-bot.
-2. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
-   `warren.sh` (bootstrap+self-update отдельно от orchestrator), `lib/sni_checker.sh` (check vs apply).
+2. **Разрезать крупные файлы**: `warren.sh` (bootstrap+self-update отдельно от orchestrator),
+   `lib/sni_checker.sh` (check vs apply). `lib/vps.sh` уже разделён на flow / report / ssh / 3xui / reality.
 3. **LuCI**: Lua-контроллер (`luci-compat`) и 755-строчный view; при 25.x стоит оценить переход на JS/rpcd.
