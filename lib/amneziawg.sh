@@ -77,13 +77,13 @@ resolve_awg_selected_release() {
   warren_check_pkg_manager_matches_openwrt "$AWG_OPENWRT_VERSION" "$pm"
 
   selected="$(warren_awg_select_release "$AWG_OPENWRT_VERSION" "$pm" "$AWG_OPENWRT_ARCH" "$AWG_OPENWRT_TARGET_MAIN" "$AWG_OPENWRT_SUBTARGET" | sed -n '1p')" || true
-  [ -n "$selected" ] || fail "Не найден AmneziaWG release для OpenWrt ${AWG_OPENWRT_VERSION} (${AWG_OPENWRT_ARCH}, ${AWG_OPENWRT_TARGET_MAIN}/${AWG_OPENWRT_SUBTARGET}) в ${AWG_REPO_BASE_SLAVA}."
+  [ -n "$selected" ] || fail "Не найден AmneziaWG release для OpenWrt ${AWG_OPENWRT_VERSION} (${AWG_OPENWRT_ARCH}, ${AWG_OPENWRT_TARGET_MAIN}/${AWG_OPENWRT_SUBTARGET}, ядро $(uname -r 2>/dev/null)) в ${AWG_REPO_BASE_SLAVA}: exact-релиз недоступен, а fallback-релизы собраны под другое ядро. Проверь сеть до github.com или дождись AWG-сборки под этот релиз."
 
   AWG_SELECTED_OPENWRT_VERSION="$(printf "%s" "$selected" | cut -d'|' -f1)"
   AWG_RELEASE_MATCH_STATUS="$(printf "%s" "$selected" | cut -d'|' -f2)"
 
   if [ "$AWG_RELEASE_MATCH_STATUS" = "fallback" ]; then
-    warn "Для OpenWrt ${AWG_OPENWRT_VERSION} не найден exact AmneziaWG release. Ближайший same-family fallback: ${AWG_SELECTED_OPENWRT_VERSION}."
+    warn "Для OpenWrt ${AWG_OPENWRT_VERSION} не найден exact AmneziaWG release. Fallback с тем же ядром: ${AWG_SELECTED_OPENWRT_VERSION}."
     if [ "${WARREN_LUCI_REQUEST:-0}" != "1" ]; then
       ask "Попробовать AmneziaWG fallback v${AWG_SELECTED_OPENWRT_VERSION}? Package manager всё равно проверит kernel/deps. (y/n)" AWG_FALLBACK_CONFIRM "y"
       case "$AWG_FALLBACK_CONFIRM" in

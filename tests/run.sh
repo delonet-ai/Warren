@@ -74,7 +74,7 @@ assert_failure() {
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..51\n"
+printf "1..54\n"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -298,6 +298,42 @@ inet_waits_for_wan() {
   )
 }
 assert_success "check_inet waits for WAN instead of failing on the first ping" inet_waits_for_wan
+
+# AmneziaWG release resolver: transient probe failures retry, and a fallback
+# release is used only when it ships the running kernel.
+awg_stub_wget() {
+  url=""; out=""; prev=""
+  for arg in "$@"; do
+    case "$prev" in -qO) out="$arg" ;; esac
+    url="$arg"; prev="$arg"
+  done
+  case "$url" in
+    */profiles.json)
+      printf '{"linux_kernel":{"release":"1","version":"%s"}}' "${AWG_TEST_CANDIDATE_KERNEL:?}" > "$out" ;;
+    */v25.12.5/*)
+      n="$(cat "$AWG_TEST_COUNT" 2>/dev/null || printf 0)"; n=$((n + 1)); printf "%s" "$n" > "$AWG_TEST_COUNT"
+      [ "$n" -gt "${AWG_TEST_EXACT_FAILS:-0}" ] ;;
+    *) return 0 ;;
+  esac
+}
+
+awg_select() {
+  (
+    AWG_TEST_COUNT="$TEST_TMP/awg-count"; rm -f "$AWG_TEST_COUNT"
+    AWG_STAGE_DIR="$TEST_TMP/awg-stage"
+    WARREN_RUNNING_KERNEL="6.12.94"
+    warren_wget() { awg_stub_wget "$@"; }
+    sleep() { :; }
+    warren_awg_select_release 25.12.5 apk aarch64_generic rockchip armv8 | sed -n '1p'
+  )
+}
+
+assert_eq "25.12.5|exact" "$(AWG_TEST_EXACT_FAILS=2 AWG_TEST_CANDIDATE_KERNEL=6.12.94 awg_select)" \
+  "AWG exact release survives two transient probe failures"
+assert_eq "" "$(AWG_TEST_EXACT_FAILS=999 AWG_TEST_CANDIDATE_KERNEL=6.12.74 awg_select)" \
+  "AWG fallback built for another kernel is rejected"
+assert_eq "25.12.4|fallback" "$(AWG_TEST_EXACT_FAILS=999 AWG_TEST_CANDIDATE_KERNEL=6.12.94 awg_select)" \
+  "AWG fallback with the running kernel is accepted"
 
 retry_rejects_tampered_payload() {
   (
