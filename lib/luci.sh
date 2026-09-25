@@ -31,17 +31,6 @@ luci_install_prereqs() {
   [ -d /usr/libexec/warren ] || mkdir -p /usr/libexec/warren || fail "Не удалось создать /usr/libexec/warren"
 }
 
-luci_write_file() {
-  path="$1"
-  mode="$2"
-  dir="$(dirname "$path")"
-  mkdir -p "$dir" || fail "Не удалось создать каталог: $dir"
-  tmp="/tmp/warren-luci.$$.tmp"
-  cat > "$tmp" || fail "Не удалось подготовить файл: $path"
-  mv "$tmp" "$path" || fail "Не удалось записать файл: $path"
-  chmod "$mode" "$path" 2>/dev/null || true
-}
-
 luci_persistent_source() {
   rel_path="$1"
   case "$rel_path" in
@@ -51,7 +40,7 @@ luci_persistent_source() {
     lib/*)
       candidate="/usr/lib/warren/${rel_path}"
       ;;
-    assets/*)
+    assets/*|payload/*)
       candidate="/usr/lib/warren/${rel_path}"
       ;;
     *)
@@ -79,7 +68,7 @@ install_warren_libs() {
   target_dir="/usr/lib/warren/lib"
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
-  for lib in common.sh versions.sh ui.sh state.sh basic.sh podkop.sh watchdog.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
+  for lib in $WARREN_LIB_LIST; do
     target_path="$target_dir/$lib"
     if source_path="$(luci_persistent_source "lib/$lib")"; then
       if [ "$source_path" != "$target_path" ]; then
@@ -98,7 +87,7 @@ install_warren_assets() {
   target_dir="/usr/lib/warren/assets"
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
-  for asset in sni-candidates.txt expand-root.sh; do
+  for asset in $WARREN_ASSET_LIST; do
     target_path="$target_dir/$asset"
     if source_path="$(luci_persistent_source "assets/$asset")"; then
       if [ "$source_path" != "$target_path" ]; then
@@ -109,6 +98,25 @@ install_warren_assets() {
     else
       asset_sha="$(warren_payload_sha "assets/$asset")"
       warren_wget_retry "$WARREN_ASSET_BASE_URL/$asset" "$target_path" "$asset_sha" "assets/$asset"
+    fi
+  done
+}
+
+install_warren_payloads() {
+  target_dir="/usr/lib/warren/payload"
+  mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
+
+  for payload in $WARREN_PAYLOAD_LIST; do
+    target_path="$target_dir/$payload"
+    if source_path="$(luci_persistent_source "payload/$payload")"; then
+      if [ "$source_path" != "$target_path" ]; then
+        cp "$source_path" "$target_path" || fail "Не удалось установить payload: $payload"
+      fi
+    elif [ -r "$SCRIPT_DIR/payload/$payload" ]; then
+      cp "$SCRIPT_DIR/payload/$payload" "$target_path" || fail "Не удалось установить payload: $payload"
+    else
+      payload_sha="$(warren_payload_sha "payload/$payload")"
+      warren_wget_retry "$WARREN_PAYLOAD_BASE_URL/$payload" "$target_path" "$payload_sha" "payload/$payload"
     fi
   done
 }
@@ -129,52 +137,6 @@ install_warren_version_file() {
   chmod 644 "$target" 2>/dev/null || true
 }
 
-install_warren_luci_runner() {
-  luci_write_file /usr/libexec/warren/warren-luci-run 0755 <<'EOF'
-#!/bin/sh
-
-mode="$1"
-[ -n "$mode" ] || {
-  echo "Usage: warren-luci-run <mode>" >&2
-  exit 2
-}
-
-job="/tmp/warren-luci-job"
-log="${job}.log"
-pidfile="${job}.pid"
-form_env="${job}.env"
-
-if [ -s "$pidfile" ] && kill -0 "$(cat "$pidfile" 2>/dev/null)" 2>/dev/null; then
-  echo "Warren job is already running: $(cat "$pidfile")"
-  exit 0
-fi
-
-(
-  echo "$$" > "$pidfile"
-  {
-    echo "=== Warren LuCI job: $mode ==="
-    date
-    echo
-    if [ -r "$form_env" ]; then
-      set -a
-      # shellcheck disable=SC1090
-      . "$form_env"
-      set +a
-    fi
-    WARREN_LUCI=1 WARREN_USE_LOCAL_LIBS=1 WARREN_BASE_DIR=/etc/warren WARREN_LOG_DIR=/root/warren /usr/bin/warren --luci-run "$mode"
-    rc=$?
-    echo
-    echo "=== exit code: $rc ==="
-    date
-    rm -f "$pidfile"
-    exit "$rc"
-  } > "$log" 2>&1
-) &
-
-echo "Started Warren job: $mode"
-EOF
-}
-
 install_warren_luci_asset() {
   source_path="$1"
   target_path="$2"
@@ -191,6 +153,14 @@ install_warren_luci_asset() {
     warren_wget_retry "$WARREN_RAW_BASE_URL/$raw_path" "$target_path" "$payload_sha" "$raw_path"
   fi
   chmod "$mode" "$target_path" 2>/dev/null || true
+}
+
+install_warren_luci_runner() {
+  install_warren_luci_asset \
+    "luci-app-warren/root/usr/libexec/warren/warren-luci-run" \
+    "/usr/libexec/warren/warren-luci-run" \
+    0755 \
+    "luci-app-warren/root/usr/libexec/warren/warren-luci-run"
 }
 
 install_warren_luci_controller() {
@@ -244,6 +214,7 @@ install_warren_luci_ui() {
   install_warren_binary
   install_warren_libs
   install_warren_assets
+  install_warren_payloads
   install_warren_version_file
   install_warren_luci_runner
   install_warren_luci_controller

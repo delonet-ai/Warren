@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=10
+
+start_service() {
+  procd_open_instance
+  procd_set_param command /usr/bin/warren-remote-agent daemon
+  procd_set_param respawn 3600 5 0
+  procd_close_instance
+}
+
+stop_service() {
+  /usr/bin/warren-remote-agent stop >/dev/null 2>&1 || true
+}

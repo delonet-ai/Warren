@@ -430,6 +430,7 @@ phase_upload_warren() {
 
   say "  Копирую assets/ и LuCI payload..."
   router_scp "$PROJECT_DIR/assets" "/tmp/warren-dev/" >> "$LOG" 2>&1
+  router_scp "$PROJECT_DIR/payload" "/tmp/warren-dev/" >> "$LOG" 2>&1
   router_scp "$PROJECT_DIR/luci-app-warren" "/tmp/warren-dev/" >> "$LOG" 2>&1
 
   uploaded="$(router_ssh "ls /tmp/warren-dev/lib/ | wc -l | tr -d ' '")"
@@ -504,6 +505,7 @@ _reupload_warren() {
        && router_scp "$PROJECT_DIR/warren.sh" "/tmp/warren-dev/warren.sh" >> "$LOG" 2>&1 \
        && router_scp "$PROJECT_DIR/lib"       "/tmp/warren-dev/"          >> "$LOG" 2>&1 \
        && router_scp "$PROJECT_DIR/assets"    "/tmp/warren-dev/"          >> "$LOG" 2>&1 \
+       && router_scp "$PROJECT_DIR/payload"   "/tmp/warren-dev/"          >> "$LOG" 2>&1 \
        && router_scp "$PROJECT_DIR/luci-app-warren" "/tmp/warren-dev/"    >> "$LOG" 2>&1 \
        && router_scp "$PROJECT_DIR/VERSION"   "/tmp/warren-dev/VERSION"   >> "$LOG" 2>&1 \
        && router_scp "$PROJECT_DIR/SUMS.txt"  "/tmp/warren-dev/SUMS.txt"  >> "$LOG" 2>&1; then

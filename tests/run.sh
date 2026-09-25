@@ -55,6 +55,7 @@ assert_failure() {
   fi
 }
 
+WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/common.sh"
 # shellcheck disable=SC1091
@@ -72,7 +73,7 @@ assert_failure() {
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..49\n"
+printf "1..51\n"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -312,6 +313,13 @@ forget_vps_password_after_success() {
     grep -q "^VPS_ROOT_PASSWORD=''$" "$CONF"
 }
 assert_success "successful VPS setup removes root password from config" forget_vps_password_after_success
+
+# Shipped payloads install atomically and a missing payload stops the flow.
+warren_install_payload warren-qos.init "$TEST_TMP/payload-install/warren-qos.init"
+assert_success "payload installs byte-identical from payload/" \
+  cmp -s "$PROJECT_DIR/payload/warren-qos.init" "$TEST_TMP/payload-install/warren-qos.init"
+assert_failure "missing payload fails instead of writing an empty service" \
+  sh -c '. "$1/lib/common.sh"; WARREN_PAYLOAD_DIR="$1/payload"; WARREN_WARN_SLEEP=0; LOG=/dev/null; warren_install_payload no-such-payload "$2/x" >/dev/null 2>&1' _ "$PROJECT_DIR" "$TEST_TMP"
 
 # Podkop Watchdog generated service and bounded recovery state machine.
 WARREN_WATCHDOG_BIN="$TEST_TMP/warren-watchdog"

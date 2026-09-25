@@ -5,7 +5,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## warren.sh
 
-- `migrate_legacy_file_if_missing`, `migrate_legacy_dir_if_missing`, `warren_die`, `warren_retry_delay`, `warren_sha256_file`, `warren_verify_file_hash`, `warren_download_retry`, `warren_manifest_sha`, `warren_version_manifest_sha`, `warren_persistent_lib_dir`, `warren_persistent_asset_dir`, `warren_persistent_version_path`, `warren_persistent_manifest_path`, `warren_launcher_path`, `warren_persistent_script_path`, `warren_local_version_file`, `warren_read_version_from_file`, `warren_local_version`, `warren_install_bootstrap_file`, `warren_prepare_bootstrap_manifest`, `warren_payload_sha`, `warren_bootstrap_install_persistent_app`, `warren_should_check_updates`, `warren_remote_version`, `fetch_lib`, `fetch_asset`, `source_lib`, `warren_maybe_offer_update`, `luci_apply_form_overrides`, `expand_root_prep`, `expand_root_run_and_reboot`, `mode_is_podkop`, `mode_is_private`, `show_mode_banner`, `mode_target_state`, `mode_is_one_shot_service`, `auto_require_saved_inputs`, `prepare_auto_proxy_source`, `ensure_warren_ui_for_auto`, `print_component_status_line`, `print_installed_components_summary`, `print_podkop_proxy_summary`, `print_auto_final_summary`, `run_rf_bundle_wip_flow`, `run_naiveproxy_wip_flow`, `run_shadowsocks_fallback_wip_flow`, `should_resume_current_mode`, `run_basic_flow`, `run_podkop_flow`, `run_remote_admin_console`, `run_service_mode`, `main`
+- `migrate_legacy_file_if_missing`, `migrate_legacy_dir_if_missing`, `warren_die`, `warren_retry_delay`, `warren_sha256_file`, `warren_verify_file_hash`, `warren_download_retry`, `warren_manifest_sha`, `warren_version_manifest_sha`, `warren_persistent_lib_dir`, `warren_persistent_asset_dir`, `warren_persistent_payload_dir`, `warren_persistent_version_path`, `warren_persistent_manifest_path`, `warren_launcher_path`, `warren_persistent_script_path`, `warren_local_version_file`, `warren_read_version_from_file`, `warren_local_version`, `warren_install_bootstrap_file`, `warren_prepare_bootstrap_manifest`, `warren_payload_sha`, `warren_bootstrap_install_persistent_app`, `warren_should_check_updates`, `warren_remote_version`, `fetch_lib`, `warren_fetch_file`, `fetch_asset`, `fetch_payload`, `source_lib`, `warren_maybe_offer_update`, `luci_apply_form_overrides`, `expand_root_prep`, `expand_root_run_and_reboot`, `mode_is_podkop`, `mode_is_private`, `show_mode_banner`, `mode_target_state`, `mode_is_one_shot_service`, `auto_require_saved_inputs`, `prepare_auto_proxy_source`, `ensure_warren_ui_for_auto`, `print_component_status_line`, `print_installed_components_summary`, `print_podkop_proxy_summary`, `print_auto_final_summary`, `run_rf_bundle_wip_flow`, `run_naiveproxy_wip_flow`, `run_shadowsocks_fallback_wip_flow`, `should_resume_current_mode`, `run_basic_flow`, `run_podkop_flow`, `run_remote_admin_console`, `run_service_mode`, `main`
 
 ## bootstrap.sh
 
@@ -25,7 +25,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/common.sh
 
-- `say`, `warren_done_sleep`, `warren_warn_sleep`, `done_`, `info`, `warn`, `fail`, `log`, `quote_sh`, `warren_wget_retry`, `download_file`, `uciq`, `proxy_link_supported`, `detect_pkg_manager`, `pkg_manager`, `pkg_manager_is_apk`, `pkg_manager_is_opkg`, `openwrt_release_version`, `openwrt_release_supported`, `pkg_invalidate_installed_cache`, `pkg_is_installed`, `pkg_update_indexes`, `pkg_install_packages`, `pkg_install_local_file`, `pkg_ensure_installed`, `warren_now_epoch`, `warren_time_sane`, `warren_set_timezone_moscow`, `warren_set_time_from_epoch`, `warren_restart_ntp`, `warren_ntp_sync_once`, `warren_require_sane_time`
+- `say`, `warren_done_sleep`, `warren_warn_sleep`, `done_`, `info`, `warn`, `fail`, `log`, `quote_sh`, `warren_wget_retry`, `warren_payload_source`, `warren_install_payload`, `download_file`, `uciq`, `proxy_link_supported`, `detect_pkg_manager`, `pkg_manager`, `pkg_manager_is_apk`, `pkg_manager_is_opkg`, `openwrt_release_version`, `openwrt_release_supported`, `pkg_invalidate_installed_cache`, `pkg_is_installed`, `pkg_update_indexes`, `pkg_install_packages`, `pkg_install_local_file`, `pkg_ensure_installed`, `warren_now_epoch`, `warren_time_sane`, `warren_set_timezone_moscow`, `warren_set_time_from_epoch`, `warren_restart_ntp`, `warren_ntp_sync_once`, `warren_require_sane_time`
 
 ## lib/diagnostics.sh
 
@@ -33,7 +33,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/luci.sh
 
-- `luci_install_dir`, `luci_install_prereqs`, `luci_write_file`, `luci_persistent_source`, `install_warren_binary`, `install_warren_libs`, `install_warren_assets`, `install_warren_version_file`, `install_warren_luci_runner`, `install_warren_luci_asset`, `install_warren_luci_controller`, `install_warren_luci_view`, `install_warren_luci_menu`, `install_warren_luci_acl`, `verify_warren_luci_ui`, `install_warren_luci_ui`
+- `luci_install_dir`, `luci_install_prereqs`, `luci_persistent_source`, `install_warren_binary`, `install_warren_libs`, `install_warren_assets`, `install_warren_payloads`, `install_warren_version_file`, `install_warren_luci_asset`, `install_warren_luci_runner`, `install_warren_luci_controller`, `install_warren_luci_view`, `install_warren_luci_menu`, `install_warren_luci_acl`, `verify_warren_luci_ui`, `install_warren_luci_ui`
 
 ## lib/podkop.sh
 
@@ -41,19 +41,14 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/qos.sh
 
-- payload `EOF`: `start_service`
 - `qos_profile_dscp`, `qos_profile_limit_kbytes`, `qos_profile_label`, `qos_client_ip_by_name`, `qos_assignment_profile`, `qos_remove_client`, `qos_set_assignment`, `qos_ensure_init_script`, `qos_apply_rules`, `run_qos_apply_only`, `qos_print_assignments`, `run_qos_flow`
 
 ## lib/remote_admin.sh
 
-- payload `EOF`: `now_epoch`, `log`, `safe_text`, `hash_text`, `sha256_text`, `load_config`, `ensure_state_dir`, `endpoint_candidates`, `split_endpoint`, `ssh_base`, `helper_call`, `current_pid`, `pid_is_alive`, `discover_tunnel_pid`, `ports_from_file`, `stop_tunnel`, `write_last_poll`, `tunnel_running`, `start_tunnel`, `report_status`, `poll_once`, `daemon_loop`
-- payload `EOF`: `start_service`, `stop_service`
-- payload `EOF`: `now_epoch`, `ensure_dirs`, `sanitize_id`, `safe_text`, `router_file`, `request_file`, `read_value`, `write_env`, `load_router`, `allocate_ports`, `router_seen`, `request_create`, `request_close`, `request_state`, `router_request_snapshot`, `poll_router`, `router_tunnel_up`, `router_tunnel_down`, `router_status`, `router_list`, `cleanup`, `install_cron`
 - `remote_admin_base_dir`, `remote_admin_router_agent_path`, `remote_admin_router_init_path`, `remote_admin_router_conf_path`, `remote_admin_vps_helper_path`, `remote_admin_router_state_dir`, `remote_admin_router_log_dir`, `remote_admin_router_runtime_dir`, `remote_admin_default_router_id`, `remote_admin_default_router_name`, `remote_admin_default_endpoint`, `remote_admin_default_vps_user`, `remote_admin_defaults_sync`, `remote_admin_save_config`, `remote_admin_summary`, `remote_admin_install_prereqs`, `remote_admin_write_router_agent`, `remote_admin_write_router_init`, `remote_admin_write_vps_helper`, `remote_admin_install_router_agent`, `remote_admin_install_vps_helper`, `remote_admin_install_vps_bundle`, `remote_admin_poll_now_flow`, `remote_admin_config_only`, `remote_admin_report_status`, `run_remote_admin_flow`, `run_remote_admin_config_flow`
 
 ## lib/sni_checker.sh
 
-- payload `EOF`: `cleanup`, `log`, `need_cmd`, `safe_firewall_snapshot`, `public_ip`, `dns_lookup`, `tcp_443_check`, `http_probe`, `tcp_port_check`, `bool_mark`, `rank_value`, `secondary_name`
 - `sni_checker_router_dir`, `sni_checker_router_candidates_file`, `sni_checker_router_script_file`, `sni_checker_router_reports_dir`, `sni_checker_remote_dir`, `sni_checker_remote_candidates_file`, `sni_checker_remote_script_file`, `sni_checker_report_basename`, `sni_checker_backups_dir`, `sni_checker_ensure_router_layout`, `sni_checker_ensure_candidates_file`, `sni_checker_select_vps_report`, `sni_checker_load_vps_report`, `sni_checker_try_existing_key`, `sni_checker_verify_vps_access`, `sni_checker_write_local_script`, `sni_checker_show_local_script`, `sni_checker_upload_files`, `sni_checker_fetch_report`, `sni_checker_run_remote`, `run_sni_checker_flow`, `sni_apply_validate_domain`, `sni_apply_latest_txt_report`, `sni_apply_best_from_report`, `sni_apply_current_status_from_report`, `sni_apply_secondary_name`, `sni_apply_replace_vless_sni`, `sni_apply_load_panel_from_report`, `sni_apply_load_vless_materials`, `sni_apply_prepare_vps_context`, `sni_apply_choose_report`, `sni_apply_choose_new_sni`, `sni_apply_backup_state`, `sni_apply_update_vps_inbound`, `sni_apply_update_report`, `sni_apply_update_endpoint_store`, `sni_apply_update_podkop`, `run_sni_apply_flow`
 
 ## lib/state.sh
@@ -62,8 +57,6 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/tg_bot.sh
 
-- payload `BOT_EOF`: `log`, `load_config`, `shell_quote_value`, `save_bound_chat`, `jq_string`, `button_obj`, `send_message`, `send_keyboard`, `send_document`, `send_photo`, `answer_callback`, `main_keyboard`, `ip_main_keyboard`, `back_keyboard`, `amz_menu_keyboard`, `restart_podkop`, `amz_server_ready`, `amz_interface_running`, `amz_require_ready_text`, `amz_validate_client_name`, `amz_peer_sections`, `amz_find_section_by_name`, `amz_client_exists`, `amz_next_free_ip32`, `amz_obfuscation_defaults`, `amz_create_config`, `amz_create_client`, `amz_refresh_cache`, `amz_client_count`, `amz_has_clients`, `amz_list_text`, `amz_pick_keyboard`, `amz_name_by_index`, `amz_conf_file_by_index`, `amz_qos_remove_client`, `amz_qos_apply_after_delete`, `amz_delete_by_index`, `normalize_domain`, `valid_domain`, `valid_ip_or_cidr`, `uci_list_has`, `add_domain_to_section`, `ip_list_meta`, `ip_list_values`, `ip_list_count`, `add_ip_to_list`, `delete_ip_from_list`, `format_ip_list`, `ip_list_keyboard`, `ip_list_text`, `endpoint_label`, `seed_endpoints`, `list_endpoints`, `endpoint_count`, `add_endpoint`, `delete_endpoint`, `use_endpoint`, `use_auto_endpoint`, `endpoint_choose_keyboard`, `endpoint_editor_keyboard`, `endpoint_delete_keyboard`, `refresh_report_cache`, `latest_vps_report`, `vps_report_value`, `tg_vps_report_summary_text`, `show_latest_vps_report`, `endpoint_add_keyboard`, `add_report_endpoint`, `status_text`, `help_text`, `pending_file`, `set_pending`, `get_pending`, `clear_pending`, `show_main_menu`, `show_endpoint_choose`, `show_endpoint_editor`, `show_amz_menu`, `show_amz_list`, `show_amz_picker`, `show_ip_main`, `show_ip_list`, `handle_pending_text`, `handle_command`, `handle_callback`, `process_updates`
-- payload `INIT_EOF`: `start_service`
 - `tg_bot_install_prereqs`, `tg_bot_write_runner`, `tg_bot_write_init`, `tg_bot_seed_endpoints`, `run_tg_bot_flow`
 
 ## lib/ui.sh
@@ -84,9 +77,43 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/watchdog.sh
 
-- payload `WATCHDOG_EOF`: `conf_number`, `state_field`, `now_epoch`, `router_hostname`, `write_state`, `engine_running`, `rules_active`, `health_reason`, `notify_telegram`, `run_once`, `status`
-- payload `WATCHDOG_INIT_EOF`: `start_service`
 - `watchdog_write_worker`, `watchdog_write_init`, `watchdog_install`, `watchdog_enable`, `watchdog_disable`, `watchdog_reset`, `watchdog_status`, `watchdog_cli`
+
+## payload/check-sni.sh
+
+- `cleanup`, `log`, `need_cmd`, `safe_firewall_snapshot`, `public_ip`, `dns_lookup`, `tcp_443_check`, `http_probe`, `tcp_port_check`, `bool_mark`, `rank_value`, `secondary_name`
+
+## payload/warren-qos.init
+
+- `start_service`
+
+## payload/warren-remote
+
+- `now_epoch`, `ensure_dirs`, `sanitize_id`, `safe_text`, `router_file`, `request_file`, `read_value`, `write_env`, `load_router`, `allocate_ports`, `router_seen`, `request_create`, `request_close`, `request_state`, `router_request_snapshot`, `poll_router`, `router_tunnel_up`, `router_tunnel_down`, `router_status`, `router_list`, `cleanup`, `install_cron`
+
+## payload/warren-remote-admin.init
+
+- `start_service`, `stop_service`
+
+## payload/warren-remote-agent
+
+- `now_epoch`, `log`, `safe_text`, `hash_text`, `sha256_text`, `load_config`, `ensure_state_dir`, `endpoint_candidates`, `split_endpoint`, `ssh_base`, `helper_call`, `current_pid`, `pid_is_alive`, `discover_tunnel_pid`, `ports_from_file`, `stop_tunnel`, `write_last_poll`, `tunnel_running`, `start_tunnel`, `report_status`, `poll_once`, `daemon_loop`
+
+## payload/warren-tg-bot
+
+- `log`, `load_config`, `shell_quote_value`, `save_bound_chat`, `jq_string`, `button_obj`, `send_message`, `send_keyboard`, `send_document`, `send_photo`, `answer_callback`, `main_keyboard`, `ip_main_keyboard`, `back_keyboard`, `amz_menu_keyboard`, `restart_podkop`, `amz_server_ready`, `amz_interface_running`, `amz_require_ready_text`, `amz_validate_client_name`, `amz_peer_sections`, `amz_find_section_by_name`, `amz_client_exists`, `amz_next_free_ip32`, `amz_obfuscation_defaults`, `amz_create_config`, `amz_create_client`, `amz_refresh_cache`, `amz_client_count`, `amz_has_clients`, `amz_list_text`, `amz_pick_keyboard`, `amz_name_by_index`, `amz_conf_file_by_index`, `amz_qos_remove_client`, `amz_qos_apply_after_delete`, `amz_delete_by_index`, `normalize_domain`, `valid_domain`, `valid_ip_or_cidr`, `uci_list_has`, `add_domain_to_section`, `ip_list_meta`, `ip_list_values`, `ip_list_count`, `add_ip_to_list`, `delete_ip_from_list`, `format_ip_list`, `ip_list_keyboard`, `ip_list_text`, `endpoint_label`, `seed_endpoints`, `list_endpoints`, `endpoint_count`, `add_endpoint`, `delete_endpoint`, `use_endpoint`, `use_auto_endpoint`, `endpoint_choose_keyboard`, `endpoint_editor_keyboard`, `endpoint_delete_keyboard`, `refresh_report_cache`, `latest_vps_report`, `vps_report_value`, `tg_vps_report_summary_text`, `show_latest_vps_report`, `endpoint_add_keyboard`, `add_report_endpoint`, `status_text`, `help_text`, `pending_file`, `set_pending`, `get_pending`, `clear_pending`, `show_main_menu`, `show_endpoint_choose`, `show_endpoint_editor`, `show_amz_menu`, `show_amz_list`, `show_amz_picker`, `show_ip_main`, `show_ip_list`, `handle_pending_text`, `handle_command`, `handle_callback`, `process_updates`
+
+## payload/warren-tg-bot.init
+
+- `start_service`
+
+## payload/warren-watchdog
+
+- `conf_number`, `state_field`, `now_epoch`, `router_hostname`, `write_state`, `engine_running`, `rules_active`, `health_reason`, `notify_telegram`, `run_once`, `status`
+
+## payload/warren-watchdog.init
+
+- `start_service`
 
 ## tests/run.sh
 
@@ -104,16 +131,17 @@ _no functions_
 
 - `list_file`
 
+## tools/manifest.sh
+
+- `manifest_list`
+
 ## tools/refresh_vps_reality.sh
 
 - `extract_field`
 
 ## tools/remote-admin/warren-remote-control.sh
 
-- payload `EOF`: `now_epoch`, `ensure_dirs`, `sanitize_id`, `safe_text`, `hash_text`, `router_file`, `request_file`, `load_router`, `write_env`, `allocate_ports`, `router_seen`, `request_state`, `request_create`, `request_close`, `poll_router`, `tunnel_up`, `tunnel_down`, `router_status`, `router_list`, `cleanup`, `install_cron`
-- payload `EOF`: `now_epoch`, `log`, `sha256_text`, `load_config`, `ensure_state_dir`, `endpoint_candidates`, `split_endpoint`, `ssh_base`, `helper_call`, `current_pid`, `pid_is_alive`, `discover_tunnel_pid`, `stop_tunnel`, `write_last_poll`, `tunnel_running`, `start_tunnel`, `report_status`, `poll_once`, `daemon_loop`
-- payload `EOF`: `start_service`, `stop_service`
-- `say`, `err`, `die`, `quote_sh`, `safe_name`, `profile_path`, `chmod_private`, `write_profile`, `load_profile`, `first_profile_name`, `prompt`, `ssh_cmd`, `scp_to_vps`, `remote_helper`, `show_usage`, `parse_common_flags`, `cmd_vps_add`, `cmd_vps_list`, `cmd_vps_edit`, `cmd_vps_remove`, `cmd_vps_check`, `write_vps_helper_file`, `cmd_vps_install_helper`, `cmd_routers`, `wait_for_ready`, `open_browser`, `cmd_connect`, `cmd_status`, `cmd_request`, `cmd_close`, `router_ssh`, `router_scp`, `write_router_agent_file`, `write_router_init_file`, `cmd_router_install_agent`, `legacy_load_or_profile`, `cmd_setup`, `tui_select_vps`, `tui`
+- `say`, `err`, `die`, `quote_sh`, `safe_name`, `profile_path`, `chmod_private`, `write_profile`, `load_profile`, `first_profile_name`, `prompt`, `ssh_cmd`, `scp_to_vps`, `remote_helper`, `show_usage`, `parse_common_flags`, `cmd_vps_add`, `cmd_vps_list`, `cmd_vps_edit`, `cmd_vps_remove`, `cmd_vps_check`, `payload_file`, `write_vps_helper_file`, `write_router_agent_file`, `write_router_init_file`, `cmd_vps_install_helper`, `cmd_routers`, `wait_for_ready`, `open_browser`, `cmd_connect`, `cmd_status`, `cmd_request`, `cmd_close`, `router_ssh`, `router_scp`, `cmd_router_install_agent`, `legacy_load_or_profile`, `cmd_setup`, `tui_select_vps`, `tui`
 
 ## tools/test-e2e.sh
 

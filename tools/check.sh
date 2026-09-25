@@ -22,6 +22,25 @@ do
   sh -n "$file"
 done
 
+# payload/: shipped service scripts, checked with their own interpreter.
+for file in "$PROJECT_DIR"/payload/*; do
+  case "$(sed -n '1p' "$file")" in
+    *bash*) bash -n "$file" ;;
+    *python3*) python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$file" ;;
+    *) sh -n "$file" ;;
+  esac
+done
+
+# Every lib/ and payload/ file must be listed in the runtime manifest.
+MANIFEST="$(sh "$PROJECT_DIR/tools/manifest.sh")"
+for file in "$PROJECT_DIR"/lib/*.sh "$PROJECT_DIR"/payload/*; do
+  rel="${file#"$PROJECT_DIR"/}"
+  printf "%s\n" "$MANIFEST" | grep -qx "$rel" || {
+    printf "%s is not in the runtime manifest (warren.sh WARREN_*_LIST)\n" "$rel" >&2
+    exit 1
+  }
+done
+
 sh "$PROJECT_DIR/tools/update-sums.sh" --check
 sh "$PROJECT_DIR/tools/gen-index.sh" --check
 sh "$PROJECT_DIR/tests/run.sh"
@@ -30,6 +49,7 @@ sh "$PROJECT_DIR/tools/build-router-upload.sh" "$CHECK_TMP/router-upload" >/dev/
 test -x "$CHECK_TMP/router-upload/warren.sh"
 test -r "$CHECK_TMP/router-upload/lib/versions.sh"
 test -r "$CHECK_TMP/router-upload/assets/expand-root.sh"
+test -r "$CHECK_TMP/router-upload/payload/warren-tg-bot"
 test -r "$CHECK_TMP/router-upload/SUMS.txt"
 test -r "$CHECK_TMP/router-upload/luci-app-warren/luasrc/view/warren/index.htm"
 

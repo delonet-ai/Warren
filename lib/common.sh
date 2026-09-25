@@ -151,6 +151,32 @@ warren_wget_retry() {
     fail "Не удалось загрузить $_wwr_label после 3 попыток: $_wwr_url"
 }
 
+# Service scripts shipped in payload/ (router services, VPS helpers). They run as
+# separate processes and must not depend on lib/*.sh.
+# Lookup: $WARREN_PAYLOAD_DIR (tests/dev), then fetch_payload from warren.sh.
+warren_payload_source() {
+  _wp_name="$1"
+  if [ -n "${WARREN_PAYLOAD_DIR:-}" ] && [ -r "$WARREN_PAYLOAD_DIR/$_wp_name" ]; then
+    printf "%s" "$WARREN_PAYLOAD_DIR/$_wp_name"
+    return 0
+  fi
+  command -v fetch_payload >/dev/null 2>&1 || return 1
+  fetch_payload "$_wp_name"
+}
+
+warren_install_payload() {
+  _wp_name="$1"
+  _wp_target="$2"
+  _wp_src="$(warren_payload_source "$_wp_name")" && [ -r "$_wp_src" ] ||
+    fail "Не найден payload Warren: $_wp_name"
+  mkdir -p "$(dirname "$_wp_target")" || fail "Не удалось создать каталог для $_wp_target"
+  _wp_tmp="${_wp_target}.tmp.$$"
+  cp "$_wp_src" "$_wp_tmp" && mv "$_wp_tmp" "$_wp_target" || {
+    rm -f "$_wp_tmp" 2>/dev/null || true
+    fail "Не удалось установить payload $_wp_name в $_wp_target"
+  }
+}
+
 download_file() {
   url="$1"
   out="$2"

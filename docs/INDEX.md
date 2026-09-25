@@ -15,7 +15,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
    warren-remote-control.sh ─ssh─▶      ├─ interactive menu (lib/ui.sh)                      /usr/local/bin/warren-remote
  tools/wg-vless-chain-                  ├─ LuCI: controller/warren.lua ─▶ warren-luci-run ─▶     (Remote Admin helper)
    diagnostics.sh                       │         warren --luci-run <mode>                   check-sni.sh (SNI checker)
-                                        └─ generated services (heredoc payloads, см. ниже)
+                                        └─ сервисы из payload/ (см. ниже)
 ```
 
 ## Точки входа (`warren.sh: main`)
@@ -95,26 +95,32 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 Ключи конфига: единственный источник — `warren_assign_config_key` в `lib/state.sh`; LuCI-форма →
 env — таблица `allowed` в `write_form_env` (`controller/warren.lua`) → `luci_apply_form_overrides` (`warren.sh`).
 
-## Сгенерированные сервисы (heredoc payloads)
+## Сервисные скрипты (`payload/`)
 
-~2 700 строк (≈18% кода) — это скрипты, которые модули пишут на роутер/VPS через `cat <<'EOF'`.
-Они исполняются отдельным процессом, **не видят lib/*.sh** и поэтому дублируют логику.
+Скрипты, которые Warren ставит на роутер или VPS как отдельные процессы. Они **не видят lib/*.sh**.
+Установка: `warren_install_payload <name> <target>` (`lib/common.sh`) → источник `$WARREN_PAYLOAD_DIR`
+(тесты), checkout `payload/`, `/usr/lib/warren/payload/`, затем download с проверкой SHA (`fetch_payload`).
 
-| Модуль | Payload | Куда пишется | ~Строк | Дублирует |
-|---|---|---|---|---|
-| lib/tg_bot.sh | `BOT_EOF` | `/usr/bin/warren-tg-bot` + `/etc/init.d/warren-tg-bot` | 1390 | `amz_*` ≈ lib/amneziawg.sh, QoS remove, VPS report parsing |
-| lib/remote_admin.sh | agent `EOF` | `/usr/bin/warren-remote-agent` + `/etc/init.d/warren-remote-admin` | 380 | `log`, `now_epoch`, `safe_text` |
-| lib/remote_admin.sh | helper `EOF` | VPS `/usr/local/bin/warren-remote` | 430 | повторён в tests/run.sh (fixture) |
-| lib/sni_checker.sh | `EOF` + `PY` | VPS `check-sni.sh` | 360 | — |
-| lib/watchdog.sh | `WATCHDOG_EOF` | `/usr/libexec/warren/warren-watchdog` + init | 180 | health = lib/podkop.sh `podkop_engine_running/rules_active` |
-| lib/qos.sh, lib/luci.sh | init / runner | `/etc/init.d/warren-qos`, `/usr/libexec/warren/warren-luci-run` | <50 | — |
+| Payload | Ставит | Куда | Примечание |
+|---|---|---|---|
+| `warren-tg-bot`, `.init` | lib/tg_bot.sh | `/usr/bin/warren-tg-bot`, `/etc/init.d/warren-tg-bot` | 1390 строк; `amz_*` дублирует lib/amneziawg.sh |
+| `warren-watchdog`, `.init` | lib/watchdog.sh | `/usr/libexec/warren/warren-watchdog`, `/etc/init.d/warren-watchdog` | health дублирует lib/podkop.sh |
+| `warren-remote-agent`, `warren-remote-admin.init` | lib/remote_admin.sh, Mac tool | `/usr/bin/warren-remote-agent`, `/etc/init.d/warren-remote-admin` | source-ит свой конфиг |
+| `warren-remote` | lib/remote_admin.sh, Mac tool | VPS `/usr/local/bin/warren-remote` | protocol helper |
+| `check-sni.sh` (bash), `sni-apply.py` | lib/sni_checker.sh | VPS | SNI check / apply |
+| `warren-qos.init` | lib/qos.sh | `/etc/init.d/warren-qos` | вызывает `warren --apply-qos` |
+
+LuCI runner ставится из `luci-app-warren/root/usr/libexec/warren/warren-luci-run`.
 
 ## Целостность и доставка
 
-`VERSION` (версия + `SUMS_SHA256`) → `SUMS.txt` (sha256 каждого payload) → каждый download проверяется
-до `mv` (`warren_download_retry`, `fetch_lib`, `fetch_asset`, self-update, bootstrap). После любого
-изменения runtime-файла: `sh tools/update-sums.sh`. Список payload-файлов живёт в `tools/update-sums.sh: PAYLOADS`
-и частично дублирует `WARREN_LIB_LIST` в `warren.sh`.
+Манифест — три строки в `warren.sh`: `WARREN_LIB_LIST` (заодно порядок `source_lib`), `WARREN_ASSET_LIST`,
+`WARREN_PAYLOAD_LIST`. `tools/manifest.sh` печатает по ним полный список файлов для `update-sums.sh` и
+`build-router-upload.sh`, а `check.sh` падает, если файл из `lib/` или `payload/` не внесён в список.
+
+`VERSION` (версия + `SUMS_SHA256`) → `SUMS.txt` → каждый download проверяется до `mv`
+(`warren_download_retry`, `warren_fetch_file`, self-update, bootstrap). После изменения runtime-файла:
+`sh tools/update-sums.sh`.
 
 ## Версии внешних компонентов
 
@@ -126,19 +132,20 @@ AmneziaWG — exact `v${DISTRIB_RELEASE}` из `Slava-Shchipunov/awg-openwrt`, �
 
 | Команда | Где | Что |
 |---|---|---|
-| `sh tools/check.sh` | Mac/Linux, без сети | `sh -n`, SUMS, SYMBOLS, `tests/run.sh` (49 тестов), сборка upload bundle |
+| `sh tools/check.sh` | Mac/Linux, без сети | синтаксис (sh/bash/python), манифест, SUMS, SYMBOLS, `tests/run.sh` (51 тест), upload bundle |
 | `sh tools/build-router-upload.sh [dir]` | Mac | одноразовый bundle для scp на роутер |
 | `sh tools/test-e2e.sh` | Mac + живой R5S + VPS (`.env`) | прошивка, auto, VPS, Remote Admin, watchdog; артефакты в `tools/test-runs/` |
 | `sh tools/wg-vless-chain-diagnostics.sh` | Mac | цепочка WG → OpenWrt → Podkop → VLESS (не встроен в меню) |
 
 ## Горячие точки для рефакторинга
 
-1. **Payloads → настоящие файлы.** Вынести heredoc-скрипты в `payload/` (или `libexec/`), класть в SUMS и
-   копировать при установке. Даст `sh -n`/тесты по отдельности и общий `payload/lib-runtime.sh` вместо копий
-   `log`/`now_epoch`/`safe_text`; tg-bot сможет переиспользовать AWG/QoS-функции.
-2. **Реестр режимов.** Одна таблица `mode|menu#|kind|target_state|handler` вместо 4–5 синхронных `case`.
-3. **Единый список payload-файлов** для `WARREN_LIB_LIST`, `update-sums.sh`, `build-router-upload.sh`.
-4. **Podkop health в одном месте** для diagnostics, watchdog и LuCI.
-5. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
-   `warren.sh` (1176: bootstrap+self-update отдельно от orchestrator), `lib/sni_checker.sh` (check vs apply).
+Сделано: payloads вынесены в `payload/` (Mac-инструмент больше не держит свою копию агента),
+единый манифест файлов, expand-root вендорён в `assets/`.
+
+1. **Реестр режимов.** Одна таблица `mode|menu#|kind|target_state|handler` вместо 4–5 синхронных `case`.
+2. **Podkop health в одном месте** для diagnostics, watchdog и LuCI (watchdog-payload пока с копией).
+3. **Общий runtime для payload-ов** (`log`, `now_epoch`, `safe_text`) и переиспользование AWG/QoS в tg-bot.
+4. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
+   `warren.sh` (bootstrap+self-update отдельно от orchestrator), `lib/sni_checker.sh` (check vs apply).
+5. **Remote Admin agent** source-ит `/etc/warren/warren-remote-admin.conf` — перевести на whitelist-парсер как M16.
 6. **LuCI**: Lua-контроллер (`luci-compat`) и 755-строчный view; при 25.x стоит оценить переход на JS/rpcd.

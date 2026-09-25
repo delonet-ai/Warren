@@ -248,62 +248,25 @@ cmd_vps_check() {
   ssh_cmd "sh -lc 'printf \"__WARREN_SSH_OK__\\n\"; printf \"OS=\"; (. /etc/os-release 2>/dev/null && printf \"%s:%s\" \"\${ID:-unknown}\" \"\${VERSION_ID:-unknown}\") || uname -s; printf \"\\n\"; if test -x $(quote_sh "$REMOTE_HELPER_PATH"); then printf \"__WARREN_REMOTE_HELPER_OK__\\n\"; $(quote_sh "$REMOTE_HELPER_PATH") list >/dev/null && printf \"__WARREN_REMOTE_HELPER_LIST_OK__\\n\" || printf \"__WARREN_REMOTE_HELPER_LIST_FAIL__\\n\"; else printf \"__WARREN_REMOTE_HELPER_MISSING__\\n\"; fi'"
 }
 
+payload_file() {
+  name="$1"
+  path="$SCRIPT_DIR/../../payload/$name"
+  [ -r "$path" ] || die "Warren payload not found: $path (run from a Warren checkout)"
+  printf "%s" "$path"
+}
+
 write_vps_helper_file() {
-  target="$1"
-  canonical_remote_admin_lib="$SCRIPT_DIR/../../lib/remote_admin.sh"
-  if [ -r "$canonical_remote_admin_lib" ]; then
-    # Keep the Mac control tool and Warren auto-flow on one protocol
-    # implementation when running from a checkout.
-    # shellcheck disable=SC1090
-    . "$canonical_remote_admin_lib"
-    remote_admin_write_vps_helper "$target"
-    chmod 700 "$target"
-    return 0
-  fi
-  cat > "$target" <<'EOF'
-#!/bin/sh
-set -eu
-BASE_DIR="${WARREN_REMOTE_ADMIN_BASE_DIR:-/var/lib/warren-remote}"
-ROUTERS_DIR="${BASE_DIR}/routers"
-REQUESTS_DIR="${BASE_DIR}/requests"
-NEXT_PORT_FILE="${BASE_DIR}/next-port"
-DEFAULT_PORT_BASE="${WARREN_REMOTE_ADMIN_PORT_BASE:-22000}"
-now_epoch(){ date +%s 2>/dev/null || echo 0; }
-ensure_dirs(){ mkdir -p "$ROUTERS_DIR" "$REQUESTS_DIR"; [ -f "$NEXT_PORT_FILE" ] || printf "%s\n" "$DEFAULT_PORT_BASE" > "$NEXT_PORT_FILE"; }
-sanitize_id(){ printf "%s" "$1" | tr -cs 'A-Za-z0-9._-' '-'; }
-safe_text(){ printf "%s" "$1" | tr ' ' '_'; }
-hash_text(){ if command -v sha256sum >/dev/null 2>&1; then printf "%s" "$1" | sha256sum | awk '{print $1}'; else printf "%s" "$1" | cksum | awk '{print $1}'; fi; }
-router_file(){ printf "%s/%s.env" "$ROUTERS_DIR" "$(sanitize_id "$1")"; }
-request_file(){ printf "%s/%s.env" "$REQUESTS_DIR" "$(sanitize_id "$1")"; }
-load_router(){ file="$(router_file "$1")"; [ -r "$file" ] && . "$file" || true; }
-write_env(){ file="$1"; shift; tmp="${file}.tmp.$$"; : > "$tmp"; for pair in "$@"; do printf "%s\n" "$pair" >> "$tmp"; done; mv "$tmp" "$file"; }
-allocate_ports(){ next="$(cat "$NEXT_PORT_FILE" 2>/dev/null || printf "%s" "$DEFAULT_PORT_BASE")"; case "$next" in ''|*[!0-9]*) next="$DEFAULT_PORT_BASE";; esac; ssh_port="$next"; luci_port=$((next+1)); printf "%s\n" $((next+10)) > "$NEXT_PORT_FILE"; printf "%s %s\n" "$ssh_port" "$luci_port"; }
-router_seen(){ router_id="$1"; router_name="${2:-$1}"; pubkey="${3:-}"; source_host="${4:-}"; last_seen="$(now_epoch)"; file="$(router_file "$router_id")"; pubkey_hash="$pubkey"; if [ -n "$pubkey_hash" ] && ! printf "%s" "$pubkey_hash" | grep -Eq '^[A-Fa-f0-9]{64}$'; then pubkey_hash="$(hash_text "$pubkey_hash")"; fi; mkdir -p "$ROUTERS_DIR"; { printf "ROUTER_ID=%s\n" "$router_id"; printf "ROUTER_NAME=%s\n" "$(safe_text "$router_name")"; printf "ROUTER_PUBLIC_KEY_SHA256=%s\n" "$pubkey_hash"; printf "ROUTER_SOURCE=%s\n" "$(safe_text "$source_host")"; printf "LAST_SEEN=%s\n" "$last_seen"; printf "LAST_HEARTBEAT=%s\n" "$last_seen"; printf "TUNNEL_STATUS=%s\n" "${TUNNEL_STATUS:-down}"; printf "TUNNEL_SSH_PORT=%s\n" "${TUNNEL_SSH_PORT:-}"; printf "TUNNEL_LUCI_PORT=%s\n" "${TUNNEL_LUCI_PORT:-}"; printf "REQUEST_STATE=%s\n" "${REQUEST_STATE:-none}"; printf "REQUEST_AT=%s\n" "${REQUEST_AT:-}"; printf "REQUEST_TTL=%s\n" "${REQUEST_TTL:-}"; printf "REQUEST_ID=%s\n" "${REQUEST_ID:-}"; printf "REQUEST_EXPIRES=%s\n" "${REQUEST_EXPIRES:-}"; } > "$file"; }
-request_state(){ router_id="$1"; file="$(request_file "$router_id")"; [ -r "$file" ] || return 1; . "$file"; now="$(now_epoch)"; case "${REQUEST_EXPIRES:-0}" in ''|*[!0-9]*) return 1;; esac; [ "$now" -le "$REQUEST_EXPIRES" ] || { rm -f "$file"; return 1; }; }
-request_create(){ router_id="$1"; ttl="${2:-900}"; router_name="${3:-$router_id}"; ensure_dirs; load_router "$router_id"; ports="$(allocate_ports)"; tunnel_ssh_port="$(printf "%s" "$ports" | awk '{print $1}')"; tunnel_luci_port="$(printf "%s" "$ports" | awk '{print $2}')"; request_id="$(date +%Y%m%d%H%M%S)-$(sanitize_id "$router_id")"; request_at="$(now_epoch)"; request_expires=$((request_at+ttl)); write_env "$(request_file "$router_id")" "ROUTER_ID=${router_id}" "ROUTER_NAME=$(safe_text "$router_name")" "REQUEST_ID=${request_id}" "REQUEST_STATE=requested" "REQUEST_AT=${request_at}" "REQUEST_TTL=${ttl}" "REQUEST_EXPIRES=${request_expires}" "TUNNEL_SSH_PORT=${tunnel_ssh_port}" "TUNNEL_LUCI_PORT=${tunnel_luci_port}" "REQUESTED_BY=ssh"; router_seen "$router_id" "$router_name" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${SSH_CONNECTION:-}"; printf "ACTION=OPEN\nREQUEST_ID=%s\nREQUEST_TTL=%s\nTUNNEL_SSH_PORT=%s\nTUNNEL_LUCI_PORT=%s\n" "$request_id" "$ttl" "$tunnel_ssh_port" "$tunnel_luci_port"; }
-request_close(){ router_id="$1"; ensure_dirs; load_router "$router_id"; request_at="$(now_epoch)"; request_id="$(date +%Y%m%d%H%M%S)-close-$(sanitize_id "$router_id")"; request_expires=$((request_at+300)); write_env "$(request_file "$router_id")" "ROUTER_ID=${router_id}" "ROUTER_NAME=$(safe_text "${ROUTER_NAME:-$router_id}")" "REQUEST_ID=${request_id}" "REQUEST_STATE=closed" "REQUEST_AT=${request_at}" "REQUEST_TTL=300" "REQUEST_EXPIRES=${request_expires}" "TUNNEL_SSH_PORT=" "TUNNEL_LUCI_PORT="; TUNNEL_STATUS=down TUNNEL_SSH_PORT= TUNNEL_LUCI_PORT= REQUEST_STATE=closed REQUEST_AT="$request_at" REQUEST_TTL=300 REQUEST_ID="$request_id" REQUEST_EXPIRES="$request_expires" router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"; }
-poll_router(){ router_id="$1"; router_name="${2:-$1}"; pubkey="${3:-}"; source_host="${4:-${SSH_CONNECTION:-}}"; ensure_dirs; request_file_path="$(request_file "$router_id")"; if request_state "$router_id"; then . "$request_file_path"; router_seen "$router_id" "$router_name" "$pubkey" "$source_host"; if [ "${REQUEST_STATE:-}" = closed ]; then rm -f "$request_file_path"; printf "ACTION=CLOSE\nREQUEST_ID=%s\n" "${REQUEST_ID:-}"; else printf "ACTION=OPEN\nREQUEST_ID=%s\nREQUEST_TTL=%s\nTUNNEL_SSH_PORT=%s\nTUNNEL_LUCI_PORT=%s\n" "${REQUEST_ID:-}" "${REQUEST_TTL:-}" "${TUNNEL_SSH_PORT:-}" "${TUNNEL_LUCI_PORT:-}"; fi; else router_seen "$router_id" "$router_name" "$pubkey" "$source_host"; printf "ACTION=NONE\n"; fi; }
-tunnel_up(){ router_id="$1"; request_id="${2:-}"; tunnel_ssh_port="${3:-}"; tunnel_luci_port="${4:-}"; load_router "$router_id"; TUNNEL_STATUS=up TUNNEL_SSH_PORT="$tunnel_ssh_port" TUNNEL_LUCI_PORT="$tunnel_luci_port" REQUEST_STATE=requested REQUEST_ID="$request_id" router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"; printf "TUNNEL_STATUS=up\n"; }
-tunnel_down(){ router_id="$1"; request_id="${2:-}"; load_router "$router_id"; TUNNEL_STATUS=down TUNNEL_SSH_PORT= TUNNEL_LUCI_PORT= REQUEST_STATE=closed REQUEST_ID="$request_id" router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"; printf "TUNNEL_STATUS=down\n"; }
-router_status(){ router_id="$1"; file="$(router_file "$router_id")"; [ -r "$file" ] || exit 1; cat "$file"; printf "REQUEST_ACTIVE=%s\n" "$(request_state "$router_id" && printf yes || printf no)"; }
-router_list(){ ensure_dirs; printf "ROUTER_ID|ROUTER_NAME|LAST_SEEN|REQUEST_STATE|TUNNEL_STATUS|SSH_PORT|LUCI_PORT\n"; for file in "$ROUTERS_DIR"/*.env; do [ -r "$file" ] || continue; . "$file"; req=none; request_state "${ROUTER_ID:-}" && req=requested || true; printf "%s|%s|%s|%s|%s|%s|%s\n" "${ROUTER_ID:-}" "${ROUTER_NAME:-}" "${LAST_SEEN:-}" "$req" "${TUNNEL_STATUS:-down}" "${TUNNEL_SSH_PORT:-}" "${TUNNEL_LUCI_PORT:-}"; done; }
-cleanup(){ ensure_dirs; now="$(now_epoch)"; for file in "$REQUESTS_DIR"/*.env; do [ -r "$file" ] || continue; . "$file"; case "${REQUEST_EXPIRES:-0}" in ''|*[!0-9]*) continue;; esac; [ "$now" -le "$REQUEST_EXPIRES" ] || rm -f "$file"; done; }
-install_cron(){ if [ -d /etc/cron.d ]; then printf "*/5 * * * * root %s cleanup >/dev/null 2>&1\n" "$0" >/etc/cron.d/warren-remote; chmod 644 /etc/cron.d/warren-remote 2>/dev/null || true; fi; }
-cmd="${1:-}"; shift || true
-case "$cmd" in
-  init) ensure_dirs; install_cron ;;
-  list) router_list ;;
-  request) request_create "${1:?missing router_id}" "${2:-900}" "${3:-$1}" ;;
-  close) request_close "${1:?missing router_id}" ;;
-  status) router_status "${1:?missing router_id}" ;;
-  poll) poll_router "${1:?missing router_id}" "${2:-$1}" "${3:-}" "${4:-${SSH_CONNECTION:-}}" ;;
-  tunnel-up) tunnel_up "${1:?missing router_id}" "${2:-}" "${3:-}" "${4:-}" ;;
-  tunnel-down) tunnel_down "${1:?missing router_id}" "${2:-}" ;;
-  cleanup) cleanup ;;
-  *) echo "Usage: warren-remote {init|list|request|close|status|poll|tunnel-up|tunnel-down|cleanup}" >&2; exit 2 ;;
-esac
-EOF
-  chmod 700 "$target"
+  cp "$(payload_file warren-remote)" "$1"
+  chmod 700 "$1"
+}
+
+write_router_agent_file() {
+  cp "$(payload_file warren-remote-agent)" "$1"
+}
+
+write_router_init_file() {
+  cp "$(payload_file warren-remote-admin.init)" "$1"
+  chmod 755 "$1"
 }
 
 cmd_vps_install_helper() {
@@ -477,55 +440,6 @@ router_scp() {
   else
     scp -O -P "$ROUTER_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$src" "${ROUTER_USER}@${ROUTER_HOST}:$dst"
   fi
-}
-
-write_router_agent_file() {
-  target="$1"
-  cat > "$target" <<'EOF'
-#!/bin/sh
-set -eu
-CONFIG="${WARREN_REMOTE_ADMIN_CONFIG:-/etc/warren/warren-remote-admin.conf}"
-STATE_DIR="${WARREN_REMOTE_ADMIN_RUNTIME_DIR:-/var/run/warren-remote-admin}"
-LOG_FILE="${WARREN_REMOTE_ADMIN_LOG_FILE:-/tmp/warren-remote-admin.log}"
-PID_FILE="${STATE_DIR}/tunnel.pid"
-CURRENT_PORTS_FILE="${STATE_DIR}/tunnel.ports"
-DAEMON_PID_FILE="${STATE_DIR}/daemon.pid"
-LAST_POLL_FILE="${STATE_DIR}/last-poll.env"
-now_epoch(){ date +%s 2>/dev/null || echo 0; }
-log(){ printf "[%s] %s\n" "$(date +'%F %T' 2>/dev/null || echo now)" "$*" >> "$LOG_FILE"; }
-sha256_text(){ if command -v sha256sum >/dev/null 2>&1; then printf "%s" "$1" | sha256sum | awk '{print $1}'; else printf "%s" "$1" | cksum | awk '{print $1}'; fi; }
-load_config(){ [ -r "$CONFIG" ] || return 1; . "$CONFIG"; [ -n "${REMOTE_ADMIN_ROUTER_ID:-}" ] || return 1; [ -n "${REMOTE_ADMIN_ENDPOINTS:-}" ] || return 1; [ -n "${REMOTE_ADMIN_ROUTER_KEY_PATH:-}" ] || return 1; REMOTE_ADMIN_ROUTER_NAME="${REMOTE_ADMIN_ROUTER_NAME:-$REMOTE_ADMIN_ROUTER_ID}"; REMOTE_ADMIN_VPS_USER="${REMOTE_ADMIN_VPS_USER:-root}"; REMOTE_ADMIN_POLL_INTERVAL="${REMOTE_ADMIN_POLL_INTERVAL:-300}"; REMOTE_ADMIN_LOCAL_SSH_PORT="${REMOTE_ADMIN_LOCAL_SSH_PORT:-2201}"; REMOTE_ADMIN_LOCAL_LUCI_PORT="${REMOTE_ADMIN_LOCAL_LUCI_PORT:-8081}"; }
-ensure_state_dir(){ mkdir -p "$STATE_DIR"; }
-endpoint_candidates(){ printf "%s\n" "${REMOTE_ADMIN_ENDPOINTS:-}" | tr ',;' '\n' | sed '/^$/d'; }
-split_endpoint(){ endpoint="$1"; host="${endpoint%:*}"; port="${endpoint##*:}"; case "$endpoint" in *:*) printf "%s %s" "$host" "$port";; *) printf "%s %s" "$endpoint" "22";; esac; }
-ssh_base(){ ssh -i "$REMOTE_ADMIN_ROUTER_KEY_PATH" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 "$@"; }
-helper_call(){ endpoint="$1"; shift; set -- $(split_endpoint "$endpoint") "$@"; host="$1"; port="$2"; shift 2; ssh_base -p "$port" "${REMOTE_ADMIN_VPS_USER}@${host}" "warren-remote $*"; }
-current_pid(){ [ -s "$PID_FILE" ] || return 1; cat "$PID_FILE"; }
-pid_is_alive(){ case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac; kill -0 "$1" >/dev/null 2>&1; }
-discover_tunnel_pid(){ tunnel_ssh_port="${1:-}"; tunnel_luci_port="${2:-}"; ps w 2>/dev/null | awk -v ssh_port="$tunnel_ssh_port" -v luci_port="$tunnel_luci_port" '(index($0, "ssh") || index($0, "autossh")) && index($0, "-R 127.0.0.1:" ssh_port ":127.0.0.1:22") && index($0, "-R 127.0.0.1:" luci_port ":127.0.0.1:80") { print $1; exit }'; }
-stop_tunnel(){ if pid="$(current_pid 2>/dev/null || true)"; then kill "$pid" >/dev/null 2>&1 || true; fi; rm -f "$PID_FILE" "$CURRENT_PORTS_FILE"; }
-write_last_poll(){ { printf "LAST_POLL_AT=%s\n" "$(now_epoch)"; printf "LAST_POLL_ACTION=%s\n" "${1:-}"; printf "LAST_POLL_ENDPOINT=%s\n" "${2:-}"; printf "LAST_POLL_RESULT=%s\n" "${3:-}"; printf "LAST_POLL_REQUEST_ID=%s\n" "${4:-}"; } > "$LAST_POLL_FILE"; }
-tunnel_running(){ if pid="$(current_pid 2>/dev/null || true)"; then if pid_is_alive "$pid"; then return 0; fi; fi; if [ -r "$CURRENT_PORTS_FILE" ]; then tunnel_pid="$(discover_tunnel_pid "$(sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)" "$(sed -n 's/^TUNNEL_LUCI_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)")"; if pid_is_alive "$tunnel_pid"; then printf "%s\n" "$tunnel_pid" > "$PID_FILE" 2>/dev/null || true; return 0; fi; fi; return 1; }
-start_tunnel(){ endpoint_host="$1"; endpoint_port="$2"; tunnel_ssh_port="$3"; tunnel_luci_port="$4"; ensure_state_dir; if tunnel_running; then return 0; fi; if command -v autossh >/dev/null 2>&1; then tunnel_cmd="exec autossh -M 0 -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -i \"$REMOTE_ADMIN_ROUTER_KEY_PATH\" -p \"$endpoint_port\" -R 127.0.0.1:${tunnel_ssh_port}:127.0.0.1:22 -R 127.0.0.1:${tunnel_luci_port}:127.0.0.1:80 ${REMOTE_ADMIN_VPS_USER}@${endpoint_host}"; else tunnel_cmd="exec ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -i \"$REMOTE_ADMIN_ROUTER_KEY_PATH\" -p \"$endpoint_port\" -R 127.0.0.1:${tunnel_ssh_port}:127.0.0.1:22 -R 127.0.0.1:${tunnel_luci_port}:127.0.0.1:80 ${REMOTE_ADMIN_VPS_USER}@${endpoint_host}"; fi; if command -v setsid >/dev/null 2>&1; then setsid sh -c "$tunnel_cmd" >>"$LOG_FILE" 2>&1 </dev/null & elif command -v nohup >/dev/null 2>&1; then nohup sh -c "$tunnel_cmd" >>"$LOG_FILE" 2>&1 </dev/null & else sh -c "$tunnel_cmd" >>"$LOG_FILE" 2>&1 </dev/null & fi; pid="$!"; printf "%s\n" "$pid" > "$PID_FILE"; { printf "TUNNEL_SSH_PORT=%s\n" "$tunnel_ssh_port"; printf "TUNNEL_LUCI_PORT=%s\n" "$tunnel_luci_port"; printf "TUNNEL_STARTED_AT=%s\n" "$(now_epoch)"; } > "$CURRENT_PORTS_FILE"; sleep 2; tunnel_running; }
-report_status(){ load_config || true; printf "ROUTER_ID=%s\nROUTER_NAME=%s\nENDPOINTS=%s\n" "${REMOTE_ADMIN_ROUTER_ID:-}" "${REMOTE_ADMIN_ROUTER_NAME:-}" "${REMOTE_ADMIN_ENDPOINTS:-}"; [ -r "$LAST_POLL_FILE" ] && sed -n 's/^LAST_POLL_AT=/LAST_POLL_AT=/p;s/^LAST_POLL_ACTION=/LAST_POLL_ACTION=/p;s/^LAST_POLL_ENDPOINT=/LAST_POLL_ENDPOINT=/p;s/^LAST_POLL_RESULT=/LAST_POLL_RESULT=/p;s/^LAST_POLL_REQUEST_ID=/LAST_POLL_REQUEST_ID=/p' "$LAST_POLL_FILE"; if [ -s "$DAEMON_PID_FILE" ]; then daemon_pid="$(cat "$DAEMON_PID_FILE" 2>/dev/null || true)"; printf "DAEMON_PID=%s\n" "$daemon_pid"; if pid_is_alive "$daemon_pid"; then printf "DAEMON_STATUS=up\n"; else printf "DAEMON_STATUS=down\n"; fi; else if ps w 2>/dev/null | grep -F "/usr/bin/warren-remote-agent daemon" >/dev/null 2>&1; then printf "DAEMON_STATUS=up\n"; else printf "DAEMON_STATUS=unknown\n"; fi; fi; if tunnel_running; then tunnel_pid="$(current_pid 2>/dev/null || true)"; if ! pid_is_alive "$tunnel_pid"; then tunnel_pid=""; fi; if [ -z "$tunnel_pid" ]; then tunnel_pid="$(discover_tunnel_pid "$(sed -n 's/^TUNNEL_SSH_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)" "$(sed -n 's/^TUNNEL_LUCI_PORT=//p' "$CURRENT_PORTS_FILE" 2>/dev/null | head -n1)")"; [ -n "$tunnel_pid" ] && printf "%s\n" "$tunnel_pid" > "$PID_FILE" 2>/dev/null || true; fi; printf "TUNNEL_STATUS=up\n"; sed -n 's/^TUNNEL_SSH_PORT=/TUNNEL_SSH_PORT=/p;s/^TUNNEL_LUCI_PORT=/TUNNEL_LUCI_PORT=/p' "$CURRENT_PORTS_FILE"; if [ -z "$tunnel_pid" ]; then tunnel_pid="$(cat "$PID_FILE" 2>/dev/null || true)"; pid_is_alive "$tunnel_pid" || tunnel_pid=""; fi; printf "TUNNEL_PID=%s\n" "$tunnel_pid"; else printf "TUNNEL_STATUS=down\n"; fi; }
-poll_once(){ load_config || { log "config unavailable"; return 1; }; ensure_state_dir; response=; chosen=; for endpoint in $(endpoint_candidates); do if tmp="$(helper_call "$endpoint" poll "$REMOTE_ADMIN_ROUTER_ID" "$REMOTE_ADMIN_ROUTER_NAME" "$(sha256_text "$(cat "$REMOTE_ADMIN_ROUTER_KEY_PATH.pub" 2>/dev/null || printf "")")" 2>/dev/null)"; then response="$tmp"; chosen="$endpoint"; action="$(printf "%s\n" "$response" | sed -n 's/^ACTION=//p' | head -n1)"; [ "$action" = OPEN ] || [ "$action" = CLOSE ] && break; fi; done; if [ -z "$response" ]; then log "no responsive endpoint for $REMOTE_ADMIN_ROUTER_ID ${chosen:+(last tried: $chosen)}"; write_last_poll "NONE" "$chosen" "no-response" ""; return 1; fi; action="$(printf "%s\n" "$response" | sed -n 's/^ACTION=//p' | head -n1)"; ssh_port="$(printf "%s\n" "$response" | sed -n 's/^TUNNEL_SSH_PORT=//p' | head -n1)"; luci_port="$(printf "%s\n" "$response" | sed -n 's/^TUNNEL_LUCI_PORT=//p' | head -n1)"; request_id="$(printf "%s\n" "$response" | sed -n 's/^REQUEST_ID=//p' | head -n1)"; set -- $(split_endpoint "$chosen"); case "$action" in OPEN) start_tunnel "$1" "$2" "$ssh_port" "$luci_port" && helper_call "$chosen" tunnel-up "$REMOTE_ADMIN_ROUTER_ID" "$request_id" "$ssh_port" "$luci_port" >/dev/null 2>&1 || true; write_last_poll "OPEN" "$chosen" "tunnel-up" "$request_id";; CLOSE) stop_tunnel; helper_call "$chosen" tunnel-down "$REMOTE_ADMIN_ROUTER_ID" "$request_id" >/dev/null 2>&1 || true; write_last_poll "CLOSE" "$chosen" "tunnel-down" "$request_id";; NONE|"") if ! tunnel_running; then rm -f "$PID_FILE" "$CURRENT_PORTS_FILE" >/dev/null 2>&1 || true; fi; write_last_poll "NONE" "$chosen" "idle" "$request_id";; esac; }
-daemon_loop(){ load_config || exit 1; ensure_state_dir; printf "%s\n" "$$" > "$DAEMON_PID_FILE"; trap 'rm -f "$DAEMON_PID_FILE" >/dev/null 2>&1 || true' EXIT INT TERM; while :; do poll_once || true; sleep "${REMOTE_ADMIN_POLL_INTERVAL:-30}"; done; }
-case "${1:-daemon}" in daemon) daemon_loop;; poll) poll_once;; status) report_status;; stop) stop_tunnel;; *) echo "Usage: warren-remote-agent {daemon|poll|status|stop}" >&2; exit 2;; esac
-EOF
-  chmod 700 "$target"
-}
-
-write_router_init_file() {
-  target="$1"
-  cat > "$target" <<'EOF'
-#!/bin/sh /etc/rc.common
-USE_PROCD=1
-START=95
-STOP=10
-start_service(){ procd_open_instance; procd_set_param command /usr/bin/warren-remote-agent daemon; procd_set_param respawn 3600 5 0; procd_close_instance; }
-stop_service(){ /usr/bin/warren-remote-agent stop >/dev/null 2>&1 || true; }
-EOF
-  chmod 755 "$target"
 }
 
 cmd_router_install_agent() {

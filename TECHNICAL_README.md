@@ -86,7 +86,7 @@ sh tools/build-router-upload.sh
 sh tools/check.sh
 ```
 
-В них входят shell syntax checks, 49 POSIX shell regression checks для version policy, config parser, state, URL generation, Podkop runtime health, Remote Admin lifecycle, retry/integrity, security hardening, Watchdog state machine и graceful OpenWrt policy, а также проверка сборки upload bundle.
+В них входят syntax checks (sh/bash/python), проверка runtime-манифеста, 51 POSIX shell regression check для version policy, config parser, state, URL generation, Podkop runtime health, Remote Admin lifecycle, retry/integrity, security hardening, Watchdog state machine и graceful OpenWrt policy, а также проверка сборки upload bundle.
 
 ## Управление версиями и зависимостями
 
@@ -346,9 +346,17 @@ set_state() { printf "%s\n" "$1" > "${STATE}.tmp" && mv "${STATE}.tmp" "$STATE";
 
 `WARREN_DONE_SLEEP` / `WARREN_WARN_SLEEP` (default `5`), в LuCI-режиме пауз нет.
 
-**[PARTIAL] Список lib-файлов**
+**[RESOLVED] Единый runtime-манифест**
 
-В `warren.sh` один `WARREN_LIB_LIST`, но тот же список повторён в `tools/update-sums.sh: PAYLOADS`. Цель — единый manifest (см. [docs/INDEX.md](docs/INDEX.md#горячие-точки-для-рефакторинга)).
+`WARREN_LIB_LIST` / `WARREN_ASSET_LIST` / `WARREN_PAYLOAD_LIST` в `warren.sh` — единственный список; `tools/manifest.sh` раздаёт его `update-sums.sh` и `build-router-upload.sh`, `check.sh` ловит невнесённые файлы.
+
+**[RESOLVED] Сервисные скрипты вынесены из heredoc в `payload/`**
+
+TG-бот, Watchdog, Remote Admin agent/helper, SNI checker и QoS init — обычные файлы под SHA256-манифестом с отдельной проверкой синтаксиса. Mac-side `warren-remote-control.sh` больше не держит собственную урезанную копию router-agent.
+
+**[P2] Remote Admin agent source-ит свой конфиг**
+
+`payload/warren-remote-agent` читает `/etc/warren/warren-remote-admin.conf` через `.`. Файл пишет сам Warren с правами root, но нужно перевести на whitelist-парсер по образцу `load_conf_if_exists`.
 
 ### Совместимость
 

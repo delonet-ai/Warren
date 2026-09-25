@@ -81,16 +81,7 @@ qos_ensure_init_script() {
   [ "$(id -u 2>/dev/null || echo 1)" = "0" ] || return 0
   [ -x /usr/bin/warren ] || return 0
 
-  cat > "$QOS_INIT_SCRIPT" <<'EOF'
-#!/bin/sh /etc/rc.common
-
-START=99
-USE_PROCD=1
-
-start_service() {
-  /usr/bin/warren --apply-qos >/tmp/warren-qos.log 2>&1
-}
-EOF
+  warren_install_payload warren-qos.init "$QOS_INIT_SCRIPT"
   chmod 755 "$QOS_INIT_SCRIPT" 2>/dev/null || true
   "$QOS_INIT_SCRIPT" enable >/dev/null 2>&1 || true
 }

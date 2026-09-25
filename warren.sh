@@ -13,13 +13,18 @@ PODKOP_INSTALL_SHA256="${PODKOP_INSTALL_SHA256:-}"
 WARREN_RAW_BASE_URL="${WARREN_RAW_BASE_URL:-${BOOTSTRAP_RAW_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main}}"
 WARREN_LIB_BASE_URL="${WARREN_LIB_BASE_URL:-${BOOTSTRAP_LIB_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main/lib}}"
 WARREN_ASSET_BASE_URL="${WARREN_ASSET_BASE_URL:-${BOOTSTRAP_ASSET_BASE_URL:-https://raw.githubusercontent.com/delonet-ai/Warren/main/assets}}"
+WARREN_PAYLOAD_BASE_URL="${WARREN_PAYLOAD_BASE_URL:-${WARREN_RAW_BASE_URL}/payload}"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || echo ".")"
 WARREN_DEV_DIR_DEFAULT="${SCRIPT_DIR}/.warren-dev"
 WARREN_CLI_ARG1="${1:-}"
 WARREN_CLI_ARG2="${2:-}"
 
+# Runtime manifest: the only list of shipped files. Libraries are sourced in this
+# order; tools/update-sums.sh and tools/build-router-upload.sh read these lines.
 WARREN_LIB_LIST="common.sh versions.sh ui.sh state.sh basic.sh podkop.sh watchdog.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh"
+WARREN_ASSET_LIST="sni-candidates.txt expand-root.sh"
+WARREN_PAYLOAD_LIST="warren-tg-bot warren-tg-bot.init warren-watchdog warren-watchdog.init warren-remote-agent warren-remote-admin.init warren-remote warren-qos.init check-sni.sh sni-apply.py"
 
 migrate_legacy_file_if_missing() {
   legacy_path="$1"
@@ -171,6 +176,10 @@ warren_persistent_asset_dir() {
   printf "%s" "/usr/lib/warren/assets"
 }
 
+warren_persistent_payload_dir() {
+  printf "%s" "/usr/lib/warren/payload"
+}
+
 warren_persistent_version_path() {
   printf "%s" "/usr/lib/warren/VERSION"
 }
@@ -311,10 +320,11 @@ warren_bootstrap_install_persistent_app() {
   launcher_path="$(warren_launcher_path)"
   lib_dir="$(warren_persistent_lib_dir)"
   asset_dir="$(warren_persistent_asset_dir)"
+  payload_dir="$(warren_persistent_payload_dir)"
   version_path="$(warren_persistent_version_path)"
   force_remote="${1:-${WARREN_BOOTSTRAP_FORCE_REMOTE:-0}}"
 
-  mkdir -p "$WARREN_APP_DIR" "$lib_dir" "$asset_dir" || warren_die "Не удалось подготовить постоянный каталог Warren"
+  mkdir -p "$WARREN_APP_DIR" "$lib_dir" "$asset_dir" "$payload_dir" || warren_die "Не удалось подготовить постоянный каталог Warren"
   warren_prepare_bootstrap_manifest "$force_remote"
 
   if [ "$force_remote" = "1" ]; then
@@ -337,7 +347,7 @@ warren_bootstrap_install_persistent_app() {
     chmod 644 "$lib_dir/$lib" 2>/dev/null || true
   done
 
-  for asset in sni-candidates.txt expand-root.sh; do
+  for asset in $WARREN_ASSET_LIST; do
     if [ "$force_remote" = "1" ]; then
       warren_install_bootstrap_file "" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset" "$force_remote" \
         "$(warren_payload_sha "assets/$asset")" "assets/$asset"
@@ -346,6 +356,17 @@ warren_bootstrap_install_persistent_app() {
         "$(warren_payload_sha "assets/$asset")" "assets/$asset"
     fi
     chmod 644 "$asset_dir/$asset" 2>/dev/null || true
+  done
+
+  for payload in $WARREN_PAYLOAD_LIST; do
+    if [ "$force_remote" = "1" ]; then
+      warren_install_bootstrap_file "" "$payload_dir/$payload" "$WARREN_PAYLOAD_BASE_URL/$payload" "$force_remote" \
+        "$(warren_payload_sha "payload/$payload")" "payload/$payload"
+    else
+      warren_install_bootstrap_file "$SCRIPT_DIR/payload/$payload" "$payload_dir/$payload" "$WARREN_PAYLOAD_BASE_URL/$payload" "$force_remote" \
+        "$(warren_payload_sha "payload/$payload")" "payload/$payload"
+    fi
+    chmod 644 "$payload_dir/$payload" 2>/dev/null || true
   done
 
   if [ -r "$WARREN_ACTIVE_VERSION_FILE" ]; then
@@ -399,41 +420,17 @@ warren_remote_version() {
 }
 
 fetch_lib() {
-  name="$1"
-  local_path="$SCRIPT_DIR/lib/$name"
-  system_path="/usr/lib/warren/lib/$name"
-  use_local_libs="${WARREN_USE_LOCAL_LIBS:-}"
-
-  case "$SCRIPT_DIR" in
-    /tmp|/tmp/*)
-      [ "$use_local_libs" = "1" ] || local_path=""
-      ;;
-  esac
-
-  if [ -n "$local_path" ]; then
-    if [ -r "$local_path" ]; then
-      echo "$local_path"
-      return 0
-    fi
-  fi
-
-  if [ -r "$system_path" ]; then
-    echo "$system_path"
-    return 0
-  fi
-
-  mkdir -p "$LIB_CACHE_DIR" || warren_die "Не удалось создать каталог библиотек: $LIB_CACHE_DIR"
-  cached_path="$LIB_CACHE_DIR/$name"
-  lib_sha="$(warren_payload_sha "lib/$name")"
-  warren_download_retry "$WARREN_LIB_BASE_URL/$name" "$cached_path" "$lib_sha" "lib/$name" ||
-    warren_die "Не удалось скачать и проверить библиотеку после 3 попыток: $name"
-  echo "$cached_path"
+  warren_fetch_file lib "$1" "$WARREN_LIB_BASE_URL" "$LIB_CACHE_DIR"
 }
 
-fetch_asset() {
-  name="$1"
-  local_path="$SCRIPT_DIR/assets/$name"
-  system_path="/usr/lib/warren/assets/$name"
+# Resolve a shipped file: local checkout, persistent install, then verified download.
+warren_fetch_file() {
+  kind="$1"
+  name="$2"
+  base_url="$3"
+  cache_dir="$4"
+  local_path="$SCRIPT_DIR/$kind/$name"
+  system_path="/usr/lib/warren/$kind/$name"
   use_local_libs="${WARREN_USE_LOCAL_LIBS:-}"
 
   case "$SCRIPT_DIR" in
@@ -452,12 +449,20 @@ fetch_asset() {
     return 0
   fi
 
-  mkdir -p "$ASSET_CACHE_DIR" || warren_die "Не удалось создать каталог ассетов: $ASSET_CACHE_DIR"
-  cached_path="$ASSET_CACHE_DIR/$name"
-  asset_sha="$(warren_payload_sha "assets/$name")"
-  warren_download_retry "$WARREN_ASSET_BASE_URL/$name" "$cached_path" "$asset_sha" "assets/$name" ||
-    warren_die "Не удалось скачать и проверить ассет после 3 попыток: $name"
+  mkdir -p "$cache_dir" || warren_die "Не удалось создать каталог: $cache_dir"
+  cached_path="$cache_dir/$name"
+  file_sha="$(warren_payload_sha "$kind/$name")"
+  warren_download_retry "$base_url/$name" "$cached_path" "$file_sha" "$kind/$name" ||
+    warren_die "Не удалось скачать и проверить после 3 попыток: $kind/$name"
   echo "$cached_path"
+}
+
+fetch_asset() {
+  warren_fetch_file assets "$1" "$WARREN_ASSET_BASE_URL" "$ASSET_CACHE_DIR"
+}
+
+fetch_payload() {
+  warren_fetch_file payload "$1" "$WARREN_PAYLOAD_BASE_URL" "${PAYLOAD_CACHE_DIR:-/tmp/warren-payload}"
 }
 
 source_lib() {
@@ -468,24 +473,10 @@ source_lib() {
 
 WARREN_VERSION="$(warren_local_version)"
 
-source_lib common.sh
-source_lib versions.sh
-warren_versions_apply_defaults
-source_lib ui.sh
-source_lib state.sh
-source_lib basic.sh
-source_lib podkop.sh
-source_lib watchdog.sh
-source_lib amneziawg.sh
-source_lib vps.sh
-source_lib amnezia.sh
-source_lib qos.sh
-source_lib remote_admin.sh
-source_lib usb_modem.sh
-source_lib tg_bot.sh
-source_lib diagnostics.sh
-source_lib sni_checker.sh
-source_lib luci.sh
+for lib in $WARREN_LIB_LIST; do
+  source_lib "$lib"
+  [ "$lib" != "versions.sh" ] || warren_versions_apply_defaults
+done
 
 warren_maybe_offer_update() {
   warren_should_check_updates || return 0

@@ -1,0 +1,179 @@
+#!/bin/sh
+set -u
+
+CONF="${WARREN_WATCHDOG_CONF:-/etc/warren/warren-watchdog.conf}"
+STATE="${WARREN_WATCHDOG_STATE:-/etc/warren/warren-watchdog.state}"
+PODKOP_INIT="${WARREN_WATCHDOG_PODKOP_INIT:-/etc/init.d/podkop}"
+TG_CONF="${WARREN_WATCHDOG_TG_CONF:-/etc/warren/warren-tg-bot.conf}"
+
+conf_number() {
+  key="$1"
+  default="$2"
+  value="$(sed -n "s/^${key}=//p" "$CONF" 2>/dev/null | sed -n '1p')"
+  case "$value" in
+    ''|*[!0-9]*) printf "%s" "$default" ;;
+    *) printf "%s" "$value" ;;
+  esac
+}
+
+state_field() {
+  key="$1"
+  sed -n "s/^${key}=//p" "$STATE" 2>/dev/null | sed -n '1p'
+}
+
+now_epoch() {
+  date +%s 2>/dev/null || printf 0
+}
+
+router_hostname() {
+  if command -v hostname >/dev/null 2>&1; then
+    hostname
+  elif [ -r /proc/sys/kernel/hostname ]; then
+    cat /proc/sys/kernel/hostname
+  else
+    printf "%s" "OpenWrt"
+  fi
+}
+
+write_state() {
+  status="$1"
+  last_check="$2"
+  last_restart="$3"
+  restart_count="$4"
+  failure_count="$5"
+  backoff_until="$6"
+  stable_since="$7"
+  reason="$8"
+  tmp="${STATE}.tmp.$$"
+  {
+    printf "STATUS=%s\n" "$status"
+    printf "LAST_CHECK=%s\n" "$last_check"
+    printf "LAST_RESTART=%s\n" "$last_restart"
+    printf "RESTART_COUNT=%s\n" "$restart_count"
+    printf "FAILURE_COUNT=%s\n" "$failure_count"
+    printf "BACKOFF_UNTIL=%s\n" "$backoff_until"
+    printf "STABLE_SINCE=%s\n" "$stable_since"
+    printf "LAST_REASON=%s\n" "$reason"
+  } > "$tmp" && mv "$tmp" "$STATE"
+  chmod 600 "$STATE" 2>/dev/null || true
+}
+
+engine_running() {
+  for comm_file in /proc/[0-9]*/comm; do
+    [ -r "$comm_file" ] || continue
+    IFS= read -r process_name < "$comm_file" || process_name=""
+    [ "$process_name" = "sing-box" ] && return 0
+  done
+  ps w 2>/dev/null | grep -Eq '[/]usr/bin/sing-box[[:space:]]'
+}
+
+rules_active() {
+  ip rule show 2>/dev/null | grep -Eqi 'podkop|tproxy|fwmark|0x2023|mark'
+}
+
+health_reason() {
+  engine_running || {
+    printf "%s" "sing-box-not-running"
+    return 1
+  }
+  rules_active || {
+    printf "%s" "podkop-rules-missing"
+    return 1
+  }
+  printf "%s" "healthy"
+  return 0
+}
+
+notify_telegram() {
+  message="$1"
+  [ -r "$TG_CONF" ] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  token="$(sed -n "s/^TG_TOKEN='\\(.*\\)'/\\1/p" "$TG_CONF" | sed -n '1p')"
+  chat_id="$(sed -n "s/^ALLOWED_CHAT_ID='\\(.*\\)'/\\1/p" "$TG_CONF" | sed -n '1p')"
+  [ -n "$token" ] && [ -n "$chat_id" ] || return 0
+  curl -fsS --max-time 10 \
+    -d "chat_id=$chat_id" \
+    --data-urlencode "text=$message" \
+    "https://api.telegram.org/bot${token}/sendMessage" >/dev/null 2>&1 || true
+}
+
+run_once() {
+  now="$(now_epoch)"
+  last_restart="$(state_field LAST_RESTART)"
+  restart_count="$(state_field RESTART_COUNT)"
+  failure_count="$(state_field FAILURE_COUNT)"
+  backoff_until="$(state_field BACKOFF_UNTIL)"
+  stable_since="$(state_field STABLE_SINCE)"
+  [ -n "$last_restart" ] || last_restart=0
+  [ -n "$restart_count" ] || restart_count=0
+  [ -n "$failure_count" ] || failure_count=0
+  [ -n "$backoff_until" ] || backoff_until=0
+  [ -n "$stable_since" ] || stable_since=0
+
+  reason="$(health_reason)" && healthy=1 || healthy=0
+  if [ "$healthy" = "1" ]; then
+    [ "$stable_since" -gt 0 ] || stable_since="$now"
+    stable_window="$(conf_number WARREN_WATCHDOG_STABLE_WINDOW 600)"
+    if [ "$failure_count" -gt 0 ] && [ $((now - stable_since)) -ge "$stable_window" ]; then
+      failure_count=0
+      restart_count=0
+      backoff_until=0
+    fi
+    write_state healthy "$now" "$last_restart" "$restart_count" "$failure_count" "$backoff_until" "$stable_since" healthy
+    return 0
+  fi
+
+  stable_since=0
+  if [ "$backoff_until" -gt "$now" ]; then
+    write_state backoff "$now" "$last_restart" "$restart_count" "$failure_count" "$backoff_until" 0 "$reason"
+    return 1
+  fi
+
+  next_failure=$((failure_count + 1))
+  if [ "$next_failure" -gt 3 ]; then
+    write_state exhausted "$now" "$last_restart" "$restart_count" "$failure_count" 0 0 "$reason"
+    notify_telegram "[Warren Watchdog] Podkop требует ручного вмешательства на $(router_hostname). Причина: $reason."
+    return 1
+  fi
+
+  restart_delay="$(conf_number WARREN_WATCHDOG_RESTART_DELAY 5)"
+  [ "$restart_delay" -eq 0 ] || sleep "$restart_delay"
+  "$PODKOP_INIT" restart >/dev/null 2>&1 || true
+  last_restart="$(now_epoch)"
+  restart_count=$((restart_count + 1))
+  failure_count="$next_failure"
+  case "$failure_count" in
+    1) backoff=60 ;;
+    2) backoff=120 ;;
+    *) backoff=300 ;;
+  esac
+  backoff_until=$((last_restart + backoff))
+  write_state restarted "$last_restart" "$last_restart" "$restart_count" "$failure_count" "$backoff_until" 0 "$reason"
+  notify_telegram "[Warren Watchdog] Podkop перезапущен на $(router_hostname) в $(date). Причина: $reason."
+  return 0
+}
+
+status() {
+  if [ ! -r "$STATE" ]; then
+    printf "%s\n" "STATUS=unknown" "LAST_CHECK=0" "LAST_RESTART=0" \
+      "RESTART_COUNT=0" "FAILURE_COUNT=0" "BACKOFF_UNTIL=0" "LAST_REASON=never-run"
+    return 0
+  fi
+  cat "$STATE"
+}
+
+case "${1:-daemon}" in
+  daemon)
+    while :; do
+      run_once || true
+      sleep "$(conf_number WARREN_WATCHDOG_INTERVAL 60)"
+    done
+    ;;
+  run-once) run_once ;;
+  status) status ;;
+  reset)
+    rm -f "$STATE"
+    write_state reset "$(now_epoch)" 0 0 0 0 0 manual-reset
+    ;;
+  *) printf "Usage: %s daemon|run-once|status|reset\n" "$0" >&2; exit 2 ;;
+esac

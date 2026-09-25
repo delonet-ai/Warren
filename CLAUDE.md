@@ -8,12 +8,14 @@ POSIX `sh` установщик/помощник для OpenWrt (NanoPi R5S/R5C)
 
 ## Правила
 
-- Роутерный код — только POSIX `sh` + BusyBox (ash): без bash-измов, `local`, массивов, `[[ ]]`, GNU-флагов (VPS-payload SNI checker — bash).
+- Роутерный код — только POSIX `sh` + BusyBox (ash): без bash-измов, `local`, массивов, `[[ ]]`, GNU-флагов (`payload/check-sni.sh` для VPS — bash).
 - Не использовать `eval` и не source-ить конфиг; новые ключи `warren.conf` добавлять в
   `warren_assign_config_key` (`lib/state.sh`), поля LuCI-формы — в `write_form_env` (`controller/warren.lua`).
-- Новый модуль `lib/*.sh`: добавить в `WARREN_LIB_LIST` (`warren.sh`) и `PAYLOADS` (`tools/update-sums.sh`).
+- Новый файл в `lib/`, `assets/` или `payload/`: добавить в `WARREN_LIB_LIST` / `WARREN_ASSET_LIST` /
+  `WARREN_PAYLOAD_LIST` (`warren.sh`) — это единственный манифест; `check.sh` ловит пропуски.
 - Новый режим: `menu` (`lib/ui.sh`), `run_service_mode`/`mode_is_one_shot_service` (`warren.sh`), кнопка в LuCI view.
-- Функции внутри heredoc payload-ов исполняются на роутере/VPS отдельным процессом и не видят `lib/*.sh`.
+- Сервисы для роутера/VPS — отдельные файлы в `payload/`, ставятся через `warren_install_payload`;
+  они работают отдельным процессом и не видят `lib/*.sh`. Не встраивать скрипты heredoc-ом.
 - Сообщения пользователю — на русском; секреты не логировать (`log` маскирует PASSWORD/TOKEN/SECRET).
 
 ## После изменений

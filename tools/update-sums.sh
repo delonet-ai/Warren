@@ -12,36 +12,7 @@ SUMS_TMP="${TMPDIR:-/tmp}/warren-sums.$$"
 VERSION_TMP="${TMPDIR:-/tmp}/warren-version.$$"
 trap 'rm -f "$SUMS_TMP" "$VERSION_TMP"' EXIT HUP INT TERM
 
-PAYLOADS="
-warren.sh
-bootstrap.sh
-assets/expand-root.sh
-assets/sni-candidates.txt
-assets/warren-logo.svg
-lib/amnezia.sh
-lib/amneziawg.sh
-lib/basic.sh
-lib/common.sh
-lib/diagnostics.sh
-lib/luci.sh
-lib/podkop.sh
-lib/qos.sh
-lib/remote_admin.sh
-lib/sni_checker.sh
-lib/state.sh
-lib/tg_bot.sh
-lib/ui.sh
-lib/usb_modem.sh
-lib/versions.sh
-lib/vps.sh
-lib/watchdog.sh
-luci-app-warren/Makefile
-luci-app-warren/luasrc/controller/warren.lua
-luci-app-warren/luasrc/view/warren/index.htm
-luci-app-warren/root/usr/libexec/warren/warren-luci-run
-luci-app-warren/root/usr/share/luci/menu.d/luci-app-warren.json
-luci-app-warren/root/usr/share/rpcd/acl.d/luci-app-warren.json
-"
+PAYLOADS="$(sh "$SCRIPT_DIR/manifest.sh")"
 
 : > "$SUMS_TMP"
 for payload in $PAYLOADS; do
