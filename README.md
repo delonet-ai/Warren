@@ -83,6 +83,7 @@ wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main
 - подготовить установку Warren из локального или РФ-доступного bundle;
 - добавить сценарии USB-модема как основного или резервного uplink;
 - добавить NaiveProxy как отдельный proxy-сценарий;
+- включить настоящую обфускацию AmneziaWG по умолчанию: случайные H1–H4, ненулевые S1/S2, нестандартный порт (Milestone 19);
 - закрепить мониторинг через `luci-app-nlbwmon` и `luci-app-statistics`;
 - продолжить политику версий для критичных компонентов: Podkop installer, `3x-ui`, AmneziaWG packages, Warren bundle и Remote Admin protocol.
 
