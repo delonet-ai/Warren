@@ -167,14 +167,12 @@ warren_awg_candidate_releases() {
 
 warren_awg_probe_url() {
   url="$1"
-  tmp="${AWG_STAGE_DIR:-/tmp/amneziawg}/probe.$$"
-
-  mkdir -p "$(dirname "$tmp")" 2>/dev/null || return 1
-  if wget -qO "$tmp" "$url" 2>/dev/null && [ -s "$tmp" ]; then
-    rm -f "$tmp" 2>/dev/null || true
-    return 0
-  fi
-  rm -f "$tmp" 2>/dev/null || true
+  # Existence check only: never download the package, and bound each attempt.
+  attempt=1
+  while [ "$attempt" -le 2 ]; do
+    warren_wget -q --spider "$url" 2>/dev/null && return 0
+    attempt=$((attempt + 1))
+  done
   return 1
 }
 

@@ -137,7 +137,7 @@ download_awg_package() {
     pkg_file="${pkg_name}${postfix}.${ext}"
     pkg_url="${AWG_RELEASE_BASE_URL}/${pkg_file}"
     pkg_path="${AWG_STAGE_DIR}/${pkg_file}"
-    if wget -qO "$pkg_path" "$pkg_url" && [ -s "$pkg_path" ]; then
+    if warren_download_retry "$pkg_url" "$pkg_path" "" "$pkg_file" && [ -s "$pkg_path" ]; then
       printf "%s" "$pkg_path"
       return 0
     fi

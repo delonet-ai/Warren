@@ -73,7 +73,7 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..51\n"
+printf "1..52\n"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -229,7 +229,17 @@ RETRY_OUT="$TEST_TMP/retry-output"
 mkdir -p "$RETRY_BIN"
 cat > "$RETRY_BIN/wget" <<'EOF'
 #!/bin/sh
-out="$2"
+if [ "${1:-}" = "--version" ]; then
+  [ -n "${WARREN_TEST_WGET_GNU:-}" ] && printf "GNU Wget 1.24.5\n" && exit 0
+  exit 1
+fi
+[ -z "${WARREN_TEST_WGET_ARGS:-}" ] || printf "%s\n" "$*" > "$WARREN_TEST_WGET_ARGS"
+out=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in -qO|-O) out="$arg" ;; esac
+  prev="$arg"
+done
 count_file="${WARREN_TEST_RETRY_COUNT:?}"
 count="$(cat "$count_file" 2>/dev/null || printf 0)"
 count=$((count + 1))
@@ -256,6 +266,21 @@ retry_recovers_after_temporary_failure() {
   )
 }
 assert_success "temporary network failure retries with 5s/15s backoff" retry_recovers_after_temporary_failure
+
+wget_timeout_flags() {
+  (
+    PATH="$RETRY_BIN:$PATH"
+    WARREN_TEST_RETRY_COUNT="$RETRY_COUNT"
+    WARREN_TEST_WGET_ARGS="$TEST_TMP/wget-args"
+    export PATH WARREN_TEST_RETRY_COUNT WARREN_TEST_WGET_ARGS
+    warren_wget -qO "$RETRY_OUT" https://example.invalid/a &&
+      [ "$(cat "$WARREN_TEST_WGET_ARGS")" = "-T 20 -qO $RETRY_OUT https://example.invalid/a" ] &&
+      WARREN_TEST_WGET_GNU=1 && export WARREN_TEST_WGET_GNU &&
+      warren_wget -qO "$RETRY_OUT" https://example.invalid/b &&
+      [ "$(cat "$WARREN_TEST_WGET_ARGS")" = "-T 20 --tries=1 -qO $RETRY_OUT https://example.invalid/b" ]
+  )
+}
+assert_success "wget gets an inactivity timeout and GNU wget a single try" wget_timeout_flags
 
 retry_rejects_tampered_payload() {
   (

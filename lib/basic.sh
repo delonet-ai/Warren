@@ -34,7 +34,7 @@ sync_time() {
 
   warren_ntp_sync_once || true
   warren_require_sane_time "Podkop и HTTPS-проверок"
-  wget -q --spider https://downloads.openwrt.org/ || fail "После синхронизации времени всё ещё нет DNS/TLS (wget https://downloads.openwrt.org)."
+  warren_wget -q --spider https://downloads.openwrt.org/ || fail "После синхронизации времени всё ещё нет DNS/TLS (wget https://downloads.openwrt.org)."
   done_ "Время и HTTPS проверены"
 }
 
