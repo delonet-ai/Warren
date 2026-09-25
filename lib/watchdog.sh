@@ -6,6 +6,7 @@ WARREN_WATCHDOG_STATE="${WARREN_WATCHDOG_STATE:-/etc/warren/warren-watchdog.stat
 watchdog_write_worker() {
   mkdir -p "$(dirname "$WARREN_WATCHDOG_BIN")" "$(dirname "$WARREN_WATCHDOG_STATE")" ||
     fail "Не удалось создать каталоги Podkop Watchdog"
+  podkop_health_install
   warren_install_payload warren-watchdog "$WARREN_WATCHDOG_BIN"
   chmod 755 "$WARREN_WATCHDOG_BIN" || fail "Не удалось сделать Watchdog executable"
 }

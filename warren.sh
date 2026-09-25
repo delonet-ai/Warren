@@ -24,7 +24,7 @@ WARREN_CLI_ARG2="${2:-}"
 # order; tools/update-sums.sh and tools/build-router-upload.sh read these lines.
 WARREN_LIB_LIST="common.sh versions.sh ui.sh state.sh modes.sh basic.sh podkop.sh watchdog.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh"
 WARREN_ASSET_LIST="sni-candidates.txt expand-root.sh"
-WARREN_PAYLOAD_LIST="warren-tg-bot warren-tg-bot.init warren-watchdog warren-watchdog.init warren-remote-agent warren-remote-admin.init warren-remote warren-qos.init check-sni.sh sni-apply.py"
+WARREN_PAYLOAD_LIST="podkop-health.sh warren-tg-bot warren-tg-bot.init warren-watchdog warren-watchdog.init warren-remote-agent warren-remote-admin.init warren-remote warren-qos.init check-sni.sh sni-apply.py"
 
 migrate_legacy_file_if_missing() {
   legacy_path="$1"

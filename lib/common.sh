@@ -173,8 +173,12 @@ warren_payload_source() {
     printf "%s" "$WARREN_PAYLOAD_DIR/$_wp_name"
     return 0
   fi
-  command -v fetch_payload >/dev/null 2>&1 || return 1
-  fetch_payload "$_wp_name"
+  if command -v fetch_payload >/dev/null 2>&1; then
+    fetch_payload "$_wp_name"
+    return
+  fi
+  [ -r "/usr/lib/warren/payload/$_wp_name" ] || return 1
+  printf "%s" "/usr/lib/warren/payload/$_wp_name"
 }
 
 warren_install_payload() {

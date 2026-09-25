@@ -176,11 +176,16 @@ local function podkop_status()
   local raw_mode = shell_read("uci -q get podkop.main.proxy_config_type")
   local channels = {}
   local cmd
-  local init_ok = shell_read("[ -x /etc/init.d/podkop ] && /etc/init.d/podkop status >/dev/null 2>&1 && echo yes || echo no")
-  local engine_ok = shell_read("(pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1) && echo yes || echo no")
-  local config_ok = shell_read("[ -s /etc/sing-box/config.json ] || [ -s /tmp/etc/sing-box/config.json ]; echo $?")
-  local rules_ok = shell_read("ip rule show 2>/dev/null | grep -Eqi 'podkop|tproxy|fwmark|0x2023|mark' && echo yes || echo no")
-  local nft_ok = shell_read("command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -Eqi 'podkop|sing-box|tproxy|0x2023|dns_redirect|mangle' && echo yes || echo no")
+  -- Same probes as shell diagnostics and the watchdog (payload/podkop-health.sh).
+  local snapshot = shell_read("sh /usr/libexec/warren/podkop-health.sh snapshot")
+  local function probe(name)
+    return snapshot:match(name .. "=1") and "yes" or "no"
+  end
+  local init_ok = probe("init")
+  local engine_ok = probe("engine")
+  local config_ok = probe("config")
+  local rules_ok = probe("rules")
+  local nft_ok = probe("nft")
 
   if raw_mode == "urltest" then
     cmd = "uci -q get podkop.main.urltest_proxy_links | tr ' ' '\\n'"
@@ -199,19 +204,11 @@ local function podkop_status()
     p:close()
   end
 
-  local evidence = 0
-  if engine_ok == "yes" then evidence = evidence + 1 end
-  if config_ok == "0" then evidence = evidence + 1 end
-  if rules_ok == "yes" then evidence = evidence + 1 end
-  if nft_ok == "yes" then evidence = evidence + 1 end
-
-  local health = "bad"
+  local health = snapshot:match("health=(%a+)") or "bad"
   local health_label = "runtime не выглядит активным"
-  if init_ok == "yes" then
-    health = "ok"
+  if health == "ok" then
     health_label = "init status запущен"
-  elseif engine_ok == "yes" and evidence >= 3 then
-    health = "warn"
+  elseif health == "warn" then
     health_label = "runtime активен, но init status говорит not running"
   elseif raw_mode == "" and #channels == 0 then
     health = "empty"
@@ -224,7 +221,7 @@ local function podkop_status()
     channels = channels,
     init_ok = init_ok,
     engine_ok = engine_ok,
-    config_ok = config_ok == "0" and "yes" or "no",
+    config_ok = config_ok,
     rules_ok = rules_ok,
     nft_ok = nft_ok,
     health = health,

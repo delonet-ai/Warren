@@ -29,7 +29,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/diagnostics.sh
 
-- `warren_diag_ts`, `warren_diag_log_dir`, `warren_diag_line`, `warren_diag_section`, `warren_diag_cmd`, `warren_diag_ok`, `warren_diag_bad`, `warren_diag_warn`, `warren_diag_has_cmd`, `warren_diag_first_wan_gateway`, `warren_diag_proxy_links`, `warren_diag_parse_proxy_endpoint`, `warren_diag_tcp_check`, `warren_diag_check_ping`, `warren_diag_check_dns`, `warren_diag_check_time`, `warren_diag_check_tcp`, `warren_diag_check_service`, `warren_diag_check_proxy_engine`, `warren_diag_cmd_version`, `warren_diag_check_reality_generation_paths`, `warren_diag_report_version_policy`, `warren_diag_sing_box_running`, `warren_diag_podkop_rule_active`, `warren_diag_podkop_nft_active`, `warren_diag_sing_box_config_ok`, `warren_diag_check_podkop_runtime`, `warren_diag_check_podkop_defaults`, `warren_diag_capture_snapshot`, `warren_diag_apply_dns_fallback`, `warren_diag_restore_dns_settings`, `run_diagnostics_flow`, `run_diagnostics_emergency_flow`
+- `warren_diag_ts`, `warren_diag_log_dir`, `warren_diag_line`, `warren_diag_section`, `warren_diag_cmd`, `warren_diag_ok`, `warren_diag_bad`, `warren_diag_warn`, `warren_diag_has_cmd`, `warren_diag_first_wan_gateway`, `warren_diag_proxy_links`, `warren_diag_parse_proxy_endpoint`, `warren_diag_tcp_check`, `warren_diag_check_ping`, `warren_diag_check_dns`, `warren_diag_check_time`, `warren_diag_check_tcp`, `warren_diag_check_service`, `warren_diag_check_proxy_engine`, `warren_diag_cmd_version`, `warren_diag_check_reality_generation_paths`, `warren_diag_report_version_policy`, `warren_diag_check_podkop_runtime`, `warren_diag_check_podkop_defaults`, `warren_diag_capture_snapshot`, `warren_diag_apply_dns_fallback`, `warren_diag_restore_dns_settings`, `run_diagnostics_flow`, `run_diagnostics_emergency_flow`
 
 ## lib/luci.sh
 
@@ -41,7 +41,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/podkop.sh
 
-- `podkop_private_iface`, `podkop_existing_private_source_interfaces`, `podkop_is_installed`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `podkop_runtime_snapshot`, `podkop_runtime_field`, `podkop_runtime_healthy`, `install_podkop`, `podkop_enable_deprecated_special_outbounds`, `podkop_require_existing_config`, `podkop_use_preseeded_vless`, `podkop_standard_choose_vless`, `podkop_prompt_lists`, `configure_podkop_common_settings`, `configure_podkop_community_lists`, `configure_podkop_full`, `podkop_current_proxy_links`, `podkop_current_proxy_mode_label`, `podkop_print_backup_overview`, `podkop_link_in_list`, `podkop_backup_candidate_menu`, `podkop_apply_urltest_links`, `podkop_print_active_urltest_links`, `podkop_backup_preseeded_link`, `add_podkop_backup_channel_luci`, `add_podkop_backup_channel`, `patch_podkop_add_private_iface_only`
+- `podkop_private_iface`, `podkop_existing_private_source_interfaces`, `podkop_health_install`, `install_podkop`, `podkop_enable_deprecated_special_outbounds`, `podkop_require_existing_config`, `podkop_use_preseeded_vless`, `podkop_standard_choose_vless`, `podkop_prompt_lists`, `configure_podkop_common_settings`, `configure_podkop_community_lists`, `configure_podkop_full`, `podkop_current_proxy_links`, `podkop_current_proxy_mode_label`, `podkop_print_backup_overview`, `podkop_link_in_list`, `podkop_backup_candidate_menu`, `podkop_apply_urltest_links`, `podkop_print_active_urltest_links`, `podkop_backup_preseeded_link`, `add_podkop_backup_channel_luci`, `add_podkop_backup_channel`, `patch_podkop_add_private_iface_only`
 
 ## lib/qos.sh
 
@@ -87,6 +87,10 @@ Architecture map: [INDEX.md](INDEX.md).
 
 - `cleanup`, `log`, `need_cmd`, `safe_firewall_snapshot`, `public_ip`, `dns_lookup`, `tcp_443_check`, `http_probe`, `tcp_port_check`, `bool_mark`, `rank_value`, `secondary_name`
 
+## payload/podkop-health.sh
+
+- `podkop_is_installed`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `podkop_runtime_snapshot`, `podkop_runtime_field`, `podkop_runtime_healthy`, `podkop_health_reason`
+
 ## payload/warren-qos.init
 
 - `start_service`
@@ -113,7 +117,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## payload/warren-watchdog
 
-- `conf_number`, `state_field`, `now_epoch`, `router_hostname`, `write_state`, `engine_running`, `rules_active`, `health_reason`, `notify_telegram`, `run_once`, `status`
+- `conf_number`, `state_field`, `now_epoch`, `router_hostname`, `write_state`, `notify_telegram`, `run_once`, `status`
 
 ## payload/warren-watchdog.init
 
@@ -121,7 +125,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## tests/run.sh
 
-- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `registry_handlers_exist`, `registry_menu_unique`, `luci_modes_registered`, `registry_dispatches_service`, `menu_submenu_saves_service_mode`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
+- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `podkop_engine_seen_in_proc`, `registry_handlers_exist`, `registry_menu_unique`, `luci_modes_registered`, `registry_dispatches_service`, `menu_submenu_saves_service_mode`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
 
 ## tools/build-router-upload.sh
 

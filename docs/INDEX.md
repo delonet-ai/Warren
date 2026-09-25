@@ -105,8 +105,9 @@ env — таблица `allowed` в `write_form_env` (`controller/warren.lua`) �
 
 | Payload | Ставит | Куда | Примечание |
 |---|---|---|---|
+| `podkop-health.sh` | lib/podkop.sh (`podkop_health_install`) | `/usr/libexec/warren/podkop-health.sh` | единая проверка Podkop: source в lib/podkop.sh и watchdog, `sh … snapshot` из LuCI |
 | `warren-tg-bot`, `.init` | lib/tg_bot.sh | `/usr/bin/warren-tg-bot`, `/etc/init.d/warren-tg-bot` | 1390 строк; `amz_*` дублирует lib/amneziawg.sh |
-| `warren-watchdog`, `.init` | lib/watchdog.sh | `/usr/libexec/warren/warren-watchdog`, `/etc/init.d/warren-watchdog` | health дублирует lib/podkop.sh |
+| `warren-watchdog`, `.init` | lib/watchdog.sh | `/usr/libexec/warren/warren-watchdog`, `/etc/init.d/warren-watchdog` | health — через podkop-health.sh |
 | `warren-remote-agent`, `warren-remote-admin.init` | lib/remote_admin.sh, Mac tool | `/usr/bin/warren-remote-agent`, `/etc/init.d/warren-remote-admin` | source-ит свой конфиг |
 | `warren-remote` | lib/remote_admin.sh, Mac tool | VPS `/usr/local/bin/warren-remote` | protocol helper |
 | `check-sni.sh` (bash), `sni-apply.py` | lib/sni_checker.sh | VPS | SNI check / apply |
@@ -142,11 +143,11 @@ AmneziaWG — exact `v${DISTRIB_RELEASE}` из `Slava-Shchipunov/awg-openwrt`, �
 ## Горячие точки для рефакторинга
 
 Сделано: payloads вынесены в `payload/` (Mac-инструмент больше не держит свою копию агента),
-единый манифест файлов, expand-root вендорён в `assets/`, реестр режимов `lib/modes.sh`.
+единый манифест файлов, expand-root вендорён в `assets/`, реестр режимов `lib/modes.sh`,
+единая проверка Podkop `payload/podkop-health.sh`.
 
-1. **Podkop health в одном месте** для diagnostics, watchdog и LuCI (watchdog-payload пока с копией).
-2. **Общий runtime для payload-ов** (`log`, `now_epoch`, `safe_text`) и переиспользование AWG/QoS в tg-bot.
-3. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
+1. **Общий runtime для payload-ов** (`log`, `now_epoch`, `safe_text`) и переиспользование AWG/QoS в tg-bot.
+2. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
    `warren.sh` (bootstrap+self-update отдельно от orchestrator), `lib/sni_checker.sh` (check vs apply).
-4. **Remote Admin agent** source-ит `/etc/warren/warren-remote-admin.conf` — перевести на whitelist-парсер как M16.
-5. **LuCI**: Lua-контроллер (`luci-compat`) и 755-строчный view; при 25.x стоит оценить переход на JS/rpcd.
+3. **Remote Admin agent** source-ит `/etc/warren/warren-remote-admin.conf` — перевести на whitelist-парсер как M16.
+4. **LuCI**: Lua-контроллер (`luci-compat`) и 755-строчный view; при 25.x стоит оценить переход на JS/rpcd.

@@ -200,14 +200,14 @@ warren_diag_check_proxy_engine() {
   if [ -x /etc/init.d/sing-box ]; then
     if /etc/init.d/sing-box status >/dev/null 2>&1; then
       warren_diag_ok "proxy engine sing-box: init status запущен"
-    elif warren_diag_sing_box_running; then
+    elif podkop_engine_running; then
       warren_diag_warn "proxy engine sing-box: init status не подтверждён, но процесс запущен"
     else
       warren_diag_bad "proxy engine sing-box: не выглядит запущенным"
     fi
     return 0
   fi
-  if warren_diag_sing_box_running; then
+  if podkop_engine_running; then
     warren_diag_ok "proxy engine sing-box: процесс запущен"
     return 0
   fi
@@ -332,22 +332,6 @@ warren_diag_report_version_policy() {
   else
     warren_diag_warn "AmneziaWG: UCI awg0 proto is not configured"
   fi
-}
-
-warren_diag_sing_box_running() {
-  podkop_engine_running
-}
-
-warren_diag_podkop_rule_active() {
-  podkop_rules_active
-}
-
-warren_diag_podkop_nft_active() {
-  podkop_nft_active
-}
-
-warren_diag_sing_box_config_ok() {
-  podkop_config_ok
 }
 
 warren_diag_check_podkop_runtime() {

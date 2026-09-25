@@ -5,6 +5,15 @@ CONF="${WARREN_WATCHDOG_CONF:-/etc/warren/warren-watchdog.conf}"
 STATE="${WARREN_WATCHDOG_STATE:-/etc/warren/warren-watchdog.state}"
 PODKOP_INIT="${WARREN_WATCHDOG_PODKOP_INIT:-/etc/init.d/podkop}"
 TG_CONF="${WARREN_WATCHDOG_TG_CONF:-/etc/warren/warren-tg-bot.conf}"
+HEALTH="${WARREN_WATCHDOG_HEALTH:-/usr/libexec/warren/podkop-health.sh}"
+
+# Shared Podkop health probes (podkop_health_reason & co.).
+[ -r "$HEALTH" ] || {
+  printf "%s\n" "warren-watchdog: missing $HEALTH" >&2
+  exit 1
+}
+# shellcheck disable=SC1090
+. "$HEALTH"
 
 conf_number() {
   key="$1"
@@ -58,32 +67,6 @@ write_state() {
   chmod 600 "$STATE" 2>/dev/null || true
 }
 
-engine_running() {
-  for comm_file in /proc/[0-9]*/comm; do
-    [ -r "$comm_file" ] || continue
-    IFS= read -r process_name < "$comm_file" || process_name=""
-    [ "$process_name" = "sing-box" ] && return 0
-  done
-  ps w 2>/dev/null | grep -Eq '[/]usr/bin/sing-box[[:space:]]'
-}
-
-rules_active() {
-  ip rule show 2>/dev/null | grep -Eqi 'podkop|tproxy|fwmark|0x2023|mark'
-}
-
-health_reason() {
-  engine_running || {
-    printf "%s" "sing-box-not-running"
-    return 1
-  }
-  rules_active || {
-    printf "%s" "podkop-rules-missing"
-    return 1
-  }
-  printf "%s" "healthy"
-  return 0
-}
-
 notify_telegram() {
   message="$1"
   [ -r "$TG_CONF" ] || return 0
@@ -110,7 +93,7 @@ run_once() {
   [ -n "$backoff_until" ] || backoff_until=0
   [ -n "$stable_since" ] || stable_since=0
 
-  reason="$(health_reason)" && healthy=1 || healthy=0
+  reason="$(podkop_health_reason)" && healthy=1 || healthy=0
   if [ "$healthy" = "1" ]; then
     [ "$stable_since" -gt 0 ] || stable_since="$now"
     stable_window="$(conf_number WARREN_WATCHDOG_STABLE_WINDOW 600)"

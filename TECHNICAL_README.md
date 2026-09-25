@@ -358,6 +358,10 @@ set_state() { printf "%s\n" "$1" > "${STATE}.tmp" && mv "${STATE}.tmp" "$STATE";
 
 TG-бот, Watchdog, Remote Admin agent/helper, SNI checker и QoS init — обычные файлы под SHA256-манифестом с отдельной проверкой синтаксиса. Mac-side `warren-remote-control.sh` больше не держит собственную урезанную копию router-agent.
 
+**[RESOLVED] Единая проверка Podkop runtime**
+
+`payload/podkop-health.sh` — единственная реализация: `lib/podkop.sh` и watchdog подключают её, LuCI вызывает `snapshot`. Движок везде определяется по `/proc/<pid>/comm` (раньше diagnostics и LuCI использовали `pgrep -x`, который на BusyBox давал false negative), LuCI получил полноценную проверку конфига через `sing-box check`.
+
 **[P2] Remote Admin agent source-ит свой конфиг**
 
 `payload/warren-remote-agent` читает `/etc/warren/warren-remote-admin.conf` через `.`. Файл пишет сам Warren с правами root, но нужно перевести на whitelist-парсер по образцу `load_conf_if_exists`.

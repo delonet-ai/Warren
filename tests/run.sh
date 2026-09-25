@@ -77,7 +77,7 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..66\n"
+printf "1..69\n"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -224,6 +224,26 @@ remote_idle_poll="$(
     sh "$REMOTE_HELPER_TEST" poll test-router
 )"
 assert_eq "NONE" "$(printf "%s\n" "$remote_idle_poll" | sed -n 's/^ACTION=//p')" "Remote Admin close is consumed exactly once"
+
+# Shared Podkop health probes (payload/podkop-health.sh).
+HEALTH_PROC="$TEST_TMP/health-proc"
+podkop_engine_seen_in_proc() {
+  rm -rf "$HEALTH_PROC"; mkdir -p "$HEALTH_PROC/77"
+  printf "sing-box\n" > "$HEALTH_PROC/77/comm"
+  (PODKOP_HEALTH_PROC="$HEALTH_PROC"; . "$PROJECT_DIR/payload/podkop-health.sh"; podkop_engine_running) &&
+    printf "sing-box-helper\n" > "$HEALTH_PROC/77/comm" &&
+    ! (PODKOP_HEALTH_PROC="$HEALTH_PROC"; . "$PROJECT_DIR/payload/podkop-health.sh"; podkop_engine_running)
+}
+assert_success "engine is detected by exact /proc comm name" podkop_engine_seen_in_proc
+
+assert_success "LuCI can execute the health probe for a snapshot line" sh -c '
+  PODKOP_HEALTH_PROC="$1" PODKOP_INIT_SCRIPT=/nonexistent sh "$2/payload/podkop-health.sh" snapshot |
+    grep -Eq "^health=(ok|warn|bad) init=0 engine=0 config=[01] rules=[01] nft=[01] evidence=[0-9]+$"
+' _ "$TEST_TMP/empty-proc" "$PROJECT_DIR"
+
+assert_eq "sing-box-not-running" \
+  "$(PODKOP_HEALTH_PROC="$TEST_TMP/empty-proc" sh "$PROJECT_DIR/payload/podkop-health.sh" reason)" \
+  "watchdog reason reports a missing engine first"
 
 # Mode registry: one table drives menu, dispatch and resume targets.
 registry_handlers_exist() {
@@ -471,6 +491,7 @@ WARREN_WATCHDOG_BIN="$TEST_TMP/warren-watchdog"
 WARREN_WATCHDOG_INIT="$TEST_TMP/warren-watchdog.init"
 WARREN_WATCHDOG_CONF="$TEST_TMP/warren-watchdog.conf"
 WARREN_WATCHDOG_STATE="$TEST_TMP/warren-watchdog.state"
+PODKOP_HEALTH_BIN="$TEST_TMP/podkop-health.sh"
 watchdog_write_worker
 watchdog_write_init
 assert_success "generated Podkop Watchdog worker has valid POSIX syntax" sh -n "$WARREN_WATCHDOG_BIN"
@@ -480,10 +501,6 @@ WATCHDOG_TEST_BIN="$TEST_TMP/watchdog-bin"
 WATCHDOG_HEALTHY="$TEST_TMP/watchdog-healthy"
 WATCHDOG_RESTARTS="$TEST_TMP/watchdog-restarts"
 mkdir -p "$WATCHDOG_TEST_BIN"
-cat > "$WATCHDOG_TEST_BIN/pgrep" <<'EOF'
-#!/bin/sh
-[ -e "${WARREN_TEST_WATCHDOG_HEALTHY:?}" ]
-EOF
 cat > "$WATCHDOG_TEST_BIN/ip" <<'EOF'
 #!/bin/sh
 printf "%s\n" "100: from all fwmark 0x2023 lookup 2023"
@@ -491,9 +508,11 @@ EOF
 cat > "$WATCHDOG_TEST_BIN/podkop-init" <<'EOF'
 #!/bin/sh
 printf "%s\n" "${1:-}" >> "${WARREN_TEST_WATCHDOG_RESTARTS:?}"
-touch "${WARREN_TEST_WATCHDOG_HEALTHY:?}"
+mkdir -p "${PODKOP_HEALTH_PROC:?}/4242"
+printf "sing-box\n" > "$PODKOP_HEALTH_PROC/4242/comm"
 EOF
-chmod +x "$WATCHDOG_TEST_BIN/pgrep" "$WATCHDOG_TEST_BIN/ip" "$WATCHDOG_TEST_BIN/podkop-init"
+chmod +x "$WATCHDOG_TEST_BIN/ip" "$WATCHDOG_TEST_BIN/podkop-init"
+WATCHDOG_PROC="$TEST_TMP/watchdog-proc"
 {
   printf "WARREN_WATCHDOG_INTERVAL=1\n"
   printf "WARREN_WATCHDOG_RESTART_DELAY=0\n"
@@ -501,13 +520,16 @@ chmod +x "$WATCHDOG_TEST_BIN/pgrep" "$WATCHDOG_TEST_BIN/ip" "$WATCHDOG_TEST_BIN/
 } > "$WARREN_WATCHDOG_CONF"
 
 watchdog_recovers_engine() {
-  rm -f "$WATCHDOG_HEALTHY" "$WATCHDOG_RESTARTS" "$WARREN_WATCHDOG_STATE"
+  rm -rf "$WATCHDOG_HEALTHY" "$WATCHDOG_RESTARTS" "$WARREN_WATCHDOG_STATE" "$WATCHDOG_PROC"
+  mkdir -p "$WATCHDOG_PROC"
   PATH="$WATCHDOG_TEST_BIN:$PATH" \
   WARREN_TEST_WATCHDOG_HEALTHY="$WATCHDOG_HEALTHY" \
   WARREN_TEST_WATCHDOG_RESTARTS="$WATCHDOG_RESTARTS" \
   WARREN_WATCHDOG_CONF="$WARREN_WATCHDOG_CONF" \
   WARREN_WATCHDOG_STATE="$WARREN_WATCHDOG_STATE" \
   WARREN_WATCHDOG_PODKOP_INIT="$WATCHDOG_TEST_BIN/podkop-init" \
+  WARREN_WATCHDOG_HEALTH="$PODKOP_HEALTH_BIN" \
+  PODKOP_HEALTH_PROC="$WATCHDOG_PROC" \
     "$WARREN_WATCHDOG_BIN" run-once
   grep -q "^STATUS=restarted$" "$WARREN_WATCHDOG_STATE" &&
     grep -q "^restart$" "$WATCHDOG_RESTARTS"
@@ -515,7 +537,8 @@ watchdog_recovers_engine() {
 assert_success "Podkop Watchdog restarts a missing engine once" watchdog_recovers_engine
 
 watchdog_stops_after_three_failures() {
-  rm -f "$WATCHDOG_HEALTHY" "$WATCHDOG_RESTARTS"
+  rm -rf "$WATCHDOG_HEALTHY" "$WATCHDOG_RESTARTS" "$WATCHDOG_PROC"
+  mkdir -p "$WATCHDOG_PROC"
   {
     printf "STATUS=backoff\n"
     printf "LAST_CHECK=1\n"
@@ -532,6 +555,8 @@ watchdog_stops_after_three_failures() {
   WARREN_WATCHDOG_CONF="$WARREN_WATCHDOG_CONF" \
   WARREN_WATCHDOG_STATE="$WARREN_WATCHDOG_STATE" \
   WARREN_WATCHDOG_PODKOP_INIT="$WATCHDOG_TEST_BIN/podkop-init" \
+  WARREN_WATCHDOG_HEALTH="$PODKOP_HEALTH_BIN" \
+  PODKOP_HEALTH_PROC="$WATCHDOG_PROC" \
     "$WARREN_WATCHDOG_BIN" run-once >/dev/null 2>&1 || true
   grep -q "^STATUS=exhausted$" "$WARREN_WATCHDOG_STATE" &&
     [ ! -e "$WATCHDOG_RESTARTS" ]

@@ -31,6 +31,11 @@ for file in "$PROJECT_DIR"/payload/*; do
   esac
 done
 
+# LuCI controller syntax, when a Lua compiler is available locally.
+if command -v luac >/dev/null 2>&1; then
+  luac -p "$PROJECT_DIR/luci-app-warren/luasrc/controller/warren.lua"
+fi
+
 # Every lib/ and payload/ file must be listed in the runtime manifest.
 MANIFEST="$(sh "$PROJECT_DIR/tools/manifest.sh")"
 for file in "$PROJECT_DIR"/lib/*.sh "$PROJECT_DIR"/payload/*; do

@@ -217,6 +217,7 @@ install_warren_luci_ui() {
   install_warren_payloads
   install_warren_version_file
   install_warren_luci_runner
+  podkop_health_install
   install_warren_luci_controller
   install_warren_luci_view
   install_warren_luci_menu
