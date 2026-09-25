@@ -90,7 +90,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## tests/run.sh
 
-- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
+- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
 
 ## tools/build-router-upload.sh
 
