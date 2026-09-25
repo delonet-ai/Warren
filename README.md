@@ -34,7 +34,7 @@ Warren ориентирован на пользователей, которые 
 - ставить Telegram-бота для быстрых правок Podkop;
 - запускать диагностику Podkop/VPS;
 - поднимать Remote Admin для доступа к роутеру через VPS без публичного IP на роутере;
-- работать с OpenWrt `24.10.x` через `opkg` и с OpenWrt `25.12.x` через `apk`.
+- работать с семейством OpenWrt `24.x` через `opkg` и с семейством `25.x` через `apk`.
 
 ## Как запустить
 
@@ -88,9 +88,37 @@ wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main
 
 Запланированные улучшения ядра:
 
-- добавить retry с backoff для всех сетевых операций и SHA256-проверку при загрузке lib-файлов и самообновлении (Milestone 15);
-- заменить sourcing конфига через `. "$CONF"` на безопасный key=value parser; очищать `VPS_ROOT_PASSWORD` из конфига после завершения VPS setup (Milestone 16);
-- добавить Podkop Watchdog с автоматическим перезапуском sing-box, backoff при повторных сбоях и опциональным Telegram-уведомлением (Milestone 17);
-- обеспечить graceful degradation на будущих релизах OpenWrt вместо жёсткого отказа (Milestone 18).
+- retry/backoff и SHA256 manifest для загрузок и самообновления завершены (Milestone 15);
+- безопасный config parser, отказ от `eval`, очистка `VPS_ROOT_PASSWORD` и redaction логов завершены (Milestone 16);
+- Podkop Watchdog с procd, ограниченным backoff, shell/LuCI status и опциональным Telegram-уведомлением реализован (Milestone 17);
+- graceful degradation для будущих OpenWrt 26.x+ с package-manager detection и CI-флагом реализован (Milestone 18).
 
 Подробная техническая документация, политика зависимостей, внутренние сценарии и milestones разработки находятся в [TECHNICAL_README.md](TECHNICAL_README.md).
+
+## Локальная разработка
+
+Быстрые проверки без роутера и сети:
+
+```sh
+sh tools/check.sh
+```
+
+Команда проверяет синтаксис shell-файлов, запускает POSIX shell regression tests и собирает временный router-upload bundle.
+
+Firmware, E2E-логи, diagnostics и сгенерированные bundles считаются локальными артефактами и не входят в Git. Создать актуальный upload bundle из текущих исходников:
+
+```sh
+sh tools/build-router-upload.sh
+```
+
+Для hardware E2E можно скопировать `.env.example` в локальный `.env`; значения из явных CLI-флагов имеют приоритет.
+
+Полный прогон теперь включает настройку и проверку VPS (`3x-ui`, Xray/VLESS Reality, panel, Remote Admin helper/cron), exact AmneziaWG packages с module/keygen self-test без изменения маршрутов, установку router agent и автоматический цикл `request → reverse tunnel → SSH/LuCI через localhost → close`:
+
+```sh
+sh tools/test-e2e.sh --fw 25 --vps-host <ip> --vps-pass <password>
+```
+
+Если VPS уже настроен, `auto` переиспользует 3x-ui и пересоздаёт inbound. E2E не удаляет существующую установку VPS скрыто: fresh reinstall включается только явным флагом.
+
+Для контролируемой проверки нового pinned 3x-ui E2E поддерживает `--reinstall-3xui`: перед удалением `/etc/x-ui` и Warren VPS artifact сохраняются в `/root/warren-backups/`. Текущий проверяемый комплект — OpenWrt/AWG `25.12.5`, Podkop `0.7.21`, 3x-ui `v3.5.0`.

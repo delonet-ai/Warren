@@ -1,2 +1,19 @@
-.warren-dev/
+# Local configuration and runtime state
 .env
+.env.*
+!.env.example
+.warren-dev/
+
+# Generated router upload bundles
+.warren-router-upload/
+dist/
+
+# Hardware images and local test artifacts
+tools/os/
+tools/test-runs/
+tools/diagnostics/
+diagnostics/
+
+# macOS metadata
+.DS_Store
+**/.DS_Store

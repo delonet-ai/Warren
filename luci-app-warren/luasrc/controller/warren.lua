@@ -256,6 +256,27 @@ local function remote_admin_status()
   }
 end
 
+local function watchdog_status()
+  local raw = shell_read("[ -x /usr/libexec/warren/warren-watchdog ] && /usr/libexec/warren/warren-watchdog status || true")
+  local function field(name, fallback)
+    local value = first_match("\n" .. raw, "\n" .. name .. "=([^\n]+)")
+    return value ~= "" and value or fallback
+  end
+  local enabled = shell_read("[ -x /etc/init.d/warren-watchdog ] && /etc/init.d/warren-watchdog enabled && echo yes || echo no")
+  local running = shell_read("[ -x /etc/init.d/warren-watchdog ] && /etc/init.d/warren-watchdog running && echo yes || echo no")
+  return {
+    installed = shell_read("[ -x /usr/libexec/warren/warren-watchdog ] && echo yes || echo no"),
+    enabled = enabled ~= "" and enabled or "no",
+    running = running ~= "" and running or "no",
+    status = field("STATUS", "not-installed"),
+    last_check = field("LAST_CHECK", "0"),
+    last_restart = field("LAST_RESTART", "0"),
+    restart_count = field("RESTART_COUNT", "0"),
+    failure_count = field("FAILURE_COUNT", "0"),
+    reason = field("LAST_REASON", "not-installed")
+  }
+end
+
 local function annotate_reports_for_podkop(reports, podkop)
   local available_backup_count = 0
   for _, report in ipairs(reports or {}) do
@@ -643,6 +664,7 @@ function action_index()
   local backup_report_count = annotate_reports_for_podkop(reports, podkop)
   local amz_clients = amnezia_clients()
   local remote_admin = remote_admin_status()
+  local watchdog = watchdog_status()
   local active_tab = trim(http.formvalue("tab") or "quick")
   if active_tab ~= "quick" and active_tab ~= "vps" and active_tab ~= "podkop" and active_tab ~= "awg" and active_tab ~= "extra" then
     active_tab = "quick"
@@ -654,6 +676,7 @@ function action_index()
     podkop = podkop,
     amnezia_clients = amz_clients,
     remote_admin = remote_admin,
+    watchdog = watchdog,
     backup_report_count = backup_report_count,
     job = job,
     warren_state = state,

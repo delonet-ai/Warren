@@ -22,7 +22,7 @@ warren_warn_sleep() {
 done_() {
   say "${GREEN}DONE${NC}  $*"
   case "${MODE:-}" in
-    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|remote_admin_config|remote_admin_poll_now|remote_admin_router_install|remote_admin_vps_install|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
+    initialize|vps|podkop_backup|qos_private|amnezia_client_create|amnezia_client_delete|remote_admin|remote_admin_config|remote_admin_poll_now|remote_admin_router_install|remote_admin_vps_install|watchdog_enable|watchdog_disable|watchdog_reset|usb_modem|tg_bot|diagnostics|diagnostics_emergency|manage_private|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
       ;;
     *)
       print_progress
@@ -46,42 +46,109 @@ fail() {
 }
 
 log() {
-  echo "[$(date +'%F %T')] $*" >> "$LOG"
+  _wlog_message="$*"
+  _wlog_upper="$(printf "%s" "$_wlog_message" | tr '[:lower:]' '[:upper:]')"
+  case "$_wlog_upper" in
+    *PASSWORD*|*TOKEN*|*SECRET*)
+      _wlog_message="*** sensitive message redacted ***"
+      ;;
+  esac
+  printf "[%s] %s\n" "$(date +'%F %T')" "$_wlog_message" >> "$LOG"
 }
 
 quote_sh() {
   printf "'%s'" "$(printf "%s" "$1" | sed "s/'/'\\\\''/g")"
 }
 
+if ! command -v warren_retry_delay >/dev/null 2>&1; then
+  warren_retry_delay() {
+    case "$1" in
+      2) printf "%s" "5" ;;
+      3) printf "%s" "15" ;;
+      *) printf "%s" "0" ;;
+    esac
+  }
+fi
+
+if ! command -v warren_sha256_file >/dev/null 2>&1; then
+  warren_sha256_file() {
+    command -v sha256sum >/dev/null 2>&1 || return 1
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  }
+fi
+
+if ! command -v warren_verify_file_hash >/dev/null 2>&1; then
+  warren_verify_file_hash() {
+    _wvfh_file="$1"
+    _wvfh_expected="${2:-}"
+    _wvfh_label="${3:-$1}"
+
+    [ "${WARREN_SKIP_HASH_CHECK:-0}" = "1" ] && return 0
+    [ -n "$_wvfh_expected" ] || return 1
+    _wvfh_actual="$(warren_sha256_file "$_wvfh_file")" || return 1
+    if [ "$_wvfh_actual" != "$_wvfh_expected" ]; then
+      printf "%s\n" \
+        "SHA256 mismatch для $_wvfh_label: ожидался $_wvfh_expected, получен ${_wvfh_actual:-unknown}" >&2
+      return 1
+    fi
+    return 0
+  }
+fi
+
+if ! command -v warren_manifest_sha >/dev/null 2>&1; then
+  warren_manifest_sha() {
+    _wms_manifest="$1"
+    _wms_path="$2"
+    [ -r "$_wms_manifest" ] || return 1
+    awk -v path="$_wms_path" '
+      NF == 2 && $2 == path && length($1) == 64 && $1 !~ /[^0-9a-fA-F]/ {
+        print tolower($1)
+        found = 1
+        exit
+      }
+      END { if (!found) exit 1 }
+    ' "$_wms_manifest"
+  }
+fi
+
+if ! command -v warren_download_retry >/dev/null 2>&1; then
+  warren_download_retry() {
+    _wdr_url="$1"
+    _wdr_out="$2"
+    _wdr_expected="${3:-}"
+    _wdr_label="${4:-$1}"
+    _wdr_attempt=1
+
+    while [ "$_wdr_attempt" -le 3 ]; do
+      if [ "$_wdr_attempt" -gt 1 ]; then
+        _wdr_delay="$(warren_retry_delay "$_wdr_attempt")"
+        printf "%s\n" \
+          "Повтор загрузки ${_wdr_attempt}/3: $_wdr_label (задержка ${_wdr_delay}s)" >&2
+        sleep "$_wdr_delay"
+      fi
+      rm -f "$_wdr_out" 2>/dev/null || true
+      if wget -qO "$_wdr_out" "$_wdr_url" 2>/dev/null; then
+        if [ "${WARREN_SKIP_HASH_CHECK:-0}" = "1" ] || [ -z "$_wdr_expected" ]; then
+          return 0
+        fi
+        if warren_verify_file_hash "$_wdr_out" "$_wdr_expected" "$_wdr_label"; then
+          return 0
+        fi
+      fi
+      _wdr_attempt=$((_wdr_attempt + 1))
+    done
+    rm -f "$_wdr_out" 2>/dev/null || true
+    return 1
+  }
+fi
+
 warren_wget_retry() {
   _wwr_url="$1"
   _wwr_out="$2"
   _wwr_sha="${3:-}"
   _wwr_label="${4:-$1}"
-  _wwr_attempt=0
-
-  while [ "$_wwr_attempt" -lt 3 ]; do
-    if [ "$_wwr_attempt" -gt 0 ]; then
-      _wwr_delay=$((_wwr_attempt * 5))
-      warn "Повтор загрузки $_wwr_attempt/2: $_wwr_label (задержка ${_wwr_delay}s)"
-      sleep "$_wwr_delay"
-    fi
-    if wget -qO "$_wwr_out" "$_wwr_url" 2>/dev/null; then
-      if [ -n "$_wwr_sha" ]; then
-        _wwr_actual="$(sha256sum "$_wwr_out" 2>/dev/null | awk '{print $1}')"
-        if [ "$_wwr_actual" = "$_wwr_sha" ]; then
-          return 0
-        fi
-        warn "SHA256 mismatch для $_wwr_label: ожидался $_wwr_sha, получен ${_wwr_actual:-unknown}"
-        rm -f "$_wwr_out" 2>/dev/null || true
-      else
-        return 0
-      fi
-    fi
-    _wwr_attempt=$((_wwr_attempt + 1))
-  done
-
-  fail "Не удалось загрузить $_wwr_label после 3 попыток: $_wwr_url"
+  warren_download_retry "$_wwr_url" "$_wwr_out" "$_wwr_sha" "$_wwr_label" ||
+    fail "Не удалось загрузить $_wwr_label после 3 попыток: $_wwr_url"
 }
 
 download_file() {
@@ -151,7 +218,7 @@ openwrt_release_version() {
 
 openwrt_release_supported() {
   rel="$(openwrt_release_version)"
-  printf "%s" "$rel" | grep -Eq '^(24|25)\.'
+  warren_openwrt_family "$rel" >/dev/null 2>&1
 }
 
 pkg_invalidate_installed_cache() {

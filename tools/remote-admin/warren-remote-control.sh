@@ -152,6 +152,7 @@ Usage:
   warren-remote-control.sh
   warren-remote-control.sh vps add|edit|remove|list|check|bootstrap|install-helper [--vps name]
   warren-remote-control.sh routers --vps name
+  warren-remote-control.sh request --vps name --router router_id [--ttl seconds]
   warren-remote-control.sh connect --vps name --router router_id [--no-timeout]
   warren-remote-control.sh status --vps name --router router_id
   warren-remote-control.sh close --vps name --router router_id
@@ -170,10 +171,12 @@ parse_common_flags() {
   ROUTER_PORT="22"
   ROUTER_KEY_PATH=""
   CONNECT_NO_TIMEOUT="0"
+  REQUEST_TTL_OVERRIDE=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --vps) VPS_SELECT="${2:-}"; shift 2 ;;
       --router) ROUTER_ID="${2:-}"; shift 2 ;;
+      --ttl) REQUEST_TTL_OVERRIDE="${2:-}"; shift 2 ;;
       --host) ROUTER_HOST="${2:-}"; shift 2 ;;
       --user) ROUTER_USER="${2:-root}"; shift 2 ;;
       --port) ROUTER_PORT="${2:-22}"; shift 2 ;;
@@ -247,6 +250,16 @@ cmd_vps_check() {
 
 write_vps_helper_file() {
   target="$1"
+  canonical_remote_admin_lib="$SCRIPT_DIR/../../lib/remote_admin.sh"
+  if [ -r "$canonical_remote_admin_lib" ]; then
+    # Keep the Mac control tool and Warren auto-flow on one protocol
+    # implementation when running from a checkout.
+    # shellcheck disable=SC1090
+    . "$canonical_remote_admin_lib"
+    remote_admin_write_vps_helper "$target"
+    chmod 700 "$target"
+    return 0
+  fi
   cat > "$target" <<'EOF'
 #!/bin/sh
 set -eu
@@ -268,8 +281,8 @@ allocate_ports(){ next="$(cat "$NEXT_PORT_FILE" 2>/dev/null || printf "%s" "$DEF
 router_seen(){ router_id="$1"; router_name="${2:-$1}"; pubkey="${3:-}"; source_host="${4:-}"; last_seen="$(now_epoch)"; file="$(router_file "$router_id")"; pubkey_hash="$pubkey"; if [ -n "$pubkey_hash" ] && ! printf "%s" "$pubkey_hash" | grep -Eq '^[A-Fa-f0-9]{64}$'; then pubkey_hash="$(hash_text "$pubkey_hash")"; fi; mkdir -p "$ROUTERS_DIR"; { printf "ROUTER_ID=%s\n" "$router_id"; printf "ROUTER_NAME=%s\n" "$(safe_text "$router_name")"; printf "ROUTER_PUBLIC_KEY_SHA256=%s\n" "$pubkey_hash"; printf "ROUTER_SOURCE=%s\n" "$(safe_text "$source_host")"; printf "LAST_SEEN=%s\n" "$last_seen"; printf "LAST_HEARTBEAT=%s\n" "$last_seen"; printf "TUNNEL_STATUS=%s\n" "${TUNNEL_STATUS:-down}"; printf "TUNNEL_SSH_PORT=%s\n" "${TUNNEL_SSH_PORT:-}"; printf "TUNNEL_LUCI_PORT=%s\n" "${TUNNEL_LUCI_PORT:-}"; printf "REQUEST_STATE=%s\n" "${REQUEST_STATE:-none}"; printf "REQUEST_AT=%s\n" "${REQUEST_AT:-}"; printf "REQUEST_TTL=%s\n" "${REQUEST_TTL:-}"; printf "REQUEST_ID=%s\n" "${REQUEST_ID:-}"; printf "REQUEST_EXPIRES=%s\n" "${REQUEST_EXPIRES:-}"; } > "$file"; }
 request_state(){ router_id="$1"; file="$(request_file "$router_id")"; [ -r "$file" ] || return 1; . "$file"; now="$(now_epoch)"; case "${REQUEST_EXPIRES:-0}" in ''|*[!0-9]*) return 1;; esac; [ "$now" -le "$REQUEST_EXPIRES" ] || { rm -f "$file"; return 1; }; }
 request_create(){ router_id="$1"; ttl="${2:-900}"; router_name="${3:-$router_id}"; ensure_dirs; load_router "$router_id"; ports="$(allocate_ports)"; tunnel_ssh_port="$(printf "%s" "$ports" | awk '{print $1}')"; tunnel_luci_port="$(printf "%s" "$ports" | awk '{print $2}')"; request_id="$(date +%Y%m%d%H%M%S)-$(sanitize_id "$router_id")"; request_at="$(now_epoch)"; request_expires=$((request_at+ttl)); write_env "$(request_file "$router_id")" "ROUTER_ID=${router_id}" "ROUTER_NAME=$(safe_text "$router_name")" "REQUEST_ID=${request_id}" "REQUEST_STATE=requested" "REQUEST_AT=${request_at}" "REQUEST_TTL=${ttl}" "REQUEST_EXPIRES=${request_expires}" "TUNNEL_SSH_PORT=${tunnel_ssh_port}" "TUNNEL_LUCI_PORT=${tunnel_luci_port}" "REQUESTED_BY=ssh"; router_seen "$router_id" "$router_name" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${SSH_CONNECTION:-}"; printf "ACTION=OPEN\nREQUEST_ID=%s\nREQUEST_TTL=%s\nTUNNEL_SSH_PORT=%s\nTUNNEL_LUCI_PORT=%s\n" "$request_id" "$ttl" "$tunnel_ssh_port" "$tunnel_luci_port"; }
-request_close(){ router_id="$1"; rm -f "$(request_file "$router_id")"; load_router "$router_id"; TUNNEL_STATUS=down TUNNEL_SSH_PORT= TUNNEL_LUCI_PORT= REQUEST_STATE=closed router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"; }
-poll_router(){ router_id="$1"; router_name="${2:-$1}"; pubkey="${3:-}"; source_host="${4:-${SSH_CONNECTION:-}}"; ensure_dirs; if request_state "$router_id"; then . "$(request_file "$router_id")"; router_seen "$router_id" "$router_name" "$pubkey" "$source_host"; printf "ACTION=OPEN\nREQUEST_ID=%s\nREQUEST_TTL=%s\nTUNNEL_SSH_PORT=%s\nTUNNEL_LUCI_PORT=%s\n" "${REQUEST_ID:-}" "${REQUEST_TTL:-}" "${TUNNEL_SSH_PORT:-}" "${TUNNEL_LUCI_PORT:-}"; else router_seen "$router_id" "$router_name" "$pubkey" "$source_host"; printf "ACTION=NONE\n"; fi; }
+request_close(){ router_id="$1"; ensure_dirs; load_router "$router_id"; request_at="$(now_epoch)"; request_id="$(date +%Y%m%d%H%M%S)-close-$(sanitize_id "$router_id")"; request_expires=$((request_at+300)); write_env "$(request_file "$router_id")" "ROUTER_ID=${router_id}" "ROUTER_NAME=$(safe_text "${ROUTER_NAME:-$router_id}")" "REQUEST_ID=${request_id}" "REQUEST_STATE=closed" "REQUEST_AT=${request_at}" "REQUEST_TTL=300" "REQUEST_EXPIRES=${request_expires}" "TUNNEL_SSH_PORT=" "TUNNEL_LUCI_PORT="; TUNNEL_STATUS=down TUNNEL_SSH_PORT= TUNNEL_LUCI_PORT= REQUEST_STATE=closed REQUEST_AT="$request_at" REQUEST_TTL=300 REQUEST_ID="$request_id" REQUEST_EXPIRES="$request_expires" router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"; }
+poll_router(){ router_id="$1"; router_name="${2:-$1}"; pubkey="${3:-}"; source_host="${4:-${SSH_CONNECTION:-}}"; ensure_dirs; request_file_path="$(request_file "$router_id")"; if request_state "$router_id"; then . "$request_file_path"; router_seen "$router_id" "$router_name" "$pubkey" "$source_host"; if [ "${REQUEST_STATE:-}" = closed ]; then rm -f "$request_file_path"; printf "ACTION=CLOSE\nREQUEST_ID=%s\n" "${REQUEST_ID:-}"; else printf "ACTION=OPEN\nREQUEST_ID=%s\nREQUEST_TTL=%s\nTUNNEL_SSH_PORT=%s\nTUNNEL_LUCI_PORT=%s\n" "${REQUEST_ID:-}" "${REQUEST_TTL:-}" "${TUNNEL_SSH_PORT:-}" "${TUNNEL_LUCI_PORT:-}"; fi; else router_seen "$router_id" "$router_name" "$pubkey" "$source_host"; printf "ACTION=NONE\n"; fi; }
 tunnel_up(){ router_id="$1"; request_id="${2:-}"; tunnel_ssh_port="${3:-}"; tunnel_luci_port="${4:-}"; load_router "$router_id"; TUNNEL_STATUS=up TUNNEL_SSH_PORT="$tunnel_ssh_port" TUNNEL_LUCI_PORT="$tunnel_luci_port" REQUEST_STATE=requested REQUEST_ID="$request_id" router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"; printf "TUNNEL_STATUS=up\n"; }
 tunnel_down(){ router_id="$1"; request_id="${2:-}"; load_router "$router_id"; TUNNEL_STATUS=down TUNNEL_SSH_PORT= TUNNEL_LUCI_PORT= REQUEST_STATE=closed REQUEST_ID="$request_id" router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"; printf "TUNNEL_STATUS=down\n"; }
 router_status(){ router_id="$1"; file="$(router_file "$router_id")"; [ -r "$file" ] || exit 1; cat "$file"; printf "REQUEST_ACTIVE=%s\n" "$(request_state "$router_id" && printf yes || printf no)"; }
@@ -427,6 +440,18 @@ cmd_status() {
   remote_helper status "$ROUTER_ID"
 }
 
+cmd_request() {
+  parse_common_flags "$@"
+  load_profile "$VPS_SELECT"
+  [ -n "${ROUTER_ID:-}" ] || ROUTER_ID="${DEFAULT_ROUTER_ID:-}"
+  [ -n "$ROUTER_ID" ] || die "Router ID is required"
+  request_ttl="${REQUEST_TTL_OVERRIDE:-$REQUEST_TTL}"
+  case "$request_ttl" in
+    ""|*[!0-9]*) die "Request TTL must be a non-negative integer" ;;
+  esac
+  remote_helper request "$ROUTER_ID" "$request_ttl"
+}
+
 cmd_close() {
   parse_common_flags "$@"
   load_profile "$VPS_SELECT"
@@ -448,9 +473,9 @@ router_scp() {
   src="$1"
   dst="$2"
   if [ -n "${ROUTER_KEY_PATH:-}" ]; then
-    scp -P "$ROUTER_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i "$ROUTER_KEY_PATH" "$src" "${ROUTER_USER}@${ROUTER_HOST}:$dst"
+    scp -O -P "$ROUTER_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i "$ROUTER_KEY_PATH" "$src" "${ROUTER_USER}@${ROUTER_HOST}:$dst"
   else
-    scp -P "$ROUTER_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$src" "${ROUTER_USER}@${ROUTER_HOST}:$dst"
+    scp -O -P "$ROUTER_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$src" "${ROUTER_USER}@${ROUTER_HOST}:$dst"
   fi
 }
 
@@ -536,8 +561,8 @@ cmd_router_install_agent() {
   router_ssh "chmod 700 /usr/bin/warren-remote-agent; chmod 755 /etc/init.d/warren-remote-admin; /etc/init.d/warren-remote-admin enable; /etc/init.d/warren-remote-admin restart; /usr/bin/warren-remote-agent status"
   pubkey="$(router_ssh "cat /etc/warren/remote-admin/router_ed25519.pub")"
   [ -n "$pubkey" ] || die "Could not read router public key"
-  escaped_pubkey="$(quote_sh "$pubkey")"
-  ssh_cmd "sh -lc 'umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; grep -qxF $escaped_pubkey ~/.ssh/authorized_keys || printf \"%s\n\" $escaped_pubkey >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys'"
+  # Pass pubkey via stdin to avoid quoting issues embedding single-quoted values in sh -lc '...'
+  printf '%s\n' "$pubkey" | ssh_cmd 'umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; key="$(cat)"; grep -qxF "$key" ~/.ssh/authorized_keys || printf "%s\n" "$key" >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys'
   rm -f "$tmp_agent" "$tmp_init" "$tmp_conf"
   say "Router agent installed. Router ID: $router_id"
 }
@@ -631,6 +656,21 @@ case "$cmd" in
       cmd_status "$@"
     fi
     ;;
+  request)
+    if [ "${1:-}" != "" ] && [ "${1#--}" = "$1" ]; then
+      router="$1"
+      shift
+      legacy_ttl="${1:-}"
+      if [ -n "$legacy_ttl" ] && [ "${legacy_ttl#--}" = "$legacy_ttl" ]; then
+        shift
+        cmd_request --router "$router" --ttl "$legacy_ttl" "$@"
+      else
+        cmd_request --router "$router" "$@"
+      fi
+    else
+      cmd_request "$@"
+    fi
+    ;;
   close)
     if [ "${1:-}" != "" ] && [ "${1#--}" = "$1" ]; then
       router="$1"
@@ -642,6 +682,5 @@ case "$cmd" in
     ;;
   router) cmd_router_install_agent "$@" ;;
   list) load_profile "$(first_profile_name)"; remote_helper list ;;
-  request) load_profile "$(first_profile_name)"; remote_helper request "${1:-${DEFAULT_ROUTER_ID:-}}" "${2:-$REQUEST_TTL}" ;;
   *) show_usage; exit 2 ;;
 esac

@@ -518,7 +518,9 @@ upgrade_vps_packages() {
 
 install_3xui() {
   info "Установка 3x-ui может занять некоторое время. Процесс идёт, пожалуйста подождите..."
-  xui_release_tag="${WARREN_3XUI_RELEASE_TAG:-${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.1.0}}"
+  xui_release_tag="${WARREN_3XUI_RELEASE_TAG:-${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.5.0}}"
+  xui_installer_sha="${WARREN_3XUI_INSTALL_SHA256:-}"
+  [ -n "$xui_installer_sha" ] || fail "Для 3x-ui installer не задан ожидаемый SHA256"
   vps_ssh_timeout 1200 "sh -lc '
     log=/tmp/warren-3xui-install.log
     rcfile=/tmp/warren-3xui-install.rc
@@ -527,6 +529,12 @@ install_3xui() {
 
     echo \"__WARREN_STEP__ download installer ${xui_release_tag}\" >\"\$log\"
     curl -fsSL https://raw.githubusercontent.com/MHSanaei/3x-ui/${xui_release_tag}/install.sh -o \"\$installer\" >>\"\$log\" 2>&1
+    actual_sha=\"\$(sha256sum \"\$installer\" 2>/dev/null | awk \"{print \\\$1}\")\"
+    if [ \"\$actual_sha\" != \"${xui_installer_sha}\" ]; then
+      echo \"Warren: 3x-ui installer SHA256 mismatch: expected ${xui_installer_sha}, got \${actual_sha:-unknown}\" >>\"\$log\"
+      exit 65
+    fi
+    echo \"__WARREN_STEP__ installer SHA256 verified\" >>\"\$log\"
     chmod +x \"\$installer\"
 
     (
@@ -546,6 +554,7 @@ install_3xui() {
 
     elapsed=0
     ready=0
+    ready_since=-1
     while [ \"\$elapsed\" -lt 900 ]; do
       if [ -f \"\$rcfile\" ]; then
         break
@@ -554,13 +563,22 @@ install_3xui() {
       if [ -x /usr/local/x-ui/x-ui ]; then
         if command -v systemctl >/dev/null 2>&1; then
           if [ -f /etc/systemd/system/x-ui.service ] && systemctl is-active --quiet x-ui >/dev/null 2>&1; then
-            ready=1
-            break
+            if [ \"\$ready\" = \"0\" ]; then
+              ready=1
+              ready_since=\$elapsed
+              echo \"Warren: 3x-ui service is ready; waiting up to 120s for installer cleanup\" >>\"\$log\"
+            fi
           fi
         elif pgrep -f /usr/local/x-ui/x-ui >/dev/null 2>&1; then
-          ready=1
-          break
+          if [ \"\$ready\" = \"0\" ]; then
+            ready=1
+            ready_since=\$elapsed
+          fi
         fi
+      fi
+
+      if [ \"\$ready\" = \"1\" ] && [ \$((elapsed - ready_since)) -ge 120 ]; then
+        break
       fi
 
       sleep 2
@@ -568,7 +586,7 @@ install_3xui() {
     done
 
     if [ \"\$ready\" = \"1\" ] && [ ! -f \"\$rcfile\" ]; then
-      echo \"Warren: 3x-ui is installed and running; stopping possibly stuck installer pid \$installer_pid\" >>\"\$log\"
+      echo \"Warren: installer did not exit 120s after service became ready; stopping pid \$installer_pid\" >>\"\$log\"
       pkill -P \"\$installer_pid\" >/dev/null 2>&1 || true
       kill \"\$installer_pid\" >/dev/null 2>&1 || true
       sleep 1
@@ -580,10 +598,20 @@ install_3xui() {
 
     if [ -f \"\$rcfile\" ]; then
       install_rc=\"\$(cat \"\$rcfile\" 2>/dev/null || echo 1)\"
-      if [ \"\$install_rc\" != \"0\" ] && [ \"\$install_rc\" != \"124\" ]; then
-        echo \"Warren: 3x-ui installer failed with rc=\$install_rc\"
-        exit \"\$install_rc\"
-      fi
+      case \"\$install_rc\" in
+        0) ;;
+        124|137|143)
+          [ \"\$ready\" = \"1\" ] || {
+            echo \"Warren: 3x-ui installer stopped with rc=\$install_rc before service became ready\"
+            exit \"\$install_rc\"
+          }
+          echo \"Warren: accepting installer rc=\$install_rc because 3x-ui service is ready\" >>\"\$log\"
+          ;;
+        *)
+          echo \"Warren: 3x-ui installer failed with rc=\$install_rc\"
+          exit \"\$install_rc\"
+          ;;
+      esac
     elif [ \"\$ready\" != \"1\" ]; then
       echo \"Warren: 3x-ui installer timed out before service became ready\"
       exit 124
@@ -771,11 +799,18 @@ collect_3xui_api_token() {
   PANEL_API_TOKEN=""
   attempt=0
   while [ "$attempt" -lt 10 ]; do
-    api_token_info="$(vps_ssh_timeout 20 "sh -lc 'sqlite3 /etc/x-ui/x-ui.db \"select token from api_tokens where enabled=1 order by id desc limit 1;\" 2>/dev/null || true'")"
-    PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | head -n1 | tr -d '[:space:]')"
+    api_token_info="$(vps_ssh_timeout 20 "sh -lc '
+      if [ -r /etc/x-ui/install-result.env ]; then
+        . /etc/x-ui/install-result.env
+        printf \"%s\" \"\${XUI_API_TOKEN:-}\"
+      else
+        sqlite3 /etc/x-ui/x-ui.db \"select token from api_tokens where enabled=1 order by id desc limit 1;\" 2>/dev/null || true
+      fi
+    '")"
+    PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | head -n1 | tr -d ' \t\n\r')"
     if [ -z "$PANEL_API_TOKEN" ]; then
       api_token_info="$(vps_ssh_timeout 20 "sh -lc '/usr/local/x-ui/x-ui settings 2>/dev/null || true'")"
-      PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | sed -n 's/.*apiToken: *//p' | head -n1 | tr -d '[:space:]')"
+      PANEL_API_TOKEN="$(printf "%s\n" "$api_token_info" | sed -n 's/.*apiToken: *//p' | head -n1 | tr -d ' \t\n\r')"
     fi
     [ -n "$PANEL_API_TOKEN" ] && break
     attempt=$((attempt + 1))
@@ -783,6 +818,13 @@ collect_3xui_api_token() {
   done
   [ -n "$PANEL_API_TOKEN" ] || return 1
   runtime_state_set "panel_api_token" "$PANEL_API_TOKEN"
+}
+
+# Prefer the plaintext token emitted once by modern 3x-ui installers. Newer
+# releases store only SHA256(token) in SQLite, so a DB value must never be
+# inserted or reused as though it were the bearer secret.
+ensure_3xui_api_token() {
+  collect_3xui_api_token
 }
 
 login_3xui_api() {
@@ -908,8 +950,12 @@ handle_existing_vps_setup() {
 
   say "${YELLOW}INFO${NC}  На сервере уже найден установленный 3x-ui."
   if [ "${MODE:-}" = "auto" ] || [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
-    EXISTING_3XUI_ACTION="1"
-    say "${YELLOW}INFO${NC}  В неинтерактивном режиме переиспользую 3x-ui и пересоздам inbound."
+    EXISTING_3XUI_ACTION="${WARREN_EXISTING_3XUI_ACTION:-1}"
+    case "$EXISTING_3XUI_ACTION" in
+      1) say "${YELLOW}INFO${NC}  В неинтерактивном режиме переиспользую 3x-ui и пересоздам inbound." ;;
+      2) say "${YELLOW}INFO${NC}  Запрошена контролируемая переустановка 3x-ui." ;;
+      *) fail "WARREN_EXISTING_3XUI_ACTION должен быть 1 (reuse) или 2 (reinstall)" ;;
+    esac
   else
     say "1) Пересоздать inbound"
     say "2) Починить: снести 3x-ui и поставить заново"
@@ -941,6 +987,11 @@ handle_existing_vps_setup() {
 purge_3xui_installation() {
   info "Сношу текущую установку 3x-ui и связанные файлы..."
   vps_ssh "sh -lc '
+    backup_dir=/root/warren-backups/3x-ui-\$(date +%Y%m%d-%H%M%S)
+    mkdir -p \"\$backup_dir\"
+    [ ! -d /etc/x-ui ] || cp -a /etc/x-ui \"\$backup_dir/etc-x-ui\"
+    [ ! -d /root/.warren ] || cp -a /root/.warren \"\$backup_dir/root-warren\"
+    printf \"%s\n\" \"\$backup_dir\" > /tmp/warren-3xui-backup-path
     if command -v systemctl >/dev/null 2>&1; then
       systemctl stop x-ui >/dev/null 2>&1 || true
       systemctl disable x-ui >/dev/null 2>&1 || true
@@ -959,7 +1010,8 @@ purge_3xui_installation() {
 
   rm -f "$(vps_local_artifact_cache)" 2>/dev/null || true
   unset PANEL_USERNAME PANEL_PASSWORD PANEL_URL PANEL_PORT PANEL_BASE_PATH VLESS_LINK INBOUND_ID
-  vps_step_done "Старая установка 3x-ui удалена"
+  backup_path="$(vps_ssh "cat /tmp/warren-3xui-backup-path 2>/dev/null || true")"
+  vps_step_done "Старая установка 3x-ui удалена; backup: ${backup_path:-unknown}"
 }
 
 generate_reality_materials() {
@@ -1043,9 +1095,9 @@ generate_reality_materials() {
   REALITY_PRIVATE_KEY="$(printf "%s" "$cert_text" | json_get_first_string "privateKey" "private_key" "privatekey" "privateKeyValue" 2>/dev/null || true)"
   REALITY_PUBLIC_KEY="$(printf "%s" "$cert_text" | json_get_first_string "publicKey" "public_key" "publickey" "publicKeyValue" "Password" "password" "Password (PublicKey)" 2>/dev/null || true)"
   if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
-    REALITY_PRIVATE_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^PrivateKey: *//p' | head -n1 | tr -d '[:space:]')"
-    [ -n "$REALITY_PUBLIC_KEY" ] || REALITY_PUBLIC_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^PublicKey: *//p' | head -n1 | tr -d '[:space:]')"
-    [ -n "$REALITY_PUBLIC_KEY" ] || REALITY_PUBLIC_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^Password (PublicKey): *//p' | head -n1 | tr -d '[:space:]')"
+    REALITY_PRIVATE_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^PrivateKey: *//p' | head -n1 | tr -d ' \t\n\r')"
+    [ -n "$REALITY_PUBLIC_KEY" ] || REALITY_PUBLIC_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^PublicKey: *//p' | head -n1 | tr -d ' \t\n\r')"
+    [ -n "$REALITY_PUBLIC_KEY" ] || REALITY_PUBLIC_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^Password (PublicKey): *//p' | head -n1 | tr -d ' \t\n\r')"
   fi
   if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
     say "${YELLOW}INFO${NC}  Raw X25519 response: $cert_text"
@@ -1103,7 +1155,7 @@ create_vless_reality_payload() {
   "listen": "",
   "port": ${INBOUND_PORT},
   "protocol": "vless",
-  "settings": "{\"clients\":[{\"comment\":\"${CLIENT_COMMENT}\",\"email\":\"${CLIENT_EMAIL}\",\"enable\":true,\"expiryTime\":0,\"flow\":\"${CLIENT_FLOW}\",\"id\":\"${CLIENT_UUID}\",\"limitIp\":0,\"reset\":0,\"subId\":\"${CLIENT_SUBID}\",\"tgId\":\"\",\"totalGB\":0}],\"decryption\":\"none\",\"encryption\":\"none\"}",
+  "settings": "{\"clients\":[{\"comment\":\"${CLIENT_COMMENT}\",\"email\":\"${CLIENT_EMAIL}\",\"enable\":true,\"expiryTime\":0,\"flow\":\"${CLIENT_FLOW}\",\"id\":\"${CLIENT_UUID}\",\"limitIp\":0,\"reset\":0,\"subId\":\"${CLIENT_SUBID}\",\"tgId\":0,\"totalGB\":0}],\"decryption\":\"none\",\"encryption\":\"none\"}",
   "streamSettings": "{\"network\":\"tcp\",\"security\":\"reality\",\"externalProxy\":[],\"realitySettings\":{\"show\":false,\"xver\":0,\"target\":\"${REALITY_TARGET}\",\"serverNames\":[\"${REALITY_SERVER_NAME_1}\",\"${REALITY_SERVER_NAME_2}\"],\"privateKey\":\"${REALITY_PRIVATE_KEY}\",\"minClientVer\":\"\",\"maxClientVer\":\"\",\"maxTimediff\":0,\"shortIds\":[\"${SID_PRIMARY}\",\"${SID_EXTRA_1}\",\"${SID_EXTRA_2}\",\"${SID_EXTRA_3}\",\"${SID_EXTRA_4}\",\"${SID_EXTRA_5}\",\"${SID_EXTRA_6}\",\"${SID_EXTRA_7}\"],\"mldsa65Seed\":\"\",\"settings\":{\"publicKey\":\"${REALITY_PUBLIC_KEY}\",\"fingerprint\":\"${REALITY_FINGERPRINT}\",\"serverName\":\"\",\"spiderX\":\"${REALITY_SPIDERX}\",\"mldsa65Verify\":\"\"}},\"tcpSettings\":{\"acceptProxyProtocol\":false,\"header\":{\"type\":\"none\"}}}",
   "tag": "${INBOUND_TAG}",
   "sniffing": "{\"enabled\":false,\"destOverride\":[\"http\",\"tls\",\"quic\",\"fakedns\"],\"metadataOnly\":false,\"routeOnly\":false}"
@@ -1126,18 +1178,43 @@ create_vless_reality_inbound() {
   inbound_api_script_local="$(vps_workspace_dir)/panel-inbound-api.sh"
   inbound_api_script_remote="/tmp/warren-panel-inbound-api.sh"
 
+  # Build the inbound API script.
+  # Auth preference: Bearer token (newer 3x-ui with api_tokens table) → session cookie fallback.
+  _inbound_cookie="${PANEL_COOKIE_REMOTE:-/tmp/warren-panel.cookie}"
   {
     printf '#!/bin/sh\n'
     printf 'set -eu\n'
-    printf 'panel_api_base=%s\n' "$(quote_sh "$panel_api_base")"
+    printf 'panel_api_base=%s\n'      "$(quote_sh "$panel_api_base")"
     printf 'inbound_json_remote=%s\n' "$(quote_sh "$inbound_json_remote")"
-    printf 'inbound_id=%s\n' "$(quote_sh "${INBOUND_ID:-}")"
-    printf 'token="$(sqlite3 /etc/x-ui/x-ui.db '\''select token from api_tokens where enabled=1 order by id desc limit 1;'\'' 2>/dev/null | head -n1 | tr -d '\''[:space:]'\'' || true)"\n'
-    printf '[ -n "$token" ] || { echo "missing 3x-ui api token" >&2; exit 1; }\n'
-    printf 'if [ -n "$inbound_id" ]; then\n'
-    printf '  curl %s -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -X POST "$panel_api_base/panel/api/inbounds/del/$inbound_id" >/dev/null 2>&1 || true\n' "$panel_curl_flags"
+    printf 'inbound_id=%s\n'          "$(quote_sh "${INBOUND_ID:-}")"
+    printf 'cookie_file=%s\n'         "$(quote_sh "$_inbound_cookie")"
+    printf 'curl_flags=%s\n'          "$(quote_sh "$panel_curl_flags")"
+    printf 'token=%s\n'               "$(quote_sh "${PANEL_API_TOKEN:-}")"
+    # v3.5 stores only a SHA256 digest in SQLite. Validate a candidate bearer
+    # with a safe GET before choosing it; otherwise use the authenticated
+    # browser session and its CSRF token.
+    printf 'if [ -n "$token" ]; then\n'
+    printf '  auth_code="$(curl $curl_flags -sS -o /dev/null -w "%%{http_code}" --connect-timeout 5 --max-time 20 -H "Authorization: Bearer $token" "$panel_api_base/panel/api/server/status" 2>/dev/null || true)"\n'
+    printf '  [ "$auth_code" = "200" ] || token=""\n'
     printf 'fi\n'
-    printf 'curl %s -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -H "Content-Type: application/json" -X POST --data @"$inbound_json_remote" "$panel_api_base/panel/api/inbounds/add"\n' "$panel_curl_flags"
+    printf 'if [ -n "$token" ]; then\n'
+    # Delete existing inbound (if any) then add new one — Bearer auth
+    printf '  if [ -n "$inbound_id" ]; then\n'
+    printf '    curl $curl_flags -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -X POST "$panel_api_base/panel/api/inbounds/del/$inbound_id" >/dev/null 2>&1 || true\n'
+    printf '  fi\n'
+    printf '  curl $curl_flags -fsSL --connect-timeout 5 --max-time 30 -H "Authorization: Bearer $token" -H "Content-Type: application/json" -X POST --data @"$inbound_json_remote" "$panel_api_base/panel/api/inbounds/add"\n'
+    printf 'elif [ -f "$cookie_file" ]; then\n'
+    # Session mutations require X-CSRF-Token in modern 3x-ui.
+    printf '  csrf_resp="$(curl $curl_flags -fsSL --connect-timeout 5 --max-time 20 -b "$cookie_file" -c "$cookie_file" "$panel_api_base/csrf-token")"\n'
+    printf '  csrf_token="$(printf "%%s" "$csrf_resp" | sed -n '\''s/.*"obj"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p'\'' | head -n1)"\n'
+    printf '  [ -n "$csrf_token" ] || { echo "missing 3x-ui CSRF token" >&2; exit 1; }\n'
+    printf '  if [ -n "$inbound_id" ]; then\n'
+    printf '    curl $curl_flags -fsSL --connect-timeout 5 --max-time 30 -b "$cookie_file" -c "$cookie_file" -H "X-CSRF-Token: $csrf_token" -X POST "$panel_api_base/panel/api/inbounds/del/$inbound_id" >/dev/null 2>&1 || true\n'
+    printf '  fi\n'
+    printf '  curl $curl_flags -fsSL --connect-timeout 5 --max-time 30 -b "$cookie_file" -c "$cookie_file" -H "X-CSRF-Token: $csrf_token" -H "Content-Type: application/json" -X POST --data @"$inbound_json_remote" "$panel_api_base/panel/api/inbounds/add"\n'
+    printf 'else\n'
+    printf '  echo "missing 3x-ui api token and no session cookie" >&2; exit 1\n'
+    printf 'fi\n'
   } > "$inbound_api_script_local" || fail "Не удалось подготовить inbound API script"
   chmod 700 "$inbound_api_script_local" 2>/dev/null || true
   vps_write_remote_file "$inbound_api_script_local" "$inbound_api_script_remote" || fail "Не удалось загрузить inbound API script на VPS"
@@ -1177,6 +1254,7 @@ configure_vless_reality() {
     printf "SSH port: %s\n" "$VPS_SSH_PORT"
     printf "SSH root login: %s\n" "root"
     printf "SSH root password: %s\n" "${VPS_ROOT_PASSWORD:-unknown}"
+    printf "Password storage note: root password was kept during setup and removed from warren.conf after success; this 0600 report remains the recovery copy.\n"
     printf "OS: %s\n" "${VPS_OS_PRETTY:-unknown}"
     printf "3x-ui URL: %s\n" "${PANEL_URL:-unknown}"
     printf "3x-ui username: %s\n" "${PANEL_USERNAME:-unknown}"
@@ -1191,6 +1269,14 @@ configure_vless_reality() {
 
   save_remote_artifact
   vps_step_done "VLESS + Reality inbound создан, локальный отчёт записан: $REPORT_FILE"
+}
+
+vps_forget_root_password() {
+  VPS_ROOT_PASSWORD=""
+  conf_set VPS_ROOT_PASSWORD ""
+  if [ -n "${AUTO_STATE_STORE:-}" ]; then
+    runtime_state_set "vps_root_password" ""
+  fi
 }
 
 print_vps_summary() {
@@ -1273,6 +1359,7 @@ run_vps_flow() {
 
   vps_step_start 6
   collect_3xui_access_info
+  ensure_3xui_api_token || info "API token 3x-ui недоступен; будет использована session cookie"
   configure_vless_reality
 
   vps_step_start 7
@@ -1282,5 +1369,6 @@ run_vps_flow() {
   vps_step_start 8
   print_vps_summary
   notify_vps_report_via_tg "${REPORT_FILE:-}"
+  vps_forget_root_password
   vps_step_done "Логин и пароль UI выведены"
 }

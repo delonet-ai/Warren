@@ -277,7 +277,9 @@ warren_diag_report_version_policy() {
   warren_diag_line "warren_version=${WARREN_VERSION:-unknown}"
   warren_diag_line "remote_admin_protocol=${WARREN_REMOTE_ADMIN_PROTOCOL_VERSION:-unknown}"
 
-  if [ -n "$expected_pm" ] && [ "$pm" = "$expected_pm" ]; then
+  if [ "$family" = "unknown/graceful" ]; then
+    warren_diag_warn "Version policy: OpenWrt ${rel} is unknown/graceful; detected package manager ${pm:-unknown}"
+  elif [ -n "$expected_pm" ] && [ "$pm" = "$expected_pm" ]; then
     warren_diag_ok "Version policy: OpenWrt ${rel} uses expected package manager ${pm}"
   else
     warren_diag_bad "Version policy: OpenWrt/package-manager mismatch release=${rel:-unknown} pm=${pm:-unknown} expected=${expected_pm:-unknown}"
@@ -333,32 +335,19 @@ warren_diag_report_version_policy() {
 }
 
 warren_diag_sing_box_running() {
-  pgrep -x sing-box >/dev/null 2>&1 || pgrep -f '/usr/bin/sing-box' >/dev/null 2>&1
+  podkop_engine_running
 }
 
 warren_diag_podkop_rule_active() {
-  ip rule show 2>/dev/null | grep -Eqi 'podkop|tproxy|fwmark|0x2023|mark'
+  podkop_rules_active
 }
 
 warren_diag_podkop_nft_active() {
-  warren_diag_has_cmd nft || return 1
-  nft list ruleset 2>/dev/null | grep -Eqi 'podkop|sing-box|tproxy|0x2023|dns_redirect|mangle'
+  podkop_nft_active
 }
 
 warren_diag_sing_box_config_ok() {
-  if [ -s /etc/sing-box/config.json ]; then
-    if warren_diag_has_cmd sing-box; then
-      ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS=true sing-box check -c /etc/sing-box/config.json >/dev/null 2>&1 && return 0
-      return 1
-    fi
-    return 0
-  fi
-
-  if [ -s /tmp/etc/sing-box/config.json ]; then
-    return 0
-  fi
-
-  return 1
+  podkop_config_ok
 }
 
 warren_diag_check_podkop_runtime() {
@@ -367,41 +356,15 @@ warren_diag_check_podkop_runtime() {
     return 0
   fi
 
-  podkop_init_ok=0
-  sing_box_ok=0
-  config_ok=0
-  rules_ok=0
-  nft_ok=0
-  evidence=0
+  DIAG_PODKOP_EVIDENCE="$(podkop_runtime_snapshot)"
+  podkop_health="$(podkop_runtime_field "$DIAG_PODKOP_EVIDENCE" health)"
 
-  if [ -x /etc/init.d/podkop ] && /etc/init.d/podkop status >/dev/null 2>&1; then
-    podkop_init_ok=1
-  fi
-  if warren_diag_sing_box_running; then
-    sing_box_ok=1
-    evidence=$((evidence + 1))
-  fi
-  if warren_diag_sing_box_config_ok; then
-    config_ok=1
-    evidence=$((evidence + 1))
-  fi
-  if warren_diag_podkop_rule_active; then
-    rules_ok=1
-    evidence=$((evidence + 1))
-  fi
-  if warren_diag_podkop_nft_active; then
-    nft_ok=1
-    evidence=$((evidence + 1))
-  fi
-
-  DIAG_PODKOP_EVIDENCE="init=$podkop_init_ok sing-box=$sing_box_ok config=$config_ok rules=$rules_ok nft=$nft_ok"
-
-  if [ "$podkop_init_ok" = "1" ]; then
+  if [ "$podkop_health" = "ok" ]; then
     warren_diag_ok "Podkop: init status запущен"
     return 0
   fi
 
-  if [ "$sing_box_ok" = "1" ] && [ "$evidence" -ge 3 ]; then
+  if [ "$podkop_health" = "warn" ]; then
     warren_diag_warn "Podkop: init status говорит not running, но runtime выглядит активным ($DIAG_PODKOP_EVIDENCE)"
     return 0
   fi

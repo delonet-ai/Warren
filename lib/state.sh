@@ -18,14 +18,83 @@ set_state() {
   sync
 }
 
+_conf_decode_value() {
+  printf "%s\n" "$1" | awk '
+    NR != 1 { exit 1 }
+    {
+      value = $0
+      quote = sprintf("%c", 39)
+      slash = sprintf("%c", 92)
+      escaped_quote = quote slash quote quote
+
+      if (length(value) < 2 ||
+          substr(value, 1, 1) != quote ||
+          substr(value, length(value), 1) != quote) {
+        exit 1
+      }
+
+      decoded = ""
+      i = 2
+      last = length(value) - 1
+      while (i <= last) {
+        char = substr(value, i, 1)
+        if (char == quote) {
+          if (substr(value, i, 4) != escaped_quote) {
+            exit 1
+          }
+          decoded = decoded quote
+          i += 4
+        } else {
+          decoded = decoded char
+          i++
+        }
+      }
+
+      print decoded
+    }
+  '
+}
+
+warren_assign_config_key() {
+  key="$1"
+  val="$2"
+
+  case "$key" in
+    MODE) MODE="$val" ;;
+    VLESS) VLESS="$val" ;;
+    LIST_RU) LIST_RU="$val" ;;
+    LIST_CF) LIST_CF="$val" ;;
+    LIST_META) LIST_META="$val" ;;
+    LIST_GOOGLE_AI) LIST_GOOGLE_AI="$val" ;;
+    AWG_ENDPOINT) AWG_ENDPOINT="$val" ;;
+    VPS_HOST) VPS_HOST="$val" ;;
+    VPS_SSH_PORT) VPS_SSH_PORT="$val" ;;
+    VPS_ROOT_PASSWORD) VPS_ROOT_PASSWORD="$val" ;;
+    SELECTED_VPS_REPORT) SELECTED_VPS_REPORT="$val" ;;
+    AUTO_VPS_SOURCE) AUTO_VPS_SOURCE="$val" ;;
+    REMOTE_ADMIN_ROUTER_ID) REMOTE_ADMIN_ROUTER_ID="$val" ;;
+    REMOTE_ADMIN_ROUTER_NAME) REMOTE_ADMIN_ROUTER_NAME="$val" ;;
+    REMOTE_ADMIN_ENDPOINTS) REMOTE_ADMIN_ENDPOINTS="$val" ;;
+    REMOTE_ADMIN_VPS_USER) REMOTE_ADMIN_VPS_USER="$val" ;;
+    REMOTE_ADMIN_POLL_INTERVAL) REMOTE_ADMIN_POLL_INTERVAL="$val" ;;
+    REMOTE_ADMIN_REQUEST_TTL) REMOTE_ADMIN_REQUEST_TTL="$val" ;;
+    REMOTE_ADMIN_MAC_LUCI_PORT) REMOTE_ADMIN_MAC_LUCI_PORT="$val" ;;
+    REMOTE_ADMIN_LOCAL_SSH_PORT) REMOTE_ADMIN_LOCAL_SSH_PORT="$val" ;;
+    REMOTE_ADMIN_LOCAL_LUCI_PORT) REMOTE_ADMIN_LOCAL_LUCI_PORT="$val" ;;
+    REMOTE_ADMIN_ROUTER_KEY_PATH) REMOTE_ADMIN_ROUTER_KEY_PATH="$val" ;;
+    REMOTE_ADMIN_ENABLED) REMOTE_ADMIN_ENABLED="$val" ;;
+    *) return 1 ;;
+  esac
+}
+
 _conf_safe_read_key() {
   _csk_key="$1"
   _csk_file="$2"
   _csk_line="$(grep -m1 "^${_csk_key}=" "$_csk_file" 2>/dev/null)" || return 0
   [ -n "$_csk_line" ] || return 0
-  case "${_csk_line#${_csk_key}=}" in
-    \'*) eval "$_csk_line" ;;
-  esac
+  _csk_raw="${_csk_line#${_csk_key}=}"
+  _csk_value="$(_conf_decode_value "$_csk_raw")" || return 0
+  warren_assign_config_key "$_csk_key" "$_csk_value" || return 0
 }
 
 load_conf_if_exists() {
@@ -90,32 +159,7 @@ conf_set() {
   key="$1"
   val="$2"
 
-  case "$key" in
-    MODE) MODE="$val" ;;
-    VLESS) VLESS="$val" ;;
-    LIST_RU) LIST_RU="$val" ;;
-    LIST_CF) LIST_CF="$val" ;;
-    LIST_META) LIST_META="$val" ;;
-    LIST_GOOGLE_AI) LIST_GOOGLE_AI="$val" ;;
-    AWG_ENDPOINT) AWG_ENDPOINT="$val" ;;
-    VPS_HOST) VPS_HOST="$val" ;;
-    VPS_SSH_PORT) VPS_SSH_PORT="$val" ;;
-    VPS_ROOT_PASSWORD) VPS_ROOT_PASSWORD="$val" ;;
-    SELECTED_VPS_REPORT) SELECTED_VPS_REPORT="$val" ;;
-    AUTO_VPS_SOURCE) AUTO_VPS_SOURCE="$val" ;;
-    REMOTE_ADMIN_ROUTER_ID) REMOTE_ADMIN_ROUTER_ID="$val" ;;
-    REMOTE_ADMIN_ROUTER_NAME) REMOTE_ADMIN_ROUTER_NAME="$val" ;;
-    REMOTE_ADMIN_ENDPOINTS) REMOTE_ADMIN_ENDPOINTS="$val" ;;
-    REMOTE_ADMIN_VPS_USER) REMOTE_ADMIN_VPS_USER="$val" ;;
-    REMOTE_ADMIN_POLL_INTERVAL) REMOTE_ADMIN_POLL_INTERVAL="$val" ;;
-    REMOTE_ADMIN_REQUEST_TTL) REMOTE_ADMIN_REQUEST_TTL="$val" ;;
-    REMOTE_ADMIN_MAC_LUCI_PORT) REMOTE_ADMIN_MAC_LUCI_PORT="$val" ;;
-    REMOTE_ADMIN_LOCAL_SSH_PORT) REMOTE_ADMIN_LOCAL_SSH_PORT="$val" ;;
-    REMOTE_ADMIN_LOCAL_LUCI_PORT) REMOTE_ADMIN_LOCAL_LUCI_PORT="$val" ;;
-    REMOTE_ADMIN_ROUTER_KEY_PATH) REMOTE_ADMIN_ROUTER_KEY_PATH="$val" ;;
-    REMOTE_ADMIN_ENABLED) REMOTE_ADMIN_ENABLED="$val" ;;
-    *) fail "Неизвестный ключ конфига: $key" ;;
-  esac
+  warren_assign_config_key "$key" "$val" || fail "Неизвестный ключ конфига: $key"
 
   save_conf
 }

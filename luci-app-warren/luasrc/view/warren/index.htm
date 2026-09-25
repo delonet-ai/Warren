@@ -640,6 +640,29 @@ end
         </form>
       </div>
 
+      <div class="warren-card">
+        <h3>Podkop Watchdog</h3>
+        <p class="warren-muted">Следит за sing-box и policy rules, перезапускает Podkop с ограниченным backoff и останавливается после трёх быстрых повторных отказов.</p>
+        <div class="warren-status-row">
+          <span class="warren-badge <%=watchdog and watchdog.installed == "yes" and "ok" or "bad"%>">installed: <%=watchdog and watchdog.installed or "no"%></span>
+          <span class="warren-badge <%=watchdog and watchdog.enabled == "yes" and "ok" or "bad"%>">enabled: <%=watchdog and watchdog.enabled or "no"%></span>
+          <span class="warren-badge <%=watchdog and watchdog.running == "yes" and "ok" or "bad"%>">running: <%=watchdog and watchdog.running or "no"%></span>
+          <span class="warren-badge <%=watchdog and watchdog.status == "healthy" and "ok" or "bad"%>">state: <%=watchdog and watchdog.status or "unknown"%></span>
+          <span class="warren-badge">restarts: <%=watchdog and watchdog.restart_count or "0"%></span>
+          <span class="warren-badge">failures: <%=watchdog and watchdog.failure_count or "0"%></span>
+        </div>
+        <% if watchdog and watchdog.reason ~= "" then %>
+          <p class="warren-muted">Последняя причина: <code><%=watchdog.reason%></code>; last restart epoch: <code><%=watchdog.last_restart%></code></p>
+        <% end %>
+        <form method="post" action="<%=url('admin/services/warren/run')%>">
+          <input type="hidden" name="token" value="<%=token%>" />
+          <input type="hidden" name="tab" value="extra" />
+          <button class="btn cbi-button cbi-button-apply" type="submit" name="mode" value="watchdog_enable">Включить</button>
+          <button class="btn cbi-button" type="submit" name="mode" value="watchdog_disable">Выключить</button>
+          <button class="btn cbi-button" type="submit" name="mode" value="watchdog_reset">Сбросить счётчик</button>
+        </form>
+      </div>
+
       <form class="warren-card" method="post" action="<%=url('admin/services/warren/run')%>">
         <h3>Remote Admin настройки</h3>
         <p>Можно сохранить multi-VPS конфиг и локальные параметры заранее, даже если роутер сейчас не участвует в end-to-end проверке. Установка и копирование helper'ов пойдут отдельно.</p>

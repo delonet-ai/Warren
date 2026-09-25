@@ -670,19 +670,30 @@ request_create() {
 
 request_close() {
   router_id="$1"
-  file="$(request_file "$router_id")"
-  [ -e "$file" ] && rm -f "$file"
+  ensure_dirs
   load_router "$router_id"
+  request_at="$(now_epoch)"
+  request_id="$(date +%Y%m%d%H%M%S)-close-$(sanitize_id "$router_id")"
+  request_expires=$((request_at + 300))
+  write_env "$(request_file "$router_id")" \
+    "ROUTER_ID=${router_id}" \
+    "ROUTER_NAME=$(safe_text "${ROUTER_NAME:-$router_id}")" \
+    "REQUEST_ID=${request_id}" \
+    "REQUEST_STATE=closed" \
+    "REQUEST_AT=${request_at}" \
+    "REQUEST_TTL=300" \
+    "REQUEST_EXPIRES=${request_expires}" \
+    "TUNNEL_SSH_PORT=" \
+    "TUNNEL_LUCI_PORT="
+  TUNNEL_STATUS=down
+  TUNNEL_SSH_PORT=
+  TUNNEL_LUCI_PORT=
+  REQUEST_STATE=closed
+  REQUEST_AT="$request_at"
+  REQUEST_TTL=300
+  REQUEST_ID="$request_id"
+  REQUEST_EXPIRES="$request_expires"
   router_seen "$router_id" "${ROUTER_NAME:-$router_id}" "${ROUTER_PUBLIC_KEY_SHA256:-}" "${ROUTER_SOURCE:-}"
-  file="$(router_file "$router_id")"
-  {
-    printf "ROUTER_ID=%s\n" "$router_id"
-    printf "REQUEST_STATE=closed\n"
-    printf "REQUEST_AT=\n"
-    printf "REQUEST_TTL=\n"
-    printf "REQUEST_ID=\n"
-    printf "REQUEST_EXPIRES=\n"
-  } >> "$file"
 }
 
 request_state() {
@@ -738,6 +749,12 @@ poll_router() {
     # shellcheck disable=SC1090
     . "$request_file_path"
     router_seen "$router_id" "$router_name" "$pubkey" "$source_host"
+    if [ "${REQUEST_STATE:-}" = "closed" ]; then
+      rm -f "$request_file_path" >/dev/null 2>&1 || true
+      printf "ACTION=CLOSE\n"
+      printf "REQUEST_ID=%s\n" "${REQUEST_ID:-}"
+      return 0
+    fi
     {
       printf "ACTION=OPEN\n"
       printf "REQUEST_ID=%s\n" "${REQUEST_ID:-}"
@@ -855,10 +872,12 @@ cleanup() {
 }
 
 install_cron() {
+  cron_dir="$(dirname "$CRON_FILE")"
+  [ -d "$cron_dir" ] || return 0
   {
     printf "*/5 * * * * root /usr/local/bin/warren-remote cleanup >/dev/null 2>&1\n"
-  } >/etc/cron.d/warren-remote
-  chmod 644 /etc/cron.d/warren-remote 2>/dev/null || true
+  } >"$CRON_FILE"
+  chmod 644 "$CRON_FILE" 2>/dev/null || true
 }
 
 cmd="${1:-}"

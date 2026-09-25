@@ -79,7 +79,7 @@ install_warren_libs() {
   target_dir="/usr/lib/warren/lib"
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
-  for lib in common.sh versions.sh ui.sh state.sh basic.sh podkop.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
+  for lib in common.sh versions.sh ui.sh state.sh basic.sh podkop.sh watchdog.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh; do
     target_path="$target_dir/$lib"
     if source_path="$(luci_persistent_source "lib/$lib")"; then
       if [ "$source_path" != "$target_path" ]; then
@@ -88,7 +88,8 @@ install_warren_libs() {
     elif [ -r "$SCRIPT_DIR/lib/$lib" ]; then
       cp "$SCRIPT_DIR/lib/$lib" "$target_path" || fail "Не удалось установить библиотеку: $lib"
     else
-      wget -qO "$target_path" "$WARREN_LIB_BASE_URL/$lib" || fail "Не удалось скачать библиотеку: $lib"
+      lib_sha="$(warren_payload_sha "lib/$lib")"
+      warren_wget_retry "$WARREN_LIB_BASE_URL/$lib" "$target_path" "$lib_sha" "lib/$lib"
     fi
   done
 }
@@ -106,7 +107,8 @@ install_warren_assets() {
     elif [ -r "$SCRIPT_DIR/assets/$asset" ]; then
       cp "$SCRIPT_DIR/assets/$asset" "$target_path" || fail "Не удалось установить ассет: $asset"
     else
-      wget -qO "$target_path" "$WARREN_ASSET_BASE_URL/$asset" || fail "Не удалось скачать ассет: $asset"
+      asset_sha="$(warren_payload_sha "assets/$asset")"
+      warren_wget_retry "$WARREN_ASSET_BASE_URL/$asset" "$target_path" "$asset_sha" "assets/$asset"
     fi
   done
 }
@@ -117,8 +119,12 @@ install_warren_version_file() {
 
   if [ -r "$SCRIPT_DIR/VERSION" ]; then
     cp "$SCRIPT_DIR/VERSION" "$target" || fail "Не удалось установить VERSION"
+  elif [ -r "$(warren_persistent_version_path)" ]; then
+    [ "$(warren_persistent_version_path)" = "$target" ] ||
+      cp "$(warren_persistent_version_path)" "$target" ||
+      fail "Не удалось установить VERSION"
   else
-    wget -qO "$target" "$WARREN_RAW_BASE_URL/VERSION" || fail "Не удалось скачать VERSION"
+    warren_wget_retry "$WARREN_RAW_BASE_URL/VERSION" "$target" "" "Warren VERSION"
   fi
   chmod 644 "$target" 2>/dev/null || true
 }
@@ -181,7 +187,8 @@ install_warren_luci_asset() {
   elif [ -r "$SCRIPT_DIR/$source_path" ]; then
     cp "$SCRIPT_DIR/$source_path" "$target_path" || fail "Не удалось установить $target_path"
   else
-    wget -qO "$target_path" "$WARREN_RAW_BASE_URL/$raw_path" || fail "Не удалось скачать $target_path"
+    payload_sha="$(warren_payload_sha "$raw_path")"
+    warren_wget_retry "$WARREN_RAW_BASE_URL/$raw_path" "$target_path" "$payload_sha" "$raw_path"
   fi
   chmod "$mode" "$target_path" 2>/dev/null || true
 }

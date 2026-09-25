@@ -6,7 +6,109 @@ podkop_existing_private_source_interfaces() {
   uci -q get podkop.settings.source_network_interfaces 2>/dev/null | tr ' ' '\n' | grep -E '^(wg0|awg0)$' || true
 }
 
+podkop_is_installed() {
+  [ -x "${PODKOP_INIT_SCRIPT:-/etc/init.d/podkop}" ] || command -v podkop >/dev/null 2>&1
+}
+
+podkop_init_running() {
+  _pir_init="${PODKOP_INIT_SCRIPT:-/etc/init.d/podkop}"
+  [ -x "$_pir_init" ] && "$_pir_init" status >/dev/null 2>&1
+}
+
+podkop_engine_running() {
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -x sing-box >/dev/null 2>&1 ||
+      pgrep -f '(^|/)(sing-box)([[:space:]]|$)' >/dev/null 2>&1 ||
+      pgrep -x xray >/dev/null 2>&1 ||
+      pgrep -f '(^|/)(xray)([[:space:]]|$)' >/dev/null 2>&1
+    return $?
+  fi
+
+  ps w 2>/dev/null | grep -Eq '[/](sing-box|xray)([[:space:]]|$)'
+}
+
+podkop_config_ok() {
+  _pco_primary="${PODKOP_CONFIG_PATH:-/etc/sing-box/config.json}"
+  _pco_fallback="${PODKOP_CONFIG_FALLBACK_PATH:-/tmp/etc/sing-box/config.json}"
+
+  if [ -s "$_pco_primary" ]; then
+    if command -v sing-box >/dev/null 2>&1; then
+      ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS=true sing-box check -c "$_pco_primary" >/dev/null 2>&1
+      return $?
+    fi
+    return 0
+  fi
+
+  [ -s "$_pco_fallback" ]
+}
+
+podkop_rules_active() {
+  command -v ip >/dev/null 2>&1 || return 1
+  ip rule show 2>/dev/null | grep -Eqi 'podkop|tproxy|fwmark|0x2023|mark'
+}
+
+podkop_nft_active() {
+  command -v nft >/dev/null 2>&1 || return 1
+  nft list ruleset 2>/dev/null | grep -Eqi 'podkop|sing-box|tproxy|0x2023|dns_redirect|mangle'
+}
+
+podkop_runtime_snapshot() {
+  _prs_init=0
+  _prs_engine=0
+  _prs_config=0
+  _prs_rules=0
+  _prs_nft=0
+  _prs_evidence=0
+  _prs_health=bad
+
+  podkop_init_running && _prs_init=1
+  if podkop_engine_running; then
+    _prs_engine=1
+    _prs_evidence=$((_prs_evidence + 1))
+  fi
+  if podkop_config_ok; then
+    _prs_config=1
+    _prs_evidence=$((_prs_evidence + 1))
+  fi
+  if podkop_rules_active; then
+    _prs_rules=1
+    _prs_evidence=$((_prs_evidence + 1))
+  fi
+  if podkop_nft_active; then
+    _prs_nft=1
+    _prs_evidence=$((_prs_evidence + 1))
+  fi
+
+  if [ "$_prs_init" = "1" ]; then
+    _prs_health=ok
+  elif [ "$_prs_engine" = "1" ] && [ "$_prs_evidence" -ge 3 ]; then
+    _prs_health=warn
+  fi
+
+  printf "health=%s init=%s engine=%s config=%s rules=%s nft=%s evidence=%s\n" \
+    "$_prs_health" "$_prs_init" "$_prs_engine" "$_prs_config" \
+    "$_prs_rules" "$_prs_nft" "$_prs_evidence"
+}
+
+podkop_runtime_field() {
+  printf "%s\n" "$1" | tr ' ' '\n' | sed -n "s/^${2}=//p" | sed -n '1p'
+}
+
+podkop_runtime_healthy() {
+  _prh_snapshot="${1:-$(podkop_runtime_snapshot)}"
+  case "$(podkop_runtime_field "$_prh_snapshot" health)" in
+    ok|warn) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 install_podkop() {
+  if podkop_is_installed; then
+    done_ "Podkop уже установлен"
+    podkop_enable_deprecated_special_outbounds
+    return 0
+  fi
+
   download_file "$PODKOP_INSTALL_URL" /tmp/podkop-install.sh "$PODKOP_INSTALL_SHA256" "PODKOP_INSTALL"
   chmod +x /tmp/podkop-install.sh
 
@@ -24,11 +126,19 @@ install_podkop() {
 
 podkop_enable_deprecated_special_outbounds() {
   [ -x /etc/init.d/podkop ] || return 0
-  grep -q 'ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS' /etc/init.d/podkop 2>/dev/null && return 0
+  # Need both: export (for podkop's own sing-box check calls) and procd_set_param env (for the service process)
+  _has_export=0
+  _has_procd=0
+  grep -q 'export ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS' /etc/init.d/podkop 2>/dev/null && _has_export=1
+  grep -q 'procd_set_param env ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS' /etc/init.d/podkop 2>/dev/null && _has_procd=1
+  [ "$_has_export" = "1" ] && [ "$_has_procd" = "1" ] && return 0
 
   tmp="/tmp/podkop.init.$$"
   awk '
     { print }
+    /^start_service\(\)/ {
+      print "    export ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS=true"
+    }
     /^    procd_open_instance$/ {
       print "    procd_set_param env ENABLE_DEPRECATED_SPECIAL_OUTBOUNDS=true"
     }

@@ -1,6 +1,10 @@
 WARREN_SUPPORTED_OPENWRT_FAMILIES="${WARREN_SUPPORTED_OPENWRT_FAMILIES:-24 25}"
-WARREN_PODKOP_RELEASE_TAG="${WARREN_PODKOP_RELEASE_TAG:-v0.7.19}"
-WARREN_3XUI_PINNED_RELEASE_TAG="${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.1.0}"
+WARREN_OPENWRT_PINNED_RELEASE="${WARREN_OPENWRT_PINNED_RELEASE:-25.12.5}"
+WARREN_OPENWRT_R5S_SYSUPGRADE_GZ_SHA256="${WARREN_OPENWRT_R5S_SYSUPGRADE_GZ_SHA256:-7d02fdc12d1339ce5fece5845c3c45c78f6bb8c92f8318fd993a5198bcfe3f9f}"
+WARREN_PODKOP_RELEASE_TAG="${WARREN_PODKOP_RELEASE_TAG:-0.7.21}"
+WARREN_PODKOP_INSTALL_SHA256="${WARREN_PODKOP_INSTALL_SHA256:-292da42b060f2eea935de80e3dd9ace4bb980a9559afb1af175f4468b7c9263f}"
+WARREN_3XUI_PINNED_RELEASE_TAG="${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.5.0}"
+WARREN_3XUI_INSTALL_SHA256="${WARREN_3XUI_INSTALL_SHA256:-f2f8caa11778d811a037fe84b20ebf5e2547fd665afe6fe16d69f1cd9f3fe88f}"
 WARREN_REMOTE_ADMIN_PROTOCOL_VERSION="${WARREN_REMOTE_ADMIN_PROTOCOL_VERSION:-1}"
 WARREN_LUCI_BUNDLE_VERSION="${WARREN_LUCI_BUNDLE_VERSION:-${WARREN_VERSION:-0.6.2}}"
 
@@ -16,11 +20,26 @@ warren_openwrt_family() {
     24.*) printf "%s" "24"; return 0 ;;
     25.*) printf "%s" "25"; return 0 ;;
   esac
+  major="${rel%%.*}"
+  case "$major" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  if [ "$major" -ge 26 ]; then
+    printf "%s" "unknown/graceful"
+    return 0
+  fi
   return 1
 }
 
 warren_openwrt_family_supported() {
-  warren_openwrt_family "$1" >/dev/null 2>&1
+  case "$(warren_openwrt_family "$1" 2>/dev/null || true)" in
+    24|25) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+warren_openwrt_release_graceful() {
+  [ "$(warren_openwrt_family "$1" 2>/dev/null || true)" = "unknown/graceful" ]
 }
 
 warren_expected_pkg_manager_for_release() {
@@ -28,6 +47,7 @@ warren_expected_pkg_manager_for_release() {
   case "$family" in
     24) printf "%s" "opkg"; return 0 ;;
     25) printf "%s" "apk"; return 0 ;;
+    unknown/graceful) detect_pkg_manager; return $? ;;
   esac
   return 1
 }
@@ -35,10 +55,27 @@ warren_expected_pkg_manager_for_release() {
 warren_check_pkg_manager_matches_openwrt() {
   rel="${1:-$(openwrt_release_version 2>/dev/null || true)}"
   pm="${2:-$(pkg_manager 2>/dev/null || true)}"
-  expected="$(warren_expected_pkg_manager_for_release "$rel" 2>/dev/null || true)"
+  if warren_openwrt_release_graceful "$rel"; then
+    expected="$pm"
+  else
+    expected="$(warren_expected_pkg_manager_for_release "$rel" 2>/dev/null || true)"
+  fi
 
-  [ -n "$expected" ] || fail "Нужен OpenWrt 24.x или 25.x (сейчас: ${rel:-unknown})."
+  [ -n "$expected" ] || fail "Нужен OpenWrt 24.x, 25.x или будущий 26.x+ в graceful mode (сейчас: ${rel:-unknown})."
   [ -n "$pm" ] || fail "Не удалось определить пакетный менеджер OpenWrt."
+  if warren_openwrt_release_graceful "$rel"; then
+    warn "OpenWrt ${rel} ещё не проверен Warren; продолжаю в graceful mode с package manager ${pm}."
+    if [ "${WARREN_ALLOW_UNKNOWN_OPENWRT:-0}" != "1" ] &&
+       [ "${WARREN_LUCI_REQUEST:-0}" != "1" ]; then
+      ask "Продолжить на непроверенном OpenWrt ${rel}? (y/n)" WARREN_UNKNOWN_OPENWRT_CONFIRM "n"
+      case "$WARREN_UNKNOWN_OPENWRT_CONFIRM" in
+        y|Y) ;;
+        *) fail "Запуск на непроверенном OpenWrt отменён." ;;
+      esac
+    fi
+    WARREN_OPENWRT_GRACEFUL=1
+    return 0
+  fi
   [ "$pm" = "$expected" ] || fail "OpenWrt ${rel} должен использовать ${expected}, сейчас найден ${pm}."
 }
 
@@ -52,6 +89,7 @@ warren_podkop_install_url_default() {
 
 warren_versions_apply_defaults() {
   [ -n "${PODKOP_INSTALL_URL:-}" ] || PODKOP_INSTALL_URL="$(warren_podkop_install_url_default)"
+  [ -n "${PODKOP_INSTALL_SHA256:-}" ] || PODKOP_INSTALL_SHA256="$WARREN_PODKOP_INSTALL_SHA256"
   [ -n "${WARREN_3XUI_RELEASE_TAG:-}" ] || WARREN_3XUI_RELEASE_TAG="$WARREN_3XUI_PINNED_RELEASE_TAG"
 }
 
@@ -204,8 +242,9 @@ warren_awg_select_release() {
 warren_version_policy_summary() {
   cat <<EOF
 OpenWrt families: ${WARREN_SUPPORTED_OPENWRT_FAMILIES}
-Podkop installer tag: ${WARREN_PODKOP_RELEASE_TAG}
-3x-ui tag: ${WARREN_3XUI_PINNED_RELEASE_TAG}
+Tested OpenWrt release: ${WARREN_OPENWRT_PINNED_RELEASE}
+Podkop installer tag/SHA256: ${WARREN_PODKOP_RELEASE_TAG} / ${WARREN_PODKOP_INSTALL_SHA256}
+3x-ui tag/SHA256: ${WARREN_3XUI_PINNED_RELEASE_TAG} / ${WARREN_3XUI_INSTALL_SHA256}
 AWG source: ${WARREN_AWG_PACKAGE_SOURCE}
 Remote Admin protocol: ${WARREN_REMOTE_ADMIN_PROTOCOL_VERSION}
 Warren/LuCI bundle: ${WARREN_LUCI_BUNDLE_VERSION}

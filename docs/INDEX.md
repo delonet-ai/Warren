@@ -1,0 +1,144 @@
+# Warren: карта кода
+
+Навигационный слой для разработки. Здесь только «где что лежит и как связано».
+Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#milestones-разработки),
+пользовательский обзор — в [README.md](../README.md), список всех функций — в [SYMBOLS.md](SYMBOLS.md)
+(генерируется `sh tools/gen-index.sh`, свежесть проверяет `tools/check.sh`).
+
+## Слои
+
+```text
+ Mac (dev/admin)                    Router (OpenWrt 24.x opkg / 25.x apk)                   VPS (Debian/Ubuntu)
+ ─────────────────                  ──────────────────────────────────────────              ───────────────────
+ tools/test-e2e.sh ──scp/ssh──▶     bootstrap.sh ─▶ warren.sh (orchestrator)                 3x-ui (pinned v3.5.0)
+ tools/remote-admin/                    │  source lib/*.sh (WARREN_LIB_LIST)                  └ VLESS+Reality inbound
+   warren-remote-control.sh ─ssh─▶      ├─ interactive menu (lib/ui.sh)                      /usr/local/bin/warren-remote
+ tools/wg-vless-chain-                  ├─ LuCI: controller/warren.lua ─▶ warren-luci-run ─▶     (Remote Admin helper)
+   diagnostics.sh                       │         warren --luci-run <mode>                   check-sni.sh (SNI checker)
+                                        └─ generated services (heredoc payloads, см. ниже)
+```
+
+## Точки входа (`warren.sh: main`)
+
+| Вызов | Что делает |
+|---|---|
+| `sh warren.sh` / `warren` | `menu` → `MODE` в `warren.conf` → `run_service_mode` или state-flow |
+| `warren --luci-run <mode>` | режим из LuCI; форма приходит через env, `luci_apply_form_overrides` |
+| `warren --watchdog status\|enable\|disable\|reset\|run-once` | `watchdog_cli` |
+| `warren --apply-qos` | `run_qos_apply_only` (вызывается init-скриптом QoS) |
+| `warren --install-luci` | `install_warren_luci_ui` |
+| `warren remote ...` | exec `tools/remote-admin/warren-remote-control.sh` (Mac-side) |
+
+Порядок в `main`: self-update → разбор CLI → load conf / menu → `run_service_mode` (one-shot, `exit 0`) →
+`run_basic_flow` → `run_podkop_flow` → `run_amnezia_private_flow` → summary.
+
+## Режимы (`MODE`)
+
+Режим живёт в `warren.conf` и переживает reboot. **Список режимов продублирован** в 4 местах:
+`lib/ui.sh: menu` (номер пункта), `warren.sh: run_service_mode`, `warren.sh: mode_is_one_shot_service`
+(инверсия), `menu`-case «сохранить и выйти», плюс кнопки в `luci-app-warren/.../index.htm`.
+
+| Меню | MODE | Тип | Вход | Модуль |
+|---|---|---|---|---|
+| 0 | `auto` | state-flow → 100 | basic + LuCI + VPS/report + podkop + watchdog | warren.sh |
+| 1 | `basic` | state-flow → 75 | `run_basic_flow` | lib/basic.sh |
+| 2 | `initialize` | one-shot | `install_warren_luci_ui` | lib/luci.sh |
+| 3 | `vps` | one-shot | `run_vps_flow` | lib/vps.sh |
+| 4 | `podkop_setup` / `podkop_backup` | state-flow → 95 / one-shot | `run_podkop_flow` / `add_podkop_backup_channel` | lib/podkop.sh |
+| 5 | `add_private` | state-flow → 120 | `run_amnezia_private_flow` | lib/amnezia.sh, lib/amneziawg.sh |
+| 6 | `qos_private` | one-shot | `run_qos_flow` | lib/qos.sh |
+| 7 | `manage_private` | one-shot | `run_amnezia_manage_flow` | lib/amnezia.sh |
+| 8 | `remote_admin` | one-shot | `run_remote_admin_flow` | lib/remote_admin.sh |
+| 9 | `usb_modem` | one-shot, WIP | `run_usb_modem_flow` | lib/usb_modem.sh |
+| 10 | `tg_bot` | one-shot | `run_tg_bot_flow` | lib/tg_bot.sh |
+| 11 | `diagnostics` (+`diagnostics_emergency`) | one-shot | `run_diagnostics_flow` | lib/diagnostics.sh |
+| 12 | `sni_checker` | one-shot | `run_sni_checker_flow` | lib/sni_checker.sh |
+| 13 | `sni_apply` | one-shot | `run_sni_apply_flow` | lib/sni_checker.sh |
+| 14 | `naiveproxy_wip` | placeholder | `run_naiveproxy_wip_flow` | warren.sh |
+| 15 | `shadowsocks_fallback_wip` | placeholder | `run_shadowsocks_fallback_wip_flow` | warren.sh |
+| 16 | `remote_admin_console` | Mac-only | exec warren-remote-control.sh | warren.sh |
+| 99 | `rf_bundle_wip` | placeholder | `run_rf_bundle_wip_flow` | warren.sh |
+| LuCI | `amnezia_client_create/delete`, `remote_admin_config`, `remote_admin_poll_now`, `remote_admin_router_install`, `remote_admin_vps_install`, `watchdog_enable/disable/reset` | one-shot | см. `run_service_mode` | — |
+
+## State machine (`/etc/warren/warren.state`, `lib/state.sh: get_state/set_state`)
+
+| State | Шаг | Где |
+|---|---|---|
+| 10 / 20 / 30 | `check_openwrt` / `check_inet` / `sync_time` | `run_basic_flow` |
+| 35 / 40 | пакеты упали (нет места) / пакеты стоят | `install_full_pkg_list` |
+| 45 / 50 | overlay check / expand-root prep | lib/basic.sh, `expand_root_prep` |
+| 60 | expand-root выполнен, **reboot** | `expand_root_run_and_reboot` |
+| 70 / 75 | повтор пакетов / overlay после reboot — конец `basic` | `run_basic_flow` |
+| 80 | Warren LuCI UI установлен (auto) | `ensure_warren_ui_for_auto` |
+| 85 | proxy-источник подготовлен (auto: VPS или report) | `prepare_auto_proxy_source` |
+| 90 / 95 | Podkop установлен / настроен + watchdog — конец `podkop_setup` | `run_podkop_flow` |
+| 100 | конец `auto` / AWG установлен | `print_auto_final_summary` / lib/amnezia.sh |
+| 110 / 115 / 120 | AWG server / Podkop патч private iface / клиенты — конец `add_private` | lib/amnezia.sh |
+
+Цели режимов — `mode_target_state`. Номера 100 переиспользуются `auto` и `add_private`
+(`run_amnezia_private_flow` сам пересчитывает state по факту: `awg`, `server.key`, UCI proto).
+
+## Данные на роутере
+
+| Путь | Содержимое | Владелец |
+|---|---|---|
+| `/etc/warren/warren.conf` | `KEY='value'`; читается whitelist-парсером без source | lib/state.sh (`warren_assign_config_key`, `save_conf`, `conf_set`) |
+| `/etc/warren/warren.state` | integer state, atomic tmp+mv | lib/state.sh |
+| `/etc/warren/vps/{reports,keys}` | VPS reports (0600, содержат доступы), SSH keys | lib/vps.sh |
+| `/etc/warren/sni-checker/` | кандидаты, отчёты, backups SNI apply | lib/sni_checker.sh |
+| `/etc/warren/warren-tg-bot.conf`, `warren-vless-endpoints` | TG bot config, endpoint store | lib/tg_bot.sh |
+| `/etc/warren/warren-watchdog.{conf,state}` | watchdog | lib/watchdog.sh |
+| `/root/warren/warren.log`, `warren-diagnostics/` | лог (маскирует PASSWORD/TOKEN/SECRET), диагностика | lib/common.sh, lib/diagnostics.sh |
+| `/root/warren/app/` | persistent копия warren.sh + lib + assets | warren.sh (`warren_bootstrap_install_persistent_app`) |
+| `/tmp/warren-runtime.{json,tsv}` | runtime state авторежима | lib/state.sh |
+
+Ключи конфига: единственный источник — `warren_assign_config_key` в `lib/state.sh`; LuCI-форма →
+env — таблица `allowed` в `write_form_env` (`controller/warren.lua`) → `luci_apply_form_overrides` (`warren.sh`).
+
+## Сгенерированные сервисы (heredoc payloads)
+
+~2 700 строк (≈18% кода) — это скрипты, которые модули пишут на роутер/VPS через `cat <<'EOF'`.
+Они исполняются отдельным процессом, **не видят lib/*.sh** и поэтому дублируют логику.
+
+| Модуль | Payload | Куда пишется | ~Строк | Дублирует |
+|---|---|---|---|---|
+| lib/tg_bot.sh | `BOT_EOF` | `/usr/bin/warren-tg-bot` + `/etc/init.d/warren-tg-bot` | 1390 | `amz_*` ≈ lib/amneziawg.sh, QoS remove, VPS report parsing |
+| lib/remote_admin.sh | agent `EOF` | `/usr/bin/warren-remote-agent` + `/etc/init.d/warren-remote-admin` | 380 | `log`, `now_epoch`, `safe_text` |
+| lib/remote_admin.sh | helper `EOF` | VPS `/usr/local/bin/warren-remote` | 430 | повторён в tests/run.sh (fixture) |
+| lib/sni_checker.sh | `EOF` + `PY` | VPS `check-sni.sh` | 360 | — |
+| lib/watchdog.sh | `WATCHDOG_EOF` | `/usr/libexec/warren/warren-watchdog` + init | 180 | health = lib/podkop.sh `podkop_engine_running/rules_active` |
+| lib/qos.sh, lib/luci.sh | init / runner | `/etc/init.d/warren-qos`, `/usr/libexec/warren/warren-luci-run` | <50 | — |
+
+## Целостность и доставка
+
+`VERSION` (версия + `SUMS_SHA256`) → `SUMS.txt` (sha256 каждого payload) → каждый download проверяется
+до `mv` (`warren_download_retry`, `fetch_lib`, `fetch_asset`, self-update, bootstrap). После любого
+изменения runtime-файла: `sh tools/update-sums.sh`. Список payload-файлов живёт в `tools/update-sums.sh: PAYLOADS`
+и частично дублирует `WARREN_LIB_LIST` в `warren.sh`.
+
+## Версии внешних компонентов
+
+Всё в `lib/versions.sh` (`warren_versions_apply_defaults`): Podkop installer `0.7.21` + SHA, 3x-ui `v3.5.0` + SHA,
+AmneziaWG — exact `v${DISTRIB_RELEASE}` из `Slava-Shchipunov/awg-openwrt`, иначе same-family fallback
+(`warren_awg_select_release`). OpenWrt `26+` — graceful mode (`WARREN_ALLOW_UNKNOWN_OPENWRT=1`).
+
+## Проверки
+
+| Команда | Где | Что |
+|---|---|---|
+| `sh tools/check.sh` | Mac/Linux, без сети | `sh -n`, SUMS, SYMBOLS, `tests/run.sh` (49 тестов), сборка upload bundle |
+| `sh tools/build-router-upload.sh [dir]` | Mac | одноразовый bundle для scp на роутер |
+| `sh tools/test-e2e.sh` | Mac + живой R5S + VPS (`.env`) | прошивка, auto, VPS, Remote Admin, watchdog; артефакты в `tools/test-runs/` |
+| `sh tools/wg-vless-chain-diagnostics.sh` | Mac | цепочка WG → OpenWrt → Podkop → VLESS (не встроен в меню) |
+
+## Горячие точки для рефакторинга
+
+1. **Payloads → настоящие файлы.** Вынести heredoc-скрипты в `payload/` (или `libexec/`), класть в SUMS и
+   копировать при установке. Даст `sh -n`/тесты по отдельности и общий `payload/lib-runtime.sh` вместо копий
+   `log`/`now_epoch`/`safe_text`; tg-bot сможет переиспользовать AWG/QoS-функции.
+2. **Реестр режимов.** Одна таблица `mode|menu#|kind|target_state|handler` вместо 4–5 синхронных `case`.
+3. **Единый список payload-файлов** для `WARREN_LIB_LIST`, `update-sums.sh`, `build-router-upload.sh`.
+4. **Podkop health в одном месте** для diagnostics, watchdog и LuCI.
+5. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
+   `warren.sh` (1176: bootstrap+self-update отдельно от orchestrator), `lib/sni_checker.sh` (check vs apply).
+6. **LuCI**: Lua-контроллер (`luci-compat`) и 755-строчный view; при 25.x стоит оценить переход на JS/rpcd.

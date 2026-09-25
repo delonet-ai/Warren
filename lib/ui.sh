@@ -146,6 +146,15 @@ print_progress() {
   say ""
 }
 
+warren_set_var() {
+  var_name="$1"
+  var_value="$2"
+  case "$var_name" in
+    ''|*[!A-Za-z0-9_]*) return 1 ;;
+  esac
+  export "$var_name=$var_value"
+}
+
 ask() {
   prompt="$1"
   var="$2"
@@ -166,7 +175,7 @@ ask() {
   fi
 
   [ -z "$ans" ] && ans="$def"
-  eval "$var=$(quote_sh "$ans")"
+  warren_set_var "$var" "$ans" || fail "ask: не удалось присвоить переменную: $var"
 }
 
 podkop_submenu() {
