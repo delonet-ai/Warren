@@ -85,7 +85,7 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..70\n"
+printf "1..71\n"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -565,6 +565,29 @@ watchdog_recovers_engine() {
     grep -q "^restart$" "$WATCHDOG_RESTARTS"
 }
 assert_success "Podkop Watchdog restarts a missing engine once" watchdog_recovers_engine
+
+watchdog_skips_self_recovered_podkop() {
+  rm -rf "$WATCHDOG_RESTARTS" "$WARREN_WATCHDOG_STATE" "$WATCHDOG_PROC"
+  mkdir -p "$WATCHDOG_PROC"
+  sleep_bin="$TEST_TMP/watchdog-sleep-bin"; mkdir -p "$sleep_bin"
+  # The engine comes back while the watchdog waits RESTART_DELAY.
+  cat > "$sleep_bin/sleep" <<'EOF'
+#!/bin/sh
+mkdir -p "$PODKOP_HEALTH_PROC/4343" && printf "sing-box\n" > "$PODKOP_HEALTH_PROC/4343/comm"
+EOF
+  chmod +x "$sleep_bin/sleep"
+  printf "WARREN_WATCHDOG_RESTART_DELAY=5\n" > "$TEST_TMP/watchdog-delay.conf"
+  PATH="$sleep_bin:$WATCHDOG_TEST_BIN:$PATH" \
+  WARREN_TEST_WATCHDOG_RESTARTS="$WATCHDOG_RESTARTS" \
+  WARREN_WATCHDOG_CONF="$TEST_TMP/watchdog-delay.conf" \
+  WARREN_WATCHDOG_STATE="$WARREN_WATCHDOG_STATE" \
+  WARREN_WATCHDOG_PODKOP_INIT="$WATCHDOG_TEST_BIN/podkop-init" \
+  WARREN_WATCHDOG_HEALTH="$PODKOP_HEALTH_BIN" \
+  PODKOP_HEALTH_PROC="$WATCHDOG_PROC" \
+    "$WARREN_WATCHDOG_BIN" run-once
+  grep -q "^STATUS=healthy$" "$WARREN_WATCHDOG_STATE" && [ ! -e "$WATCHDOG_RESTARTS" ]
+}
+assert_success "Podkop Watchdog does not restart a Podkop that recovered during the delay" watchdog_skips_self_recovered_podkop
 
 watchdog_stops_after_three_failures() {
   rm -rf "$WATCHDOG_HEALTHY" "$WATCHDOG_RESTARTS" "$WATCHDOG_PROC"

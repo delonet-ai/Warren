@@ -121,6 +121,13 @@ run_once() {
 
   restart_delay="$(conf_number WARREN_WATCHDOG_RESTART_DELAY 5)"
   [ "$restart_delay" -eq 0 ] || sleep "$restart_delay"
+  # Podkop restarts itself (setup, list updates): if it came back during the
+  # delay, record it as healthy instead of restarting it again.
+  if podkop_health_reason >/dev/null; then
+    now="$(now_epoch)"
+    write_state healthy "$now" "$last_restart" "$restart_count" "$failure_count" "$backoff_until" "$now" healthy
+    return 0
+  fi
   "$PODKOP_INIT" restart >/dev/null 2>&1 || true
   last_restart="$(now_epoch)"
   restart_count=$((restart_count + 1))

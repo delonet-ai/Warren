@@ -756,7 +756,7 @@ phase_verify_warren() {
   esac
 
   # Podkop runtime: use the same evidence model as Warren diagnostics/LuCI.
-  podkop_snapshot="$(router_ssh ". /tmp/warren-dev/lib/podkop.sh; podkop_runtime_snapshot" 2>/dev/null || true)"
+  podkop_snapshot="$(router_ssh "sh /usr/libexec/warren/podkop-health.sh snapshot" 2>/dev/null || true)"
   podkop_health="$(printf "%s\n" "$podkop_snapshot" | tr ' ' '\n' | sed -n 's/^health=//p' | sed -n '1p')"
   say "  Podkop runtime: ${podkop_snapshot:-health=unknown}"
   if [ "$podkop_health" = "ok" ] || [ "$podkop_health" = "warn" ]; then
