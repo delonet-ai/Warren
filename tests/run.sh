@@ -65,6 +65,8 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/versions.sh"
 # shellcheck disable=SC1091
+. "$PROJECT_DIR/lib/basic.sh"
+# shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/podkop.sh"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/vps.sh"
@@ -73,7 +75,8 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..52\n"
+printf "1..53
+"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -281,6 +284,22 @@ wget_timeout_flags() {
   )
 }
 assert_success "wget gets an inactivity timeout and GNU wget a single try" wget_timeout_flags
+
+inet_waits_for_wan() {
+  (
+    PING_COUNT="$TEST_TMP/ping-count"
+    rm -f "$PING_COUNT"
+    ping() {
+      n="$(cat "$PING_COUNT" 2>/dev/null || printf 0)"; n=$((n + 1))
+      printf "%s\n" "$n" > "$PING_COUNT"
+      [ "$n" -ge 5 ]
+    }
+    sleep() { :; }
+    WARREN_DONE_SLEEP=0
+    check_inet >/dev/null 2>&1 && [ "$(cat "$PING_COUNT")" = "5" ]
+  )
+}
+assert_success "check_inet waits for WAN instead of failing on the first ping" inet_waits_for_wan
 
 retry_rejects_tampered_payload() {
   (

@@ -8,8 +8,20 @@ check_openwrt() {
 }
 
 check_inet() {
-  ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 || fail "Нет базовой связности (ping 1.1.1.1)."
-  done_ "Базовая связность OK"
+  # WAN may still be waiting for DHCP right after boot: poll instead of failing at once.
+  inet_wait="${WARREN_INET_WAIT:-60}"
+  inet_waited=0
+  while :; do
+    if ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 || ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
+      done_ "Базовая связность OK"
+      return 0
+    fi
+    [ "$inet_waited" -lt "$inet_wait" ] ||
+      fail "Нет базовой связности (ping 1.1.1.1 / 8.8.8.8) за ${inet_wait}s."
+    [ "$inet_waited" -gt 0 ] || info "Жду интернет на WAN (до ${inet_wait}s)..."
+    sleep 3
+    inet_waited=$((inet_waited + 3))
+  done
 }
 
 sync_time() {
