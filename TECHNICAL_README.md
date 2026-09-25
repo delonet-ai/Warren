@@ -10,8 +10,10 @@
 
 Поддерживаемые семейства OpenWrt:
 
-- OpenWrt `24.x` — ожидается `opkg`;
-- OpenWrt `25.x` — ожидается `apk`.
+- OpenWrt `25.x` — ожидается `apk`; основная и единственная тестируемая платформа (сейчас `25.12.5`);
+- OpenWrt `24.x` — ожидается `opkg`; код поддержки сохранён, но с 2026-09-25 E2E и live regression на `24.x` не проводятся (`tools/test-e2e.sh` принимает только `--fw 25`).
+
+Обновление прошивки: `kmod-amneziawg` собирается под точное ядро релиза. Новый point-release (например, `25.12.6` с ядром `6.12.108` вместо `6.12.94`) можно брать только после появления соответствующего релиза в `Slava-Shchipunov/awg-openwrt` и прогона E2E; затем поднять `WARREN_OPENWRT_PINNED_RELEASE` в `lib/versions.sh` и положить образ в `tools/os/`.
 
 Patch-версия OpenWrt сама по себе не считается глобальным стоп-фактором. Исключение — компоненты, где версия напрямую связана с ABI, API или протоколом.
 
@@ -382,7 +384,7 @@ set_state() { printf "%s\n" "$1" > "${STATE}.tmp" && mv "${STATE}.tmp" "$STATE";
 
 ### Milestone 4 — OpenWrt Family Broadening
 
-Статус: `implemented`, требуется live regression.
+Статус: `implemented`; live regression только на `25.x` (решение 2026-09-25: `24.x` не тестируется).
 
 Цель milestone — поддержать любой minor-релиз внутри семейств `24.x` и `25.x`, а не только `24.10` и `25.12`. Семейства не расширяются: `26.x+` — отдельная политика (Milestone 18).
 
@@ -647,8 +649,7 @@ Acceptance checks:
 
 Что осталось проверить:
 
-- fresh install на OpenWrt `24.10.x` через `opkg`;
-- fresh install на OpenWrt `25.12.x` через `apk`;
+- fresh install на OpenWrt `25.12.x` через `apk` (`24.10.x` не тестируется);
 - exact AmneziaWG release path;
 - fallback AmneziaWG release path;
 - diagnostics report на живом роутере с Podkop, AmneziaWG и VPS.

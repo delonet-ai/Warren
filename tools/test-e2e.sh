@@ -5,11 +5,12 @@
 #
 # Usage:
 #   sh tools/test-e2e.sh --fw 25 --vps-host 1.2.3.4 --vps-pass secret
-#   sh tools/test-e2e.sh --fw 24 --vps-host 1.2.3.4 --vps-pass secret --vps-port 2222
+#   sh tools/test-e2e.sh --vps-host 1.2.3.4 --vps-pass secret --vps-port 2222
 #   sh tools/test-e2e.sh --skip-flash --skip-chain-diag  # quick re-run
 #
 # Required:
-#   --fw 24|25            OpenWrt family to flash (selects firmware from tools/os/)
+#   --fw 25               OpenWrt family to flash, default 25 (24.x is not tested);
+#                         flashes the pinned release (lib/versions.sh) from tools/os/
 #   --vps-host HOST       VPS IP for Warren auto mode
 #   --vps-pass PASS       VPS root password
 #
@@ -53,7 +54,7 @@ ROUTER_BIND="${ROUTER_BIND:-}"
 VPS_HOST="${VPS_HOST:-}"
 VPS_PORT="${VPS_PORT:-22}"
 VPS_PASS="${VPS_PASS:-}"
-FW_FAMILY="${FW_FAMILY:-}"
+FW_FAMILY="${FW_FAMILY:-25}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
 SKIP_CHAIN_DIAG="${SKIP_CHAIN_DIAG:-0}"
 WG_SERVER="${WG_SERVER:-}"
@@ -289,11 +290,11 @@ if [ -z "${VPS_PORT:-}" ]; then
 fi
 
 # ── validate inputs ───────────────────────────────────────────────────────────
-[ "$SKIP_FLASH" = "1" ] || [ -n "$FW_FAMILY" ] || die "--fw 24|25 обязателен (или --skip-flash)"
 if [ "$SKIP_FLASH" != "1" ]; then
   case "$FW_FAMILY" in
-    24|25) ;;
-    *) die "--fw должен быть 24 или 25, получено: $FW_FAMILY" ;;
+    25) ;;
+    24) die "OpenWrt 24.x больше не тестируется E2E; используй --fw 25" ;;
+    *) die "--fw должен быть 25, получено: $FW_FAMILY" ;;
   esac
 fi
 
@@ -341,9 +342,10 @@ say "═════════════════════════
 phase_flash() {
   step "P1: Flash OpenWrt ${FW_FAMILY}.x firmware"
 
-  fw_file="$(find "$OS_DIR" -maxdepth 1 -name "openwrt-${FW_FAMILY}.*" \
+  pinned_release="$(sed -n 's/^WARREN_OPENWRT_PINNED_RELEASE="\${WARREN_OPENWRT_PINNED_RELEASE:-\(.*\)}"$/\1/p' "$PROJECT_DIR/lib/versions.sh")"
+  fw_file="$(find "$OS_DIR" -maxdepth 1 -name "openwrt-${pinned_release}-*" \
              \( -name "*.img" -o -name "*.img.gz" -o -name "*.bin" \) 2>/dev/null | sort | tail -n1)"
-  [ -n "$fw_file" ] || die "Не найден firmware для семейства ${FW_FAMILY}.x в $OS_DIR"
+  [ -n "$fw_file" ] || die "Не найден firmware закреплённого релиза ${pinned_release:-?} в $OS_DIR"
   say "  Firmware: $fw_file ($(du -h "$fw_file" | cut -f1))"
 
   say "  Загружаю firmware на роутер..."
