@@ -394,7 +394,7 @@ TG-бот, Watchdog, Remote Admin agent/helper, SNI checker и QoS init — об
 
 ### Milestone 4 — OpenWrt Family Broadening
 
-Статус: `implemented`; live regression только на `25.x` (решение 2026-09-25: `24.x` не тестируется).
+Статус: `done` для `25.x` — hardware E2E 2026-09-25 на fresh OpenWrt `25.12.5`: `40 PASS / 0 FAIL`. `24.x` не тестируется (решение 2026-09-25).
 
 Цель milestone — поддержать любой minor-релиз внутри семейств `24.x` и `25.x`, а не только `24.10` и `25.12`. Семейства не расширяются: `26.x+` — отдельная политика (Milestone 18).
 
@@ -643,7 +643,7 @@ Acceptance checks:
 
 ### Milestone 14 — Version Pinning
 
-Статус: `implemented`, требуется live regression.
+Статус: `done` для `25.x` — hardware E2E 2026-09-25: fresh `25.12.5`, exact AWG release, Podkop `0.7.21`, 3x-ui `v3.5.0`, `40 PASS / 0 FAIL`. Fallback path AWG покрыт unit-тестами (same-kernel правило).
 
 Сделано:
 
