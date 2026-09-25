@@ -13,6 +13,7 @@ trap 'rm -rf "$CHECK_TMP"' EXIT HUP INT TERM
 for file in \
   "$PROJECT_DIR/warren.sh" \
   "$PROJECT_DIR/bootstrap.sh" \
+  "$PROJECT_DIR/assets/expand-root.sh" \
   "$PROJECT_DIR"/lib/*.sh \
   "$PROJECT_DIR"/tools/*.sh \
   "$PROJECT_DIR"/tools/remote-admin/*.sh \
@@ -28,6 +29,7 @@ sh "$PROJECT_DIR/tools/build-router-upload.sh" "$CHECK_TMP/router-upload" >/dev/
 
 test -x "$CHECK_TMP/router-upload/warren.sh"
 test -r "$CHECK_TMP/router-upload/lib/versions.sh"
+test -r "$CHECK_TMP/router-upload/assets/expand-root.sh"
 test -r "$CHECK_TMP/router-upload/SUMS.txt"
 test -r "$CHECK_TMP/router-upload/luci-app-warren/luasrc/view/warren/index.htm"
 

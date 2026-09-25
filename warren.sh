@@ -6,7 +6,7 @@
 set -e
 
 TTY="${TTY:-/dev/tty}"
-EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-https://openwrt.org/_export/code/docs/guide-user/advanced/expand_root?codeblock=0}"
+EXPAND_ROOT_URL="${EXPAND_ROOT_URL:-}"
 PODKOP_INSTALL_URL="${PODKOP_INSTALL_URL:-}"
 EXPAND_ROOT_SHA256="${EXPAND_ROOT_SHA256:-}"
 PODKOP_INSTALL_SHA256="${PODKOP_INSTALL_SHA256:-}"
@@ -337,7 +337,7 @@ warren_bootstrap_install_persistent_app() {
     chmod 644 "$lib_dir/$lib" 2>/dev/null || true
   done
 
-  for asset in sni-candidates.txt; do
+  for asset in sni-candidates.txt expand-root.sh; do
     if [ "$force_remote" = "1" ]; then
       warren_install_bootstrap_file "" "$asset_dir/$asset" "$WARREN_ASSET_BASE_URL/$asset" "$force_remote" \
         "$(warren_payload_sha "assets/$asset")" "assets/$asset"
@@ -589,7 +589,11 @@ luci_apply_form_overrides() {
 expand_root_prep() {
   cd /root
   rm -f /root/expand-root.sh 2>/dev/null || true
-  download_file "$EXPAND_ROOT_URL" /root/expand-root.sh "$EXPAND_ROOT_SHA256" "EXPAND_ROOT"
+  if [ -n "$EXPAND_ROOT_URL" ]; then
+    download_file "$EXPAND_ROOT_URL" /root/expand-root.sh "$EXPAND_ROOT_SHA256" "EXPAND_ROOT"
+  else
+    cp "$(fetch_asset expand-root.sh)" /root/expand-root.sh || fail "Не удалось подготовить expand-root.sh"
+  fi
   sh ./expand-root.sh || fail "expand-root prep script завершился с ошибкой"
   [ -f /etc/uci-defaults/70-rootpt-resize ] || fail "Не найден /etc/uci-defaults/70-rootpt-resize после подготовки expand-root."
   chmod +x /etc/uci-defaults/70-rootpt-resize 2>/dev/null || true

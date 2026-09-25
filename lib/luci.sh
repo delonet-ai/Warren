@@ -98,7 +98,7 @@ install_warren_assets() {
   target_dir="/usr/lib/warren/assets"
   mkdir -p "$target_dir" || fail "Не удалось создать $target_dir"
 
-  for asset in sni-candidates.txt; do
+  for asset in sni-candidates.txt expand-root.sh; do
     target_path="$target_dir/$asset"
     if source_path="$(luci_persistent_source "assets/$asset")"; then
       if [ "$source_path" != "$target_path" ]; then

@@ -15,6 +15,7 @@ trap 'rm -f "$SUMS_TMP" "$VERSION_TMP"' EXIT HUP INT TERM
 PAYLOADS="
 warren.sh
 bootstrap.sh
+assets/expand-root.sh
 assets/sni-candidates.txt
 assets/warren-logo.svg
 lib/amnezia.sh

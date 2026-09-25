@@ -32,7 +32,7 @@ mkdir -p \
 
 cp "$PROJECT_DIR/warren.sh" "$PROJECT_DIR/bootstrap.sh" "$PROJECT_DIR/VERSION" "$PROJECT_DIR/SUMS.txt" "$OUTPUT_DIR/"
 cp "$PROJECT_DIR"/lib/*.sh "$OUTPUT_DIR/lib/"
-cp "$PROJECT_DIR/assets/sni-candidates.txt" "$PROJECT_DIR/assets/warren-logo.svg" "$OUTPUT_DIR/assets/"
+cp "$PROJECT_DIR/assets/expand-root.sh" "$PROJECT_DIR/assets/sni-candidates.txt" "$PROJECT_DIR/assets/warren-logo.svg" "$OUTPUT_DIR/assets/"
 cp "$PROJECT_DIR/luci-app-warren/Makefile" "$OUTPUT_DIR/luci-app-warren/"
 cp "$PROJECT_DIR/luci-app-warren/luasrc/controller/warren.lua" \
   "$OUTPUT_DIR/luci-app-warren/luasrc/controller/"
