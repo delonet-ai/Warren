@@ -362,9 +362,9 @@ TG-бот, Watchdog, Remote Admin agent/helper, SNI checker и QoS init — об
 
 `payload/podkop-health.sh` — единственная реализация: `lib/podkop.sh` и watchdog подключают её, LuCI вызывает `snapshot`. Движок везде определяется по `/proc/<pid>/comm` (раньше diagnostics и LuCI использовали `pgrep -x`, который на BusyBox давал false negative), LuCI получил полноценную проверку конфига через `sing-box check`.
 
-**[P2] Remote Admin agent source-ит свой конфиг**
+**[RESOLVED] Remote Admin agent не выполняет свой конфиг**
 
-`payload/warren-remote-agent` читает `/etc/warren/warren-remote-admin.conf` через `.`. Файл пишет сам Warren с правами root, но нужно перевести на whitelist-парсер по образцу `load_conf_if_exists`.
+`payload/warren-remote-agent` разбирает `/etc/warren/warren-remote-admin.conf` построчно: только известные ключи, значения — строки, числовые поля проверяются. Раньше конфиг source-ился без кавычек, и имя роутера с пробелом (например, из LuCI) роняло агент или выполнялось как команда.
 
 ### Совместимость
 

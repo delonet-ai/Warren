@@ -105,7 +105,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## payload/warren-remote-agent
 
-- `now_epoch`, `log`, `safe_text`, `hash_text`, `sha256_text`, `load_config`, `ensure_state_dir`, `endpoint_candidates`, `split_endpoint`, `ssh_base`, `helper_call`, `current_pid`, `pid_is_alive`, `discover_tunnel_pid`, `ports_from_file`, `stop_tunnel`, `write_last_poll`, `tunnel_running`, `start_tunnel`, `report_status`, `poll_once`, `daemon_loop`
+- `now_epoch`, `log`, `safe_text`, `hash_text`, `sha256_text`, `config_value`, `config_number`, `load_config`, `ensure_state_dir`, `endpoint_candidates`, `split_endpoint`, `ssh_base`, `helper_call`, `current_pid`, `pid_is_alive`, `discover_tunnel_pid`, `ports_from_file`, `stop_tunnel`, `write_last_poll`, `tunnel_running`, `start_tunnel`, `report_status`, `poll_once`, `daemon_loop`
 
 ## payload/warren-tg-bot
 
@@ -125,7 +125,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## tests/run.sh
 
-- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `podkop_engine_seen_in_proc`, `registry_handlers_exist`, `registry_menu_unique`, `luci_modes_registered`, `registry_dispatches_service`, `menu_submenu_saves_service_mode`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
+- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `podkop_engine_seen_in_proc`, `registry_handlers_exist`, `registry_menu_unique`, `luci_modes_registered`, `registry_dispatches_service`, `menu_submenu_saves_service_mode`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `remote_agent_config_is_data`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
 
 ## tools/build-router-upload.sh
 

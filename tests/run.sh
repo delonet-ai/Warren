@@ -77,7 +77,7 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..69\n"
+printf "1..70\n"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -485,6 +485,28 @@ assert_success "payload installs byte-identical from payload/" \
   cmp -s "$PROJECT_DIR/payload/warren-qos.init" "$TEST_TMP/payload-install/warren-qos.init"
 assert_failure "missing payload fails instead of writing an empty service" \
   sh -c '. "$1/lib/common.sh"; WARREN_PAYLOAD_DIR="$1/payload"; WARREN_WARN_SLEEP=0; LOG=/dev/null; warren_install_payload no-such-payload "$2/x" >/dev/null 2>&1' _ "$PROJECT_DIR" "$TEST_TMP"
+
+# Remote Admin agent parses its config instead of sourcing it.
+remote_agent_config_is_data() {
+  ra_dir="$TEST_TMP/ra-config"; rm -rf "$ra_dir"; mkdir -p "$ra_dir"
+  {
+    printf "REMOTE_ADMIN_ROUTER_ID=r1\n"
+    printf "REMOTE_ADMIN_ROUTER_NAME=My Router; touch %s/pwned\n" "$ra_dir"
+    printf "REMOTE_ADMIN_ENDPOINTS='203.0.113.10:22'\n"
+    printf "REMOTE_ADMIN_ROUTER_KEY_PATH=%s/key\n" "$ra_dir"
+    printf "REMOTE_ADMIN_LOCAL_SSH_PORT=22x\n"
+    printf "EVIL=\$(touch %s/pwned2)\n" "$ra_dir"
+  } > "$ra_dir/agent.conf"
+  out="$(WARREN_REMOTE_ADMIN_CONFIG="$ra_dir/agent.conf" \
+    WARREN_REMOTE_ADMIN_RUNTIME_DIR="$ra_dir/run" \
+    WARREN_REMOTE_ADMIN_LOG_FILE="$ra_dir/log" \
+    sh "$PROJECT_DIR/payload/warren-remote-agent" status)" &&
+    printf "%s\n" "$out" | grep -qx "ROUTER_NAME=My Router; touch $ra_dir/pwned" &&
+    printf "%s\n" "$out" | grep -qx "ENDPOINTS=203.0.113.10:22" &&
+    printf "%s\n" "$out" | grep -qx "LOCAL_SSH_PORT=2201" &&
+    [ ! -e "$ra_dir/pwned" ] && [ ! -e "$ra_dir/pwned2" ]
+}
+assert_success "Remote Admin agent config values are data, not shell" remote_agent_config_is_data
 
 # Podkop Watchdog generated service and bounded recovery state machine.
 WARREN_WATCHDOG_BIN="$TEST_TMP/warren-watchdog"

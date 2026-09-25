@@ -37,10 +37,45 @@ sha256_text() {
   fi
 }
 
+# Config is KEY=value lines written by Warren or the Mac tool. It is parsed,
+# never sourced: only known keys are assigned and values stay plain strings.
+config_value() {
+  case "$1" in
+    \'*\') value="${1#\'}"; printf "%s" "${value%\'}" ;;
+    \"*\") value="${1#\"}"; printf "%s" "${value%\"}" ;;
+    *) printf "%s" "$1" ;;
+  esac
+}
+
+config_number() {
+  case "$1" in
+    ''|*[!0-9]*) printf "%s" "$2" ;;
+    *) printf "%s" "$1" ;;
+  esac
+}
+
 load_config() {
   [ -r "$CONFIG" ] || return 1
-  # shellcheck disable=SC1090
-  . "$CONFIG"
+  while IFS= read -r line || [ -n "$line" ]; do
+    key="${line%%=*}"
+    [ "$key" != "$line" ] || continue
+    value="$(config_value "${line#*=}")"
+    case "$key" in
+      REMOTE_ADMIN_ROUTER_ID) REMOTE_ADMIN_ROUTER_ID="$value" ;;
+      REMOTE_ADMIN_ROUTER_NAME) REMOTE_ADMIN_ROUTER_NAME="$value" ;;
+      REMOTE_ADMIN_ENDPOINTS) REMOTE_ADMIN_ENDPOINTS="$value" ;;
+      REMOTE_ADMIN_VPS_USER) REMOTE_ADMIN_VPS_USER="$value" ;;
+      REMOTE_ADMIN_POLL_INTERVAL) REMOTE_ADMIN_POLL_INTERVAL="$value" ;;
+      REMOTE_ADMIN_REQUEST_TTL) REMOTE_ADMIN_REQUEST_TTL="$value" ;;
+      REMOTE_ADMIN_LOCAL_SSH_PORT) REMOTE_ADMIN_LOCAL_SSH_PORT="$value" ;;
+      REMOTE_ADMIN_LOCAL_LUCI_PORT) REMOTE_ADMIN_LOCAL_LUCI_PORT="$value" ;;
+      REMOTE_ADMIN_ROUTER_KEY_PATH) REMOTE_ADMIN_ROUTER_KEY_PATH="$value" ;;
+    esac
+  done < "$CONFIG"
+  REMOTE_ADMIN_POLL_INTERVAL="$(config_number "${REMOTE_ADMIN_POLL_INTERVAL:-}" 30)"
+  REMOTE_ADMIN_REQUEST_TTL="$(config_number "${REMOTE_ADMIN_REQUEST_TTL:-}" 900)"
+  REMOTE_ADMIN_LOCAL_SSH_PORT="$(config_number "${REMOTE_ADMIN_LOCAL_SSH_PORT:-}" 2201)"
+  REMOTE_ADMIN_LOCAL_LUCI_PORT="$(config_number "${REMOTE_ADMIN_LOCAL_LUCI_PORT:-}" 8081)"
   [ -n "${REMOTE_ADMIN_ROUTER_ID:-}" ] || return 1
   [ -n "${REMOTE_ADMIN_ROUTER_NAME:-}" ] || REMOTE_ADMIN_ROUTER_NAME="${REMOTE_ADMIN_ROUTER_ID}"
   [ -n "${REMOTE_ADMIN_ENDPOINTS:-}" ] || return 1
