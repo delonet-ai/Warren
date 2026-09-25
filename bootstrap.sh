@@ -32,7 +32,7 @@ bootstrap_fetch() {
       sleep "$delay"
     fi
     rm -f "$out" 2>/dev/null || true
-    wget -qO "$out" "$url" 2>/dev/null && return 0
+    wget -T 20 -qO "$out" "$url" 2>/dev/null && return 0
     attempt=$((attempt + 1))
   done
   return 1

@@ -112,6 +112,17 @@ warren_verify_file_hash() {
   return 0
 }
 
+# wget with an inactivity timeout. GNU wget-ssl (installed by basic) otherwise
+# waits 900s per read and retries 20 times; Warren retries on its own.
+warren_wget() {
+  # Not cached: basic replaces uclient-fetch with wget-ssl mid-run.
+  if wget --version 2>/dev/null | grep -q 'GNU Wget'; then
+    wget -T "${WARREN_WGET_TIMEOUT:-20}" --tries=1 "$@"
+  else
+    wget -T "${WARREN_WGET_TIMEOUT:-20}" "$@"
+  fi
+}
+
 warren_download_retry() {
   _wdr_url="$1"
   _wdr_out="$2"
@@ -128,7 +139,7 @@ warren_download_retry() {
     fi
 
     rm -f "$_wdr_out" 2>/dev/null || true
-    if wget -qO "$_wdr_out" "$_wdr_url" 2>/dev/null; then
+    if warren_wget -qO "$_wdr_out" "$_wdr_url" 2>/dev/null; then
       if [ "${WARREN_SKIP_HASH_CHECK:-0}" = "1" ] || [ -z "$_wdr_expected" ]; then
         return 0
       fi
