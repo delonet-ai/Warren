@@ -16,6 +16,8 @@
 # Optional:
 #   --router IP           Router IP after flash, default 192.168.1.1
 #   --router-port PORT    Router SSH port, default 22
+#   --router-bind IP      Local source address for router SSH (auto: address in router /24);
+#                         needed on macOS when Wi-Fi and USB NIC share a subnet or route
 #   --vps-port PORT       VPS SSH port, default 22
 #   --skip-flash          Skip firmware flash, assume router already up
 #   --resume              Skip flash and preserve existing warren.conf/state
@@ -47,6 +49,7 @@ fi
 ROUTER_IP="${ROUTER_IP:-192.168.1.1}"
 ROUTER_PORT="${ROUTER_PORT:-22}"
 ROUTER_USER="${ROUTER_USER:-root}"
+ROUTER_BIND="${ROUTER_BIND:-}"
 VPS_HOST="${VPS_HOST:-}"
 VPS_PORT="${VPS_PORT:-22}"
 VPS_PASS="${VPS_PASS:-}"
@@ -70,6 +73,7 @@ while [ "$#" -gt 0 ]; do
     --fw)           FW_FAMILY="${2:-}";    shift 2 ;;
     --router)       ROUTER_IP="${2:-}";    shift 2 ;;
     --router-port)  ROUTER_PORT="${2:-22}"; shift 2 ;;
+    --router-bind)  ROUTER_BIND="${2:-}"; shift 2 ;;
     --vps-host)     VPS_HOST="${2:-}";     shift 2 ;;
     --vps-port)     VPS_PORT="${2:-22}";   shift 2 ;;
     --vps-pass)     VPS_PASS="${2:-}";     shift 2 ;;
@@ -85,11 +89,18 @@ while [ "$#" -gt 0 ]; do
     --local-luci-port) REMOTE_LOCAL_LUCI_PORT="${2:-}"; shift 2 ;;
     --remote-wait)  REMOTE_WAIT_SECONDS="${2:-}"; shift 2 ;;
     -h|--help)
-      sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *) printf "Unknown option: %s\n" "$1" >&2; exit 1 ;;
   esac
 done
+
+# ── router source address: on macOS a scoped USB NIC route loses to Wi-Fi ──
+if [ -z "$ROUTER_BIND" ] && command -v ifconfig >/dev/null 2>&1; then
+  router_net="${ROUTER_IP%.*}."
+  ROUTER_BIND="$(ifconfig 2>/dev/null | awk -v net="$router_net" \
+    '$1 == "inet" && index($2, net) == 1 { print $2; exit }')"
+fi
 
 # ── output dir ───────────────────────────────────────────────────────────────
 TS="$(date +'%Y%m%d-%H%M%S')"
@@ -141,6 +152,7 @@ router_ssh() {
   ssh -p "$ROUTER_PORT" \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
+      ${ROUTER_BIND:+-o} ${ROUTER_BIND:+BindAddress=$ROUTER_BIND} \
       -o LogLevel=ERROR \
       -o ConnectTimeout=8 \
       -o BatchMode=yes \
@@ -182,6 +194,7 @@ router_scp() {
   scp -O -P "$ROUTER_PORT" \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
+      ${ROUTER_BIND:+-o} ${ROUTER_BIND:+BindAddress=$ROUTER_BIND} \
       -o LogLevel=ERROR \
       -r "$1" "${ROUTER_USER}@${ROUTER_IP}:$2"
 }
@@ -190,6 +203,7 @@ router_ssh_interactive() {
   ssh -p "$ROUTER_PORT" \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
+      ${ROUTER_BIND:+-o} ${ROUTER_BIND:+BindAddress=$ROUTER_BIND} \
       -o LogLevel=ERROR \
       -t \
       "${ROUTER_USER}@${ROUTER_IP}" "$@"
@@ -203,6 +217,7 @@ wait_for_ssh() {
     if ssh -p "$ROUTER_PORT" \
            -o StrictHostKeyChecking=no \
            -o UserKnownHostsFile=/dev/null \
+           ${ROUTER_BIND:+-o} ${ROUTER_BIND:+BindAddress=$ROUTER_BIND} \
            -o LogLevel=ERROR \
            -o ConnectTimeout=4 \
            -o BatchMode=yes \
@@ -721,6 +736,7 @@ phase_verify_warren() {
     # Copy report to Mac for reference
     scp -O -P "$ROUTER_PORT" \
         -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+        ${ROUTER_BIND:+-o} ${ROUTER_BIND:+BindAddress=$ROUTER_BIND} \
         "${ROUTER_USER}@${ROUTER_IP}:$report" "$OUT_DIR/vps-report.txt" >> "$LOG" 2>&1 || true
   else
     fail "P6: VPS report не найден (configure_vless_reality не завершился?)"
