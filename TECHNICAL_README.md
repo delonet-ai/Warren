@@ -368,9 +368,9 @@ TG-бот, Watchdog, Remote Admin agent/helper, SNI checker и QoS init — об
 
 Все релизы семейства `24.*` используют policy `opkg`, все `25.*` — `apk`. Локальные regression tests покрывают альтернативные minor-релизы; live regression остаётся частью Milestone 4. Для семейств `26.x+` действует отдельная политика Milestone 18.
 
-**[PARTIAL] Список режимов дублируется**
+**[RESOLVED] Реестр режимов**
 
-`mode_is_one_shot_service` уже выводится инверсией state-flow режимов, но режимы по-прежнему перечислены в `menu`, `run_service_mode`, save-case меню и LuCI view. Цель — реестр режимов.
+Все режимы описаны одной таблицей `WARREN_MODES` в `lib/modes.sh`; меню, подменю, диспетчер one-shot режимов, resume targets и проверка режима из LuCI строятся из неё. Неизвестный режим из LuCI теперь явно отклоняется, а не проваливается в basic flow.
 
 ### Инструменты разработки
 

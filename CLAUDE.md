@@ -13,7 +13,8 @@ POSIX `sh` установщик/помощник для OpenWrt (NanoPi R5S/R5C)
   `warren_assign_config_key` (`lib/state.sh`), поля LuCI-формы — в `write_form_env` (`controller/warren.lua`).
 - Новый файл в `lib/`, `assets/` или `payload/`: добавить в `WARREN_LIB_LIST` / `WARREN_ASSET_LIST` /
   `WARREN_PAYLOAD_LIST` (`warren.sh`) — это единственный манифест; `check.sh` ловит пропуски.
-- Новый режим: `menu` (`lib/ui.sh`), `run_service_mode`/`mode_is_one_shot_service` (`warren.sh`), кнопка в LuCI view.
+- Новый режим — одна строка в `WARREN_MODES` (`lib/modes.sh`): меню, диспетчер и resume строятся из неё;
+  кнопка LuCI (`name="mode" value="..."`) должна ссылаться на режим из реестра — это проверяет `tests/run.sh`.
 - Сервисы для роутера/VPS — отдельные файлы в `payload/`, ставятся через `warren_install_payload`;
   они работают отдельным процессом и не видят `lib/*.sh`. Не встраивать скрипты heredoc-ом.
 - Сообщения пользователю — на русском; секреты не логировать (`log` маскирует PASSWORD/TOKEN/SECRET).

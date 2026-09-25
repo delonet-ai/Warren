@@ -22,7 +22,7 @@ WARREN_CLI_ARG2="${2:-}"
 
 # Runtime manifest: the only list of shipped files. Libraries are sourced in this
 # order; tools/update-sums.sh and tools/build-router-upload.sh read these lines.
-WARREN_LIB_LIST="common.sh versions.sh ui.sh state.sh basic.sh podkop.sh watchdog.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh"
+WARREN_LIB_LIST="common.sh versions.sh ui.sh state.sh modes.sh basic.sh podkop.sh watchdog.sh amneziawg.sh vps.sh amnezia.sh qos.sh remote_admin.sh usb_modem.sh tg_bot.sh diagnostics.sh sni_checker.sh luci.sh"
 WARREN_ASSET_LIST="sni-candidates.txt expand-root.sh"
 WARREN_PAYLOAD_LIST="warren-tg-bot warren-tg-bot.init warren-watchdog warren-watchdog.init warren-remote-agent warren-remote-admin.init warren-remote warren-qos.init check-sni.sh sni-apply.py"
 
@@ -610,14 +610,6 @@ expand_root_run_and_reboot() {
   fail "Команда reboot не выполнилась"
 }
 
-mode_is_podkop() {
-  [ "$MODE" = "podkop_setup" ] || [ "$MODE" = "auto" ]
-}
-
-mode_is_private() {
-  [ "$MODE" = "add_private" ]
-}
-
 show_mode_banner() {
   say ""
   case "$MODE" in
@@ -656,23 +648,6 @@ show_mode_banner() {
     rf_bundle_wip)
       say "${YELLOW}INFO${NC}  Здесь будет сценарий установки Warren из локального пакета внутри РФ-сегмента."
       ;;
-  esac
-}
-
-mode_target_state() {
-  case "$MODE" in
-    basic) echo 75 ;;
-    podkop_setup) echo 95 ;;
-    auto) echo 100 ;;
-    add_private) echo 120 ;;
-    *) echo 0 ;;
-  esac
-}
-
-mode_is_one_shot_service() {
-  case "${MODE:-}" in
-    basic|auto|add_private|podkop_setup) return 1 ;;
-    *) return 0 ;;
   esac
 }
 
@@ -1023,41 +998,6 @@ run_remote_admin_console() {
   exec sh "$remote_control"
 }
 
-run_service_mode() {
-  case "$MODE" in
-    initialize) install_warren_luci_ui ;;
-    vps) run_vps_flow ;;
-    podkop_backup) add_podkop_backup_channel ;;
-    sni_checker) run_sni_checker_flow ;;
-    sni_apply) run_sni_apply_flow ;;
-    naiveproxy_wip) run_naiveproxy_wip_flow ;;
-    shadowsocks_fallback_wip) run_shadowsocks_fallback_wip_flow ;;
-    rf_bundle_wip) run_rf_bundle_wip_flow ;;
-    qos_private) run_qos_flow ;;
-    amnezia_client_create) run_amnezia_client_create_flow ;;
-    amnezia_client_delete) run_amnezia_client_delete_flow ;;
-    remote_admin_config) run_remote_admin_config_flow ;;
-    remote_admin_poll_now) remote_admin_poll_now_flow ;;
-    remote_admin_router_install) remote_admin_install_router_agent ;;
-    remote_admin_vps_install) remote_admin_install_vps_helper ;;
-    watchdog_enable) watchdog_enable ;;
-    watchdog_disable) watchdog_disable ;;
-    watchdog_reset) watchdog_reset ;;
-    remote_admin_console) run_remote_admin_console ;;
-    remote_admin) run_remote_admin_flow ;;
-    usb_modem) run_usb_modem_flow ;;
-    tg_bot) run_tg_bot_flow ;;
-    diagnostics) run_diagnostics_flow ;;
-    diagnostics_emergency) DIAG_FORCE_FALLBACK=1 run_diagnostics_flow ;;
-    manage_private) run_amnezia_manage_flow ;;
-    *) return 1 ;;
-  esac
-
-  conf_set MODE ""
-  cleanup_runtime_state
-  exit 0
-}
-
 main() {
   if [ "${WARREN_CLI_ARG1:-}" = "remote" ]; then
     remote_control="${SCRIPT_DIR}/tools/remote-admin/warren-remote-control.sh"
@@ -1119,6 +1059,8 @@ main() {
     WARREN_PREVIOUS_STATE="$(get_state)"
     MODE="$WARREN_REQUESTED_LUCI_MODE"
     WARREN_LUCI_REQUEST=1
+    warren_mode_known "$MODE" && [ "$(warren_mode_kind "$MODE")" != "submenu" ] ||
+      fail "Неизвестный режим Warren: $MODE"
     if [ "$MODE" = "basic" ]; then
       if [ "$WARREN_PREVIOUS_MODE" != "basic" ] || [ "${WARREN_PREVIOUS_STATE:-0}" -ge 75 ]; then
         set_state 0

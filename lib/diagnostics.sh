@@ -630,3 +630,7 @@ run_diagnostics_flow() {
 
   done_ "Диагностика завершена. Лог: $DIAG_LOG"
 }
+
+run_diagnostics_emergency_flow() {
+  DIAG_FORCE_FALLBACK=1 run_diagnostics_flow
+}

@@ -34,9 +34,11 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 
 ## Режимы (`MODE`)
 
-Режим живёт в `warren.conf` и переживает reboot. **Список режимов продублирован** в 4 местах:
-`lib/ui.sh: menu` (номер пункта), `warren.sh: run_service_mode`, `warren.sh: mode_is_one_shot_service`
-(инверсия), `menu`-case «сохранить и выйти», плюс кнопки в `luci-app-warren/.../index.htm`.
+Режим живёт в `warren.conf` и переживает reboot. Единственный список — `WARREN_MODES` в `lib/modes.sh`
+(`mode|menu|kind|target|handler|label`). Из него строятся главное меню и подменю (`lib/ui.sh: menu`,
+`warren_submenu`), `run_service_mode` (вызов handler по имени, без `eval`), `mode_target_state`,
+`mode_is_one_shot_service` и проверка `warren --luci-run <mode>`. Тесты сверяют реестр с функциями и кнопками LuCI.
+Текст-баннеры режимов остаются в `warren.sh: show_mode_banner`.
 
 | Меню | MODE | Тип | Вход | Модуль |
 |---|---|---|---|---|
@@ -51,7 +53,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 | 8 | `remote_admin` | one-shot | `run_remote_admin_flow` | lib/remote_admin.sh |
 | 9 | `usb_modem` | one-shot, WIP | `run_usb_modem_flow` | lib/usb_modem.sh |
 | 10 | `tg_bot` | one-shot | `run_tg_bot_flow` | lib/tg_bot.sh |
-| 11 | `diagnostics` (+`diagnostics_emergency`) | one-shot | `run_diagnostics_flow` | lib/diagnostics.sh |
+| 11 | `diagnostics` (+`diagnostics_emergency`) | one-shot | `run_diagnostics_flow` / `run_diagnostics_emergency_flow` | lib/diagnostics.sh |
 | 12 | `sni_checker` | one-shot | `run_sni_checker_flow` | lib/sni_checker.sh |
 | 13 | `sni_apply` | one-shot | `run_sni_apply_flow` | lib/sni_checker.sh |
 | 14 | `naiveproxy_wip` | placeholder | `run_naiveproxy_wip_flow` | warren.sh |
@@ -140,12 +142,11 @@ AmneziaWG — exact `v${DISTRIB_RELEASE}` из `Slava-Shchipunov/awg-openwrt`, �
 ## Горячие точки для рефакторинга
 
 Сделано: payloads вынесены в `payload/` (Mac-инструмент больше не держит свою копию агента),
-единый манифест файлов, expand-root вендорён в `assets/`.
+единый манифест файлов, expand-root вендорён в `assets/`, реестр режимов `lib/modes.sh`.
 
-1. **Реестр режимов.** Одна таблица `mode|menu#|kind|target_state|handler` вместо 4–5 синхронных `case`.
-2. **Podkop health в одном месте** для diagnostics, watchdog и LuCI (watchdog-payload пока с копией).
-3. **Общий runtime для payload-ов** (`log`, `now_epoch`, `safe_text`) и переиспользование AWG/QoS в tg-bot.
-4. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
+1. **Podkop health в одном месте** для diagnostics, watchdog и LuCI (watchdog-payload пока с копией).
+2. **Общий runtime для payload-ов** (`log`, `now_epoch`, `safe_text`) и переиспользование AWG/QoS в tg-bot.
+3. **Разрезать крупные файлы**: `lib/vps.sh` (1374: SSH-транспорт / 3x-ui API / Reality / reports),
    `warren.sh` (bootstrap+self-update отдельно от orchestrator), `lib/sni_checker.sh` (check vs apply).
-5. **Remote Admin agent** source-ит `/etc/warren/warren-remote-admin.conf` — перевести на whitelist-парсер как M16.
-6. **LuCI**: Lua-контроллер (`luci-compat`) и 755-строчный view; при 25.x стоит оценить переход на JS/rpcd.
+4. **Remote Admin agent** source-ит `/etc/warren/warren-remote-admin.conf` — перевести на whitelist-парсер как M16.
+5. **LuCI**: Lua-контроллер (`luci-compat`) и 755-строчный view; при 25.x стоит оценить переход на JS/rpcd.

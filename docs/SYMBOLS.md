@@ -5,7 +5,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## warren.sh
 
-- `migrate_legacy_file_if_missing`, `migrate_legacy_dir_if_missing`, `warren_die`, `warren_retry_delay`, `warren_sha256_file`, `warren_verify_file_hash`, `warren_wget`, `warren_download_retry`, `warren_manifest_sha`, `warren_version_manifest_sha`, `warren_persistent_lib_dir`, `warren_persistent_asset_dir`, `warren_persistent_payload_dir`, `warren_persistent_version_path`, `warren_persistent_manifest_path`, `warren_launcher_path`, `warren_persistent_script_path`, `warren_local_version_file`, `warren_read_version_from_file`, `warren_local_version`, `warren_install_bootstrap_file`, `warren_prepare_bootstrap_manifest`, `warren_payload_sha`, `warren_bootstrap_install_persistent_app`, `warren_should_check_updates`, `warren_remote_version`, `fetch_lib`, `warren_fetch_file`, `fetch_asset`, `fetch_payload`, `source_lib`, `warren_maybe_offer_update`, `luci_apply_form_overrides`, `expand_root_prep`, `expand_root_run_and_reboot`, `mode_is_podkop`, `mode_is_private`, `show_mode_banner`, `mode_target_state`, `mode_is_one_shot_service`, `auto_require_saved_inputs`, `prepare_auto_proxy_source`, `ensure_warren_ui_for_auto`, `print_component_status_line`, `print_installed_components_summary`, `print_podkop_proxy_summary`, `print_auto_final_summary`, `run_rf_bundle_wip_flow`, `run_naiveproxy_wip_flow`, `run_shadowsocks_fallback_wip_flow`, `should_resume_current_mode`, `run_basic_flow`, `run_podkop_flow`, `run_remote_admin_console`, `run_service_mode`, `main`
+- `migrate_legacy_file_if_missing`, `migrate_legacy_dir_if_missing`, `warren_die`, `warren_retry_delay`, `warren_sha256_file`, `warren_verify_file_hash`, `warren_wget`, `warren_download_retry`, `warren_manifest_sha`, `warren_version_manifest_sha`, `warren_persistent_lib_dir`, `warren_persistent_asset_dir`, `warren_persistent_payload_dir`, `warren_persistent_version_path`, `warren_persistent_manifest_path`, `warren_launcher_path`, `warren_persistent_script_path`, `warren_local_version_file`, `warren_read_version_from_file`, `warren_local_version`, `warren_install_bootstrap_file`, `warren_prepare_bootstrap_manifest`, `warren_payload_sha`, `warren_bootstrap_install_persistent_app`, `warren_should_check_updates`, `warren_remote_version`, `fetch_lib`, `warren_fetch_file`, `fetch_asset`, `fetch_payload`, `source_lib`, `warren_maybe_offer_update`, `luci_apply_form_overrides`, `expand_root_prep`, `expand_root_run_and_reboot`, `show_mode_banner`, `auto_require_saved_inputs`, `prepare_auto_proxy_source`, `ensure_warren_ui_for_auto`, `print_component_status_line`, `print_installed_components_summary`, `print_podkop_proxy_summary`, `print_auto_final_summary`, `run_rf_bundle_wip_flow`, `run_naiveproxy_wip_flow`, `run_shadowsocks_fallback_wip_flow`, `should_resume_current_mode`, `run_basic_flow`, `run_podkop_flow`, `run_remote_admin_console`, `main`
 
 ## bootstrap.sh
 
@@ -29,11 +29,15 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/diagnostics.sh
 
-- `warren_diag_ts`, `warren_diag_log_dir`, `warren_diag_line`, `warren_diag_section`, `warren_diag_cmd`, `warren_diag_ok`, `warren_diag_bad`, `warren_diag_warn`, `warren_diag_has_cmd`, `warren_diag_first_wan_gateway`, `warren_diag_proxy_links`, `warren_diag_parse_proxy_endpoint`, `warren_diag_tcp_check`, `warren_diag_check_ping`, `warren_diag_check_dns`, `warren_diag_check_time`, `warren_diag_check_tcp`, `warren_diag_check_service`, `warren_diag_check_proxy_engine`, `warren_diag_cmd_version`, `warren_diag_check_reality_generation_paths`, `warren_diag_report_version_policy`, `warren_diag_sing_box_running`, `warren_diag_podkop_rule_active`, `warren_diag_podkop_nft_active`, `warren_diag_sing_box_config_ok`, `warren_diag_check_podkop_runtime`, `warren_diag_check_podkop_defaults`, `warren_diag_capture_snapshot`, `warren_diag_apply_dns_fallback`, `warren_diag_restore_dns_settings`, `run_diagnostics_flow`
+- `warren_diag_ts`, `warren_diag_log_dir`, `warren_diag_line`, `warren_diag_section`, `warren_diag_cmd`, `warren_diag_ok`, `warren_diag_bad`, `warren_diag_warn`, `warren_diag_has_cmd`, `warren_diag_first_wan_gateway`, `warren_diag_proxy_links`, `warren_diag_parse_proxy_endpoint`, `warren_diag_tcp_check`, `warren_diag_check_ping`, `warren_diag_check_dns`, `warren_diag_check_time`, `warren_diag_check_tcp`, `warren_diag_check_service`, `warren_diag_check_proxy_engine`, `warren_diag_cmd_version`, `warren_diag_check_reality_generation_paths`, `warren_diag_report_version_policy`, `warren_diag_sing_box_running`, `warren_diag_podkop_rule_active`, `warren_diag_podkop_nft_active`, `warren_diag_sing_box_config_ok`, `warren_diag_check_podkop_runtime`, `warren_diag_check_podkop_defaults`, `warren_diag_capture_snapshot`, `warren_diag_apply_dns_fallback`, `warren_diag_restore_dns_settings`, `run_diagnostics_flow`, `run_diagnostics_emergency_flow`
 
 ## lib/luci.sh
 
 - `luci_install_dir`, `luci_install_prereqs`, `luci_persistent_source`, `install_warren_binary`, `install_warren_libs`, `install_warren_assets`, `install_warren_payloads`, `install_warren_version_file`, `install_warren_luci_asset`, `install_warren_luci_runner`, `install_warren_luci_controller`, `install_warren_luci_view`, `install_warren_luci_menu`, `install_warren_luci_acl`, `verify_warren_luci_ui`, `install_warren_luci_ui`
+
+## lib/modes.sh
+
+- `warren_mode_field`, `warren_mode_known`, `warren_mode_kind`, `warren_mode_by_menu`, `warren_menu_items`, `warren_menu_range`, `mode_target_state`, `mode_is_one_shot_service`, `mode_is_podkop`, `mode_is_private`, `run_service_mode`
 
 ## lib/podkop.sh
 
@@ -61,7 +65,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/ui.sh
 
-- `clear_terminal`, `print_banner`, `progress_stage`, `basic_progress_stage`, `_stage_line`, `print_progress`, `warren_set_var`, `ask`, `podkop_submenu`, `auto_show_requirements`, `auto_select_existing_report`, `auto_collect_proxy_source`, `auto_collect_inputs`, `menu`
+- `clear_terminal`, `print_banner`, `progress_stage`, `basic_progress_stage`, `_stage_line`, `print_progress`, `warren_set_var`, `ask`, `warren_submenu`, `auto_show_requirements`, `auto_select_existing_report`, `auto_collect_proxy_source`, `auto_collect_inputs`, `menu`
 
 ## lib/usb_modem.sh
 
@@ -117,7 +121,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## tests/run.sh
 
-- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
+- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `registry_handlers_exist`, `registry_menu_unique`, `luci_modes_registered`, `registry_dispatches_service`, `menu_submenu_saves_service_mode`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `watchdog_recovers_engine`, `watchdog_stops_after_three_failures`
 
 ## tools/build-router-upload.sh
 

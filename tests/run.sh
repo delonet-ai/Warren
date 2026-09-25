@@ -63,6 +63,8 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/state.sh"
 # shellcheck disable=SC1091
+. "$PROJECT_DIR/lib/modes.sh"
+# shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/versions.sh"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/basic.sh"
@@ -75,7 +77,7 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..56\n"
+printf "1..66\n"
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -222,6 +224,70 @@ remote_idle_poll="$(
     sh "$REMOTE_HELPER_TEST" poll test-router
 )"
 assert_eq "NONE" "$(printf "%s\n" "$remote_idle_poll" | sed -n 's/^ACTION=//p')" "Remote Admin close is consumed exactly once"
+
+# Mode registry: one table drives menu, dispatch and resume targets.
+registry_handlers_exist() {
+  missing=""
+  for h in $(printf "%s\n" "$WARREN_MODES" | awk -F'|' 'NF >= 6 && $5 != "-" { print $5 }'); do
+    grep -q "^${h}() {" "$PROJECT_DIR/warren.sh" "$PROJECT_DIR"/lib/*.sh || missing="$missing $h"
+  done
+  [ -z "$missing" ] || { printf "missing handlers:%s\n" "$missing" >&2; return 1; }
+}
+assert_success "every registry handler is a defined function" registry_handlers_exist
+
+registry_menu_unique() {
+  dup="$(printf "%s\n" "$WARREN_MODES" | awk -F'|' 'NF >= 6 && $2 != "-" { print $2 }' | sort | uniq -d)"
+  [ -z "$dup" ]
+}
+assert_success "menu numbers are unique" registry_menu_unique
+
+luci_modes_registered() {
+  bad=""
+  for m in $(sed -n 's/.*name="mode" value="\([a-z_]*\)".*/\1/p' "$PROJECT_DIR/luci-app-warren/luasrc/view/warren/index.htm" | sort -u); do
+    warren_mode_known "$m" && [ "$(warren_mode_kind "$m")" != "submenu" ] || bad="$bad $m"
+  done
+  [ -z "$bad" ] || { printf "unknown LuCI modes:%s\n" "$bad" >&2; return 1; }
+}
+assert_success "every LuCI mode button maps to a registered mode" luci_modes_registered
+
+assert_eq "0-16, 99" "$(warren_menu_range)" "menu prompt range is derived from the registry"
+assert_eq "podkop_backup" "$(warren_mode_by_menu 4.2)" "submenu item resolves to its mode"
+assert_eq "100 95 0" "$(MODE=auto mode_target_state) $(MODE=podkop_setup mode_target_state) $(MODE=vps mode_target_state)" \
+  "flow modes keep their resume targets"
+assert_success "service mode is one-shot" sh -c '. "$1/lib/modes.sh"; MODE=vps mode_is_one_shot_service' _ "$PROJECT_DIR"
+assert_failure "flow mode is resumable" sh -c '. "$1/lib/modes.sh"; MODE=basic mode_is_one_shot_service' _ "$PROJECT_DIR"
+
+registry_dispatches_service() {
+  (
+    watchdog_reset() { printf "ran" > "$TEST_TMP/dispatch"; }
+    conf_set() { :; }
+    cleanup_runtime_state() { :; }
+    MODE=watchdog_reset
+    run_service_mode
+  )
+  [ "$(cat "$TEST_TMP/dispatch" 2>/dev/null)" = "ran" ] &&
+    ! (MODE=basic; run_service_mode)
+}
+assert_success "run_service_mode calls the registry handler and skips flow modes" registry_dispatches_service
+
+menu_submenu_saves_service_mode() {
+  (
+    CONF="$TEST_TMP/menu.conf"; STATE="$TEST_TMP/menu.state"; LOG=/dev/null
+    rm -f "$CONF"; printf "0\n" > "$STATE"
+    clear_terminal() { :; }
+    print_banner() { :; }
+    say() { :; }
+    ask() {
+      case "$2" in
+        MENU_CHOICE) MENU_CHOICE=4 ;;
+        SUBMENU_CHOICE) SUBMENU_CHOICE=2 ;;
+      esac
+    }
+    menu
+    [ "$MODE" = "podkop_backup" ] && grep -q "^MODE='podkop_backup'$" "$CONF"
+  )
+}
+assert_success "menu -> Podkop submenu -> backup mode is saved" menu_submenu_saves_service_mode
 
 # Network retry and download-integrity behavior.
 RETRY_BIN="$TEST_TMP/retry-bin"

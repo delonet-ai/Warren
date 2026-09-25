@@ -178,25 +178,22 @@ ask() {
   warren_set_var "$var" "$ans" || fail "ask: не удалось присвоить переменную: $var"
 }
 
-podkop_submenu() {
+# Submenu for a registry "submenu" entry: lists its "<item>.N" modes.
+warren_submenu() {
+  submenu_item="$1"
   say ""
-  say "Podkop:"
-  say "1) Стандартная настройка"
-  say "2) Добавить резервный канал"
+  say "$(warren_mode_field "$(warren_mode_by_menu "$submenu_item")" 6):"
+  warren_menu_items "$submenu_item" | while IFS= read -r line; do say "$line"; done
   say "0) Назад"
-  ask "Ввод (0-2)" PODKOP_MENU_CHOICE "1"
+  ask "Ввод" SUBMENU_CHOICE "1"
 
-  case "$PODKOP_MENU_CHOICE" in
-    1) MODE="podkop_setup" ;;
-    2) MODE="podkop_backup" ;;
-    0)
-      menu
-      return 0
-      ;;
-    *)
-      fail "Неверный выбор: $PODKOP_MENU_CHOICE"
-      ;;
-  esac
+  case "$SUBMENU_CHOICE" in ""|*[!0-9]*) fail "Неверный выбор: $SUBMENU_CHOICE" ;; esac
+  if [ "$SUBMENU_CHOICE" = "0" ]; then
+    menu
+    return 0
+  fi
+  MODE="$(warren_mode_by_menu "${submenu_item}.${SUBMENU_CHOICE}")" ||
+    fail "Неверный выбор: $SUBMENU_CHOICE"
 }
 
 auto_show_requirements() {
@@ -345,47 +342,14 @@ menu() {
 
   say ""
   say "Главное меню:"
-  say "0) Полный авторежим"
-  say "1) Базовые настройки"
-  say "2) Добавить UI Warren в роутер"
-  say "3) Настрой мне VPS"
-  say "4) Podkop"
-  say "5) Доустановить Amnezia в Podkop"
-  say "6) QoS для Amnezia"
-  say "7) Управление Amnezia клиентами"
-  say "8) Remote Admin"
-  say "9) USB модем настрой (WIP, Milestone 11)"
-  say "10) Telegram-бот для Podkop"
-  say "11) Диагностика Podkop/VPS"
-  say "12) Проверка SNI-кандидатов Reality"
-  say "13) Применить SNI к VPS/Podkop"
-  say "14) NaiveProxy (WIP, Milestone 12)"
-  say "15) Shadowsocks fallback (WIP, Milestone 9)"
-  say "16) Remote Admin Console (Mac)"
-  say "99) Установить всё из РФ сегмента (WIP, Milestone 10)"
-  ask "Ввод (0-16, 99)" MENU_CHOICE "0"
+  warren_menu_items "" | while IFS= read -r line; do say "$line"; done
+  ask "Ввод ($(warren_menu_range))" MENU_CHOICE "0"
 
-  case "$MENU_CHOICE" in
-    0) MODE="auto" ;;
-    1) MODE="basic" ;;
-    2) MODE="initialize" ;;
-    3) MODE="vps" ;;
-    4) podkop_submenu ;;
-    5) MODE="add_private" ;;
-    6) MODE="qos_private" ;;
-    7) MODE="manage_private" ;;
-    8) MODE="remote_admin" ;;
-    9) MODE="usb_modem" ;;
-    10) MODE="tg_bot" ;;
-    11) MODE="diagnostics" ;;
-    12) MODE="sni_checker" ;;
-    13) MODE="sni_apply" ;;
-    14) MODE="naiveproxy_wip" ;;
-    15) MODE="shadowsocks_fallback_wip" ;;
-    16) MODE="remote_admin_console" ;;
-    99) MODE="rf_bundle_wip" ;;
-    *) fail "Неверный выбор: $MENU_CHOICE" ;;
-  esac
+  case "$MENU_CHOICE" in ""|*[!0-9]*) fail "Неверный выбор: $MENU_CHOICE" ;; esac
+  MODE="$(warren_mode_by_menu "$MENU_CHOICE")" || fail "Неверный выбор: $MENU_CHOICE"
+  if [ "$(warren_mode_kind "$MODE")" = "submenu" ]; then
+    warren_submenu "$MENU_CHOICE"
+  fi
 
   if [ "$MODE" = "basic" ]; then
     if [ "$PRE_MENU_MODE" != "basic" ] || [ "${PRE_MENU_STATE:-0}" -ge 75 ]; then
@@ -402,16 +366,14 @@ menu() {
   VPS_HOST="${VPS_HOST:-}"
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 
-  case "$MODE" in
-    initialize|manage_private|vps|podkop_backup|qos_private|remote_admin|remote_admin_console|usb_modem|tg_bot|diagnostics|sni_checker|sni_apply|rf_bundle_wip|naiveproxy_wip|shadowsocks_fallback_wip)
-      SELECTED_MODE="$MODE"
-      load_conf_if_exists || true
-      MODE="$SELECTED_MODE"
-      conf_set MODE "$MODE"
-      say "${GREEN}DONE${NC}  Режим сохранён в $CONF"
-      return 0
-      ;;
-  esac
+  if [ "$(warren_mode_kind "$MODE")" = "service" ]; then
+    SELECTED_MODE="$MODE"
+    load_conf_if_exists || true
+    MODE="$SELECTED_MODE"
+    conf_set MODE "$MODE"
+    say "${GREEN}DONE${NC}  Режим сохранён в $CONF"
+    return 0
+  fi
 
   VLESS=""
   LIST_RU="1"
