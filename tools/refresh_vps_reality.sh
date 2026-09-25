@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-REPORT_FILE="${REPORT_FILE:-/etc/warren/vps/reports/38.244.205.229.txt}"
+# Default: the newest VPS report on the router; override with REPORT_FILE=...
+REPORT_FILE="${REPORT_FILE:-$(ls -1t /etc/warren/vps/reports/*.txt 2>/dev/null | head -n1)}"
 WARREN_LIB_DIR="${WARREN_LIB_DIR:-/usr/lib/warren/lib}"
 WARREN_BASE_DIR="${WARREN_BASE_DIR:-/etc/warren}"
 WARREN_LOG_DIR="${WARREN_LOG_DIR:-/root/warren}"
@@ -13,8 +14,8 @@ ASSET_CACHE_DIR="${ASSET_CACHE_DIR:-/tmp/warren-assets}"
 AUTO_STATE_JSON="${AUTO_STATE_JSON:-/tmp/warren-runtime.json}"
 AUTO_STATE_STORE="${AUTO_STATE_STORE:-/tmp/warren-runtime.tsv}"
 
-[ -r "$REPORT_FILE" ] || {
-  echo "missing report: $REPORT_FILE" >&2
+[ -n "$REPORT_FILE" ] && [ -r "$REPORT_FILE" ] || {
+  echo "missing report: ${REPORT_FILE:-/etc/warren/vps/reports/*.txt}; set REPORT_FILE=..." >&2
   exit 1
 }
 
