@@ -11,7 +11,8 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
  Mac (dev/admin)                    Router (OpenWrt 25.x apk, pinned 25.12.5)            VPS (Debian/Ubuntu)
  ─────────────────                  ──────────────────────────────────────────              ───────────────────
  tools/test-e2e.sh ──scp/ssh──▶     bootstrap.sh ─▶ warren.sh (orchestrator)                 3x-ui (pinned v3.5.0)
- tools/remote-admin/                    │  source lib/*.sh (WARREN_LIB_LIST)                  └ VLESS+Reality inbound
+ tools/warren-settings.sh ─ssh─▶        │  source lib/*.sh (WARREN_LIB_LIST)                  └ VLESS+Reality inbound
+ tools/remote-admin/                    │
    warren-remote-control.sh ─ssh─▶      ├─ interactive menu (lib/ui.sh)                      /usr/local/bin/warren-remote
  tools/wg-vless-chain-                  ├─ LuCI: controller/warren.lua ─▶ warren-luci-run ─▶     (Remote Admin helper)
    diagnostics.sh                       │         warren --luci-run <mode>                   check-sni.sh (SNI checker)
@@ -28,6 +29,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 | `warren --apply-qos` | `run_qos_apply_only` (вызывается init-скриптом QoS) |
 | `warren --install-luci` | `install_warren_luci_ui` |
 | `warren remote ...` | exec `tools/remote-admin/warren-remote-control.sh` (Mac-side) |
+| `warren settings ...` | exec `tools/warren-settings.sh` (Mac-side: бэкап/restore списков Podkop) |
 
 Порядок в `main`: self-update → разбор CLI → load conf / menu → `run_service_mode` (one-shot, `exit 0`) →
 `run_basic_flow` → `run_podkop_flow` → `run_amnezia_private_flow` → summary.
@@ -59,6 +61,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 | 14 | `naiveproxy_wip` | placeholder | `run_naiveproxy_wip_flow` | warren.sh |
 | 15 | `shadowsocks_fallback_wip` | placeholder | `run_shadowsocks_fallback_wip_flow` | warren.sh |
 | 16 | `remote_admin_console` | Mac-only | exec warren-remote-control.sh | warren.sh |
+| 17 | `settings_save` / `settings_restore` / `settings_list` | one-shot, Mac-only | exec warren-settings.sh | warren.sh |
 | 99 | `rf_bundle_wip` | placeholder | `run_rf_bundle_wip_flow` | warren.sh |
 | LuCI | `amnezia_client_create/delete`, `remote_admin_config`, `remote_admin_poll_now`, `remote_admin_router_install`, `remote_admin_vps_install`, `watchdog_enable/disable/reset` | one-shot | см. `run_service_mode` | — |
 
@@ -93,6 +96,14 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 | `/root/warren/warren.log`, `warren-diagnostics/` | лог (маскирует PASSWORD/TOKEN/SECRET), диагностика | lib/common.sh, lib/diagnostics.sh |
 | `/root/warren/app/` | persistent копия warren.sh + lib + assets | warren.sh (`warren_bootstrap_install_persistent_app`) |
 | `/tmp/warren-runtime.{json,tsv}` | runtime state авторежима | lib/state.sh |
+
+## Данные на Mac
+
+| Путь | Содержимое | Владелец |
+|---|---|---|
+| `~/.config/warren/remote-admin/vps.d/*.conf` | профили VPS для Remote Admin | tools/remote-admin/warren-remote-control.sh |
+| `~/Warren-backups/<stamp>[-name]/` | снапшот списков Podkop: `podkop.uci`, `sections.tsv`, `lists/index.tsv` + `lists/<section>.<option>.txt`, `manifest.txt`, `extra/` (`--all`) | tools/warren-settings.sh |
+| `~/Warren-backups/latest` | симлинк на последний снапшот, снятый вручную (pre-restore его не двигает) | tools/warren-settings.sh |
 
 Ключи конфига: единственный источник — `warren_assign_config_key` в `lib/state.sh`; LuCI-форма →
 env — таблица `allowed` в `write_form_env` (`controller/warren.lua`) → `luci_apply_form_overrides` (`warren.sh`).
@@ -135,10 +146,11 @@ AmneziaWG — exact `v${DISTRIB_RELEASE}` из `Slava-Shchipunov/awg-openwrt`, �
 
 | Команда | Где | Что |
 |---|---|---|
-| `sh tools/check.sh` | Mac/Linux, без сети | синтаксис (sh/bash/python), манифест, SUMS, SYMBOLS, `tests/run.sh` (51 тест), upload bundle |
+| `sh tools/check.sh` | Mac/Linux, без сети | синтаксис (sh/bash/python), манифест, SUMS, SYMBOLS, `tests/run.sh` (93 теста), upload bundle |
 | `sh tools/build-router-upload.sh [dir]` | Mac | одноразовый bundle для scp на роутер |
 | `sh tools/test-e2e.sh` | Mac + живой R5S + VPS (`.env`) | прошивка, auto, VPS, Remote Admin, watchdog; артефакты в `tools/test-runs/` |
 | `sh tools/wg-vless-chain-diagnostics.sh` | Mac | цепочка WG → OpenWrt → Podkop → VLESS (не встроен в меню) |
+| `sh tools/warren-settings.sh diff latest` | Mac + роутер | сравнить списки Podkop на роутере с локальным снапшотом |
 
 ## Горячие точки для рефакторинга
 

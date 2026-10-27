@@ -291,7 +291,7 @@ luci_modes_registered() {
 }
 assert_success "every LuCI mode button maps to a registered mode" luci_modes_registered
 
-assert_eq "0-16, 99" "$(warren_menu_range)" "menu prompt range is derived from the registry"
+assert_eq "0-17, 99" "$(warren_menu_range)" "menu prompt range is derived from the registry"
 assert_eq "podkop_backup" "$(warren_mode_by_menu 4.2)" "submenu item resolves to its mode"
 assert_eq "100 95 0" "$(MODE=auto mode_target_state) $(MODE=podkop_setup mode_target_state) $(MODE=vps mode_target_state)" \
   "flow modes keep their resume targets"
@@ -329,6 +329,115 @@ menu_submenu_saves_service_mode() {
   )
 }
 assert_success "menu -> Podkop submenu -> backup mode is saved" menu_submenu_saves_service_mode
+
+# Mac-side list backup/restore (tools/warren-settings.sh): parse, snapshot, uci batch.
+SETTINGS_DIR="$TEST_TMP/settings"
+mkdir -p "$SETTINGS_DIR"
+cat > "$SETTINGS_DIR/router.uci" <<'SETTINGS_EOF'
+config settings 'settings'
+	option dns_type 'doh'
+	list source_network_interfaces 'br-lan'
+	list routing_excluded_ips '192.168.1.188'
+
+config section 'main'
+	option connection_type 'proxy'
+	option user_domain_list_type 'dynamic'
+	list community_lists 'cloudflare'
+	list user_domains 'github.com'
+	list user_domains 'o'\''reilly.com'
+	list fully_routed_ips '192.168.1.137'
+	list urltest_proxy_links 'vless://secret@1.2.3.4:443'
+
+config section 'Exclusion'
+	option connection_type 'exclusion'
+	list user_domains 'gosuslugi.ru'
+SETTINGS_EOF
+
+cat > "$SETTINGS_DIR/live.uci" <<'SETTINGS_EOF'
+config settings 'settings'
+	option dns_type 'doh'
+
+config section 'main'
+	option connection_type 'proxy'
+	list user_domains 'only-on-router.example'
+SETTINGS_EOF
+
+settings_tool() {
+  WARREN_SETTINGS_LIB_ONLY=1 sh -c '
+    set -eu
+    . "$1/tools/warren-settings.sh"
+    WS_TMP="$2/tmp"
+    mkdir -p "$WS_TMP"
+    shift 2
+    "$@"
+  ' _ "$PROJECT_DIR" "$SETTINGS_DIR" "$@"
+}
+
+settings_build_snapshot() {
+  rm -rf "$SETTINGS_DIR/snap" "$SETTINGS_DIR/tmp"
+  mkdir -p "$SETTINGS_DIR/snap"
+  WARREN_SETTINGS_LIB_ONLY=1 sh -c '
+    set -eu
+    . "$1/tools/warren-settings.sh"
+    WS_TMP="$2/tmp"
+    mkdir -p "$WS_TMP"
+    warren_settings_parse_export < "$2/router.uci" > "$WS_TMP/router.tsv"
+    warren_settings_parse_export < "$2/live.uci" > "$WS_TMP/live.tsv"
+    warren_settings_write_lists "$WS_TMP/router.tsv" "$2/snap"
+  ' _ "$PROJECT_DIR" "$SETTINGS_DIR"
+}
+assert_success "settings backup builds a snapshot from uci export" settings_build_snapshot
+
+assert_eq "list	main	section	user_domains	2" \
+  "$(awk -F'\t' '$1 == "main.user_domains.txt" { print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }' \
+     "$SETTINGS_DIR/snap/lists/index.tsv")" \
+  "user domain list is captured with its section and kind"
+
+assert_eq "192.168.1.188" "$(cat "$SETTINGS_DIR/snap/lists/settings.routing_excluded_ips.txt")" \
+  "podkop bypass IPs are captured"
+
+assert_eq "gosuslugi.ru" "$(cat "$SETTINGS_DIR/snap/lists/Exclusion.user_domains.txt")" \
+  "extra sections (Exclusion) keep their own lists"
+
+assert_eq "o'reilly.com" "$(sed -n '2p' "$SETTINGS_DIR/snap/lists/main.user_domains.txt")" \
+  "quoted values are unescaped on save"
+
+settings_no_secrets_in_snapshot() {
+  ! grep -rq "urltest_proxy_links\|source_network_interfaces" "$SETTINGS_DIR/snap/lists/"
+}
+assert_success "proxy links and Warren-managed interfaces stay out of the list backup" \
+  settings_no_secrets_in_snapshot
+
+settings_commands() {
+  settings_tool warren_settings_restore_commands "$SETTINGS_DIR/snap" "$SETTINGS_DIR/tmp/live.tsv" "$1"
+}
+
+assert_eq "1" "$(settings_commands replace | grep -c "^set podkop.Exclusion=section$")" \
+  "a missing section is created once"
+
+assert_eq "set podkop.Exclusion.connection_type='exclusion'" \
+  "$(settings_commands replace | sed -n '2p')" \
+  "a created section gets its connection_type back"
+
+assert_eq "add_list podkop.main.user_domains='o'\''reilly.com'" \
+  "$(settings_commands replace | grep "reilly")" \
+  "values are re-quoted for uci batch"
+
+assert_eq "0" "$(settings_commands replace | grep -c "only-on-router.example")" \
+  "replace mode drops entries that are only on the router"
+
+assert_eq "1" "$(settings_commands merge | grep -c "only-on-router.example")" \
+  "merge mode keeps entries that are only on the router"
+
+assert_eq "set podkop.main.user_domain_list_type='dynamic'" \
+  "$(settings_commands replace | grep "user_domain_list_type")" \
+  "scalar list-type options are restored with set, not add_list"
+
+settings_plan_reports_diff() {
+  settings_tool warren_settings_plan "$SETTINGS_DIR/snap" "$SETTINGS_DIR/tmp/live.tsv" replace |
+    grep -q "podkop.main.user_domains: .* (+2 / -1)"
+}
+assert_success "restore plan counts additions and removals per option" settings_plan_reports_diff
 
 # Network retry and download-integrity behavior.
 RETRY_BIN="$TEST_TMP/retry-bin"

@@ -26,6 +26,10 @@ sni_apply|13|service|0|run_sni_apply_flow|Применить SNI к VPS/Podkop
 naiveproxy_wip|14|service|0|run_naiveproxy_wip_flow|NaiveProxy (WIP, Milestone 12)
 shadowsocks_fallback_wip|15|service|0|run_shadowsocks_fallback_wip_flow|Shadowsocks fallback (WIP, Milestone 9)
 remote_admin_console|16|service|0|run_remote_admin_console|Remote Admin Console (Mac)
+settings_backup|17|submenu|0|-|Списки Podkop: бэкап на Mac
+settings_save|17.1|service|0|run_settings_save_console|Сохранить списки с роутера на Mac
+settings_restore|17.2|service|0|run_settings_restore_console|Восстановить списки из бэкапа
+settings_list|17.3|service|0|run_settings_list_console|Показать сохранённые бэкапы
 rf_bundle_wip|99|service|0|run_rf_bundle_wip_flow|Установить всё из РФ сегмента (WIP, Milestone 10)
 diagnostics_emergency|-|service|0|run_diagnostics_emergency_flow|Диагностика с DNS-fallback
 amnezia_client_create|-|service|0|run_amnezia_client_create_flow|Создать Amnezia-клиента

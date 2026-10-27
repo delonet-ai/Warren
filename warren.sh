@@ -998,12 +998,38 @@ run_remote_admin_console() {
   exec sh "$remote_control"
 }
 
+# Mac-side list backup/restore: один инструмент, три точки входа из меню.
+warren_settings_console() {
+  settings_tool="${SCRIPT_DIR}/tools/warren-settings.sh"
+  [ -x "$settings_tool" ] || [ -r "$settings_tool" ] || fail "Mac settings tool not found: $settings_tool"
+  exec sh "$settings_tool" "$@"
+}
+
+run_settings_save_console() {
+  warren_settings_console save
+}
+
+run_settings_restore_console() {
+  warren_settings_console restore latest
+}
+
+run_settings_list_console() {
+  warren_settings_console list
+}
+
 main() {
   if [ "${WARREN_CLI_ARG1:-}" = "remote" ]; then
     remote_control="${SCRIPT_DIR}/tools/remote-admin/warren-remote-control.sh"
     [ -x "$remote_control" ] || [ -r "$remote_control" ] || fail "Mac Remote Admin control script not found: $remote_control"
     shift 1
     exec sh "$remote_control" "$@"
+  fi
+
+  if [ "${WARREN_CLI_ARG1:-}" = "settings" ]; then
+    settings_tool="${SCRIPT_DIR}/tools/warren-settings.sh"
+    [ -x "$settings_tool" ] || [ -r "$settings_tool" ] || fail "Mac settings tool not found: $settings_tool"
+    shift 1
+    exec sh "$settings_tool" "$@"
   fi
 
   if [ "${WARREN_CLI_ARG1:-}" = "--watchdog" ]; then
