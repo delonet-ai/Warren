@@ -1799,6 +1799,20 @@ handle_callback() {
   esac
 }
 
+# Поля между первым и последним нельзя оставлять пустыми: IFS=<tab> в ash
+# схлопывает подряд идущие табы, и соседнее поле уезжает на место пустого —
+# именно так callback_data однажды потерялся. Для них placeholder "-".
+updates_tsv_filter() {
+  cat <<'FILTER_EOF'
+.result[] |
+if .callback_query then
+  [.update_id, "callback", (.callback_query.message.chat.id // empty), (.callback_query.id // "-"), "-", (.callback_query.data // "")] | @tsv
+else
+  [.update_id, "message", (.message.chat.id // .edited_message.chat.id // empty), "-", (.message.message_id // .edited_message.message_id // "-"), (.message.text // .edited_message.text // "")] | @tsv
+end
+FILTER_EOF
+}
+
 process_updates() {
   offset="$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)"
   updates="$(curl -fsS "${API}/getUpdates?timeout=25&offset=${offset}" 2>/dev/null)" || {
@@ -1806,16 +1820,11 @@ process_updates() {
     return 0
   }
 
-  printf "%s" "$updates" | jq -r '
-    .result[] |
-    if .callback_query then
-      [.update_id, "callback", (.callback_query.message.chat.id // empty), (.callback_query.id // ""), "", (.callback_query.data // "")] | @tsv
-    else
-      [.update_id, "message", (.message.chat.id // .edited_message.chat.id // empty), "", (.message.message_id // .edited_message.message_id // ""), (.message.text // .edited_message.text // "")] | @tsv
-    end
-  ' 2>/dev/null |
+  printf "%s" "$updates" | jq -r "$(updates_tsv_filter)" 2>/dev/null |
     while IFS='	' read -r update_id kind chat_id callback_id message_id payload; do
       [ -n "$update_id" ] || continue
+      [ "$callback_id" != "-" ] || callback_id=""
+      [ "$message_id" != "-" ] || message_id=""
       next_offset=$((update_id + 1))
       printf "%s\n" "$next_offset" > "$OFFSET_FILE"
 

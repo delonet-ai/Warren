@@ -827,5 +827,50 @@ every_corp_button_has_a_handler() {
 assert_success "every Корп-VPN button has a callback handler in the TG bot" \
   every_corp_button_has_a_handler
 
+# Регрессия: пустое поле в середине TSV съедалось IFS=<tab> в ash, и
+# callback_data приезжала в message_id — все кнопки отвечали "Неизвестная кнопка".
+cat > "$CORP_TMP/updates.json" <<'EOF'
+{"result":[
+ {"update_id":10,"callback_query":{"id":"CB1","data":"corp_menu","message":{"chat":{"id":4242}}}},
+ {"update_id":11,"message":{"message_id":77,"chat":{"id":4242},"text":"wiki.example.com"}}
+]}
+EOF
+
+parse_update_field() {
+  wanted_kind="$1"
+  wanted_field="$2"
+  corp_bot_env "updates_tsv_filter" > "$CORP_TMP/filter.jq"
+  jq -r -f "$CORP_TMP/filter.jq" < "$CORP_TMP/updates.json" |
+    while IFS='	' read -r update_id kind chat_id callback_id message_id payload; do
+      [ "$kind" = "$wanted_kind" ] || continue
+      [ "$callback_id" != "-" ] || callback_id=""
+      [ "$message_id" != "-" ] || message_id=""
+      case "$wanted_field" in
+        callback_id) printf "%s" "$callback_id" ;;
+        message_id)  printf "%s" "$message_id" ;;
+        payload)     printf "%s" "$payload" ;;
+        chat_id)     printf "%s" "$chat_id" ;;
+      esac
+      return 0
+    done
+}
+
+if command -v jq >/dev/null 2>&1; then
+  assert_eq "corp_menu" "$(parse_update_field callback payload)" \
+    "TG bot keeps callback_data in the payload field"
+  assert_eq "CB1" "$(parse_update_field callback callback_id)" \
+    "TG bot keeps the callback id"
+  assert_eq "" "$(parse_update_field callback message_id)" \
+    "TG bot leaves message_id empty for a callback"
+  assert_eq "wiki.example.com" "$(parse_update_field message payload)" \
+    "TG bot keeps message text in the payload field"
+  assert_eq "77" "$(parse_update_field message message_id)" \
+    "TG bot keeps the message id so an OTP message can be deleted"
+  assert_eq "" "$(parse_update_field message callback_id)" \
+    "TG bot leaves callback_id empty for a message"
+else
+  printf "# jq not installed, skipping TG bot update-parsing tests\n"
+fi
+
 printf "\nPassed: %d  Failed: %d\n" "$PASS_COUNT" "$FAIL_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]
