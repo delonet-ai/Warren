@@ -85,7 +85,20 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
 
-printf "1..71\n"
+printf "1..72\n"
+
+# Generate the actual panel payload without SSH; empty minClientVer breaks sing-box.
+reality_payload_accepts_sing_box() (
+  vps_workspace_dir() { printf '%s\n' "$TEST_TMP"; }
+  vps_write_remote_file() { return 0; }
+  CLIENT_COMMENT=test CLIENT_EMAIL=test CLIENT_UUID=11111111-2222-4333-8444-555555555555
+  CLIENT_SUBID=test REALITY_PRIVATE_KEY=test REALITY_PUBLIC_KEY=test
+  SID_PRIMARY=abcd SID_EXTRA_1=01 SID_EXTRA_2=02 SID_EXTRA_3=03
+  SID_EXTRA_4=04 SID_EXTRA_5=05 SID_EXTRA_6=06 SID_EXTRA_7=07
+  create_vless_reality_payload || return 1
+  grep -Fq '\"minClientVer\":\"1.8.1\"' "$TEST_TMP/inbound-vless-reality.json"
+)
+assert_success "Reality payload explicitly accepts sing-box client version" reality_payload_accepts_sing_box
 
 # Version policy and generated dependency URLs.
 assert_eq "24" "$(warren_openwrt_family 24.05.0)" "OpenWrt 24.x maps to family 24"
@@ -108,8 +121,8 @@ PODKOP_INSTALL_SHA256=""
 WARREN_3XUI_RELEASE_TAG=""
 warren_versions_apply_defaults
 assert_eq "$WARREN_PODKOP_INSTALL_SHA256" "$PODKOP_INSTALL_SHA256" "Podkop installer SHA256 is applied by default"
-assert_eq "v3.5.0" "$WARREN_3XUI_RELEASE_TAG" "3x-ui release tag is applied by default"
-assert_eq "f2f8caa11778d811a037fe84b20ebf5e2547fd665afe6fe16d69f1cd9f3fe88f" \
+assert_eq "v3.9.0" "$WARREN_3XUI_RELEASE_TAG" "3x-ui release tag is applied by default"
+assert_eq "18616fe26c8f6c92db6daa2dcd7cd53c5143ee69ecfd26d8ea6dc9b2c78607a6" \
   "$WARREN_3XUI_INSTALL_SHA256" \
   "3x-ui installer SHA256 is pinned"
 
@@ -615,6 +628,95 @@ watchdog_stops_after_three_failures() {
     [ ! -e "$WATCHDOG_RESTARTS" ]
 }
 assert_success "Podkop Watchdog stops after three rapid failures" watchdog_stops_after_three_failures
+
+# --- TG bot: Корп-VPN (vivpn) ------------------------------------------------
+TG_BOT_BIN="$PROJECT_DIR/payload/warren-tg-bot"
+CORP_TMP="$TEST_TMP/corp"
+mkdir -p "$CORP_TMP"
+
+CORP_DNSMASQ="$CORP_TMP/dnsmasq.conf"
+cat > "$CORP_DNSMASQ" <<'EOF'
+# corp-vpn-gateway
+server=/vpn.example.com/8.8.8.8
+# corp-vpn-dns: корп-имена резолвим через DNS, приехавший по туннелю.
+server=/wiki.example.com/10.242.112.11
+server=/wiki.example.com/10.242.112.12
+server=/jira.example.com/10.242.112.11
+rebind-domain-ok=/wiki.example.com/jira.example.com/
+# end corp-vpn-dns
+EOF
+
+# Заглушка vivpn: пишет свои аргументы в файл, печатает цветную строку,
+# как настоящий, и читает stdin — так видно зависание, если бот его не закроет.
+CORP_FAKE_VIVPN="$CORP_TMP/vivpn"
+cat > "$CORP_FAKE_VIVPN" <<'EOF'
+#!/bin/sh
+printf "%s\n" "$*" > "$VIVPN_ARGS_FILE"
+printf '  \033[0;32m✓\033[0m  готово: %s\n' "$*"
+read -r _ignored
+exit "${VIVPN_FAKE_RC:-0}"
+EOF
+chmod +x "$CORP_FAKE_VIVPN"
+
+corp_bot_env() {
+  WARREN_TG_BOT_LIB_ONLY=1 \
+  WARREN_TG_BOT_VIVPN="$CORP_FAKE_VIVPN" \
+  WARREN_TG_BOT_CORP_DNSCONF="$CORP_DNSMASQ" \
+  VIVPN_ARGS_FILE="$CORP_TMP/args" \
+    sh -c '. "$1"; eval "$2"' sh "$TG_BOT_BIN" "$1"
+}
+
+assert_success "TG bot sources cleanly in library-only mode" \
+  env WARREN_TG_BOT_LIB_ONLY=1 sh -c '. "$1"' sh "$TG_BOT_BIN"
+
+assert_eq "wiki.example.com jira.example.com" \
+  "$(corp_bot_env 'corp_dns_names | tr "\n" " " | sed "s/ $//"')" \
+  "TG bot reads corp DNS names from the dnsmasq block only"
+
+assert_eq "  ✓  готово: status" \
+  "$(printf '  \033[0;32m✓\033[0m  готово: status\n' | corp_bot_env 'strip_ansi')" \
+  "TG bot strips ANSI colours out of vivpn output"
+
+corp_run_captures_output_and_code() {
+  out="$(corp_bot_env 'export VIVPN_FAKE_RC=3; corp_run up; printf "rc=%s out=%s" "$?" "$CORP_OUT"')"
+  [ "$out" = "rc=3 out=  ✓  готово: up" ]
+}
+assert_success "TG bot keeps the vivpn exit code and closes its stdin" corp_run_captures_output_and_code
+
+corp_dns_del_uses_the_name_behind_the_index() {
+  corp_bot_env 'corp_dns_del_index 2' >/dev/null 2>&1 || true
+  [ "$(cat "$CORP_TMP/args" 2>/dev/null)" = "dns del jira.example.com" ]
+}
+assert_success "TG bot deletes the corp DNS name that the button index points at" \
+  corp_dns_del_uses_the_name_behind_the_index
+
+corp_dns_add_rejects_a_bare_word() {
+  corp_bot_env 'corp_dns_add_name wiki'
+  [ "$?" -eq 3 ]
+}
+assert_success "TG bot refuses a corp DNS entry that is not a full name" corp_dns_add_rejects_a_bare_word
+
+corp_available_follows_the_vivpn_binary() {
+  corp_bot_env 'corp_available' || return 1
+  WARREN_TG_BOT_LIB_ONLY=1 WARREN_TG_BOT_VIVPN="$CORP_TMP/absent" \
+    sh -c '. "$1"; corp_available' sh "$TG_BOT_BIN" && return 1
+  return 0
+}
+assert_success "TG bot hides Корп-VPN when vivpn is not installed" corp_available_follows_the_vivpn_binary
+
+every_corp_button_has_a_handler() {
+  grep -o 'callback_data:"corp[a-z_]*"' "$TG_BOT_BIN" |
+    sed 's/.*callback_data:"//; s/"//' | sort -u |
+    while IFS= read -r cb; do
+      [ -n "$cb" ] || continue
+      grep -q "^    ${cb})" "$TG_BOT_BIN" || {
+        printf "no handler for callback %s\n" "$cb" >&2
+        exit 1
+      }
+    done
+}
+assert_success "every Корп-VPN button has a callback handler in the TG bot" \
+  every_corp_button_has_a_handler
 
 printf "\nPassed: %d  Failed: %d\n" "$PASS_COUNT" "$FAIL_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

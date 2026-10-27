@@ -106,7 +106,7 @@ env — таблица `allowed` в `write_form_env` (`controller/warren.lua`) �
 | Payload | Ставит | Куда | Примечание |
 |---|---|---|---|
 | `podkop-health.sh` | lib/podkop.sh (`podkop_health_install`) | `/usr/libexec/warren/podkop-health.sh` | единая проверка Podkop: source в lib/podkop.sh и watchdog, `sh … snapshot` из LuCI |
-| `warren-tg-bot`, `.init` | lib/tg_bot.sh | `/usr/bin/warren-tg-bot`, `/etc/init.d/warren-tg-bot` | 1390 строк; `amz_*` дублирует lib/amneziawg.sh |
+| `warren-tg-bot`, `.init` | lib/tg_bot.sh | `/usr/bin/warren-tg-bot`, `/etc/init.d/warren-tg-bot` | `amz_*` дублирует lib/amneziawg.sh; `corp_*` — обёртка над внешним `/usr/bin/vivpn`; `WARREN_TG_BOT_LIB_ONLY=1` подгружает файл без цикла опроса (tests/run.sh) |
 | `warren-watchdog`, `.init` | lib/watchdog.sh | `/usr/libexec/warren/warren-watchdog`, `/etc/init.d/warren-watchdog` | health — через podkop-health.sh |
 | `warren-remote-agent`, `warren-remote-admin.init` | lib/remote_admin.sh, Mac tool | `/usr/bin/warren-remote-agent`, `/etc/init.d/warren-remote-admin` | конфиг разбирается whitelist-парсером |
 | `warren-remote` | lib/remote_admin.sh, Mac tool | VPS `/usr/local/bin/warren-remote` | protocol helper |

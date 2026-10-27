@@ -149,6 +149,8 @@ create_vless_reality_payload() {
   REALITY_FINGERPRINT="chrome"
   REALITY_SPIDERX="/"
   CLIENT_FLOW="xtls-rprx-vision"
+  # Xray 26.7.11 defaults empty minClientVer to 26.3.27; sing-box sends 1.8.1.
+  # Keep an explicit minimum for Podkop Reality clients.
 
   inbound_json_local="$(vps_workspace_dir)/inbound-vless-reality.json"
   inbound_json_remote="/tmp/warren-inbound-vless-reality.json"
@@ -165,7 +167,7 @@ create_vless_reality_payload() {
   "port": ${INBOUND_PORT},
   "protocol": "vless",
   "settings": "{\"clients\":[{\"comment\":\"${CLIENT_COMMENT}\",\"email\":\"${CLIENT_EMAIL}\",\"enable\":true,\"expiryTime\":0,\"flow\":\"${CLIENT_FLOW}\",\"id\":\"${CLIENT_UUID}\",\"limitIp\":0,\"reset\":0,\"subId\":\"${CLIENT_SUBID}\",\"tgId\":0,\"totalGB\":0}],\"decryption\":\"none\",\"encryption\":\"none\"}",
-  "streamSettings": "{\"network\":\"tcp\",\"security\":\"reality\",\"externalProxy\":[],\"realitySettings\":{\"show\":false,\"xver\":0,\"target\":\"${REALITY_TARGET}\",\"serverNames\":[\"${REALITY_SERVER_NAME_1}\",\"${REALITY_SERVER_NAME_2}\"],\"privateKey\":\"${REALITY_PRIVATE_KEY}\",\"minClientVer\":\"\",\"maxClientVer\":\"\",\"maxTimediff\":0,\"shortIds\":[\"${SID_PRIMARY}\",\"${SID_EXTRA_1}\",\"${SID_EXTRA_2}\",\"${SID_EXTRA_3}\",\"${SID_EXTRA_4}\",\"${SID_EXTRA_5}\",\"${SID_EXTRA_6}\",\"${SID_EXTRA_7}\"],\"mldsa65Seed\":\"\",\"settings\":{\"publicKey\":\"${REALITY_PUBLIC_KEY}\",\"fingerprint\":\"${REALITY_FINGERPRINT}\",\"serverName\":\"\",\"spiderX\":\"${REALITY_SPIDERX}\",\"mldsa65Verify\":\"\"}},\"tcpSettings\":{\"acceptProxyProtocol\":false,\"header\":{\"type\":\"none\"}}}",
+  "streamSettings": "{\"network\":\"tcp\",\"security\":\"reality\",\"externalProxy\":[],\"realitySettings\":{\"show\":false,\"xver\":0,\"target\":\"${REALITY_TARGET}\",\"serverNames\":[\"${REALITY_SERVER_NAME_1}\",\"${REALITY_SERVER_NAME_2}\"],\"privateKey\":\"${REALITY_PRIVATE_KEY}\",\"minClientVer\":\"1.8.1\",\"maxClientVer\":\"\",\"maxTimediff\":0,\"shortIds\":[\"${SID_PRIMARY}\",\"${SID_EXTRA_1}\",\"${SID_EXTRA_2}\",\"${SID_EXTRA_3}\",\"${SID_EXTRA_4}\",\"${SID_EXTRA_5}\",\"${SID_EXTRA_6}\",\"${SID_EXTRA_7}\"],\"mldsa65Seed\":\"\",\"settings\":{\"publicKey\":\"${REALITY_PUBLIC_KEY}\",\"fingerprint\":\"${REALITY_FINGERPRINT}\",\"serverName\":\"\",\"spiderX\":\"${REALITY_SPIDERX}\",\"mldsa65Verify\":\"\"}},\"tcpSettings\":{\"acceptProxyProtocol\":false,\"header\":{\"type\":\"none\"}}}",
   "tag": "${INBOUND_TAG}",
   "sniffing": "{\"enabled\":false,\"destOverride\":[\"http\",\"tls\",\"quic\",\"fakedns\"],\"metadataOnly\":false,\"routeOnly\":false}"
 }

@@ -67,7 +67,7 @@ wget -O /tmp/warren.sh "https://raw.githubusercontent.com/delonet-ai/Warren/main
 - `Доустановить Amnezia в Podkop` — добавление приватного доступа через AmneziaWG.
 - `QoS для Amnezia` — профили трафика для AmneziaWG-клиентов.
 - `Управление Amnezia клиентами` — создание, список, config/QR и удаление клиентов.
-- `Telegram-бот для Podkop` — быстрые правки списков, endpoints и клиентов через Telegram.
+- `Telegram-бот для Podkop` — быстрые правки списков, endpoints, клиентов и корп-туннеля через Telegram.
 - `Диагностика Podkop/VPS` — проверка DNS, маршрутов, Podkop, `sing-box`/`xray`, VPS и сетевой связности.
 - `Проверка SNI-кандидатов Reality` — безопасная проверка SNI на VPS без изменения конфигов до подтверждения.
 - `Remote Admin` — удалённый доступ к OpenWrt через VPS и reverse tunnel.
@@ -122,4 +122,4 @@ sh tools/test-e2e.sh --fw 25 --vps-host <ip> --vps-pass <password>
 
 Если VPS уже настроен, `auto` переиспользует 3x-ui и пересоздаёт inbound. E2E не удаляет существующую установку VPS скрыто: fresh reinstall включается только явным флагом.
 
-Для контролируемой проверки нового pinned 3x-ui E2E поддерживает `--reinstall-3xui`: перед удалением `/etc/x-ui` и Warren VPS artifact сохраняются в `/root/warren-backups/`. Текущий проверяемый комплект — OpenWrt/AWG `25.12.5`, Podkop `0.7.21`, 3x-ui `v3.5.0`.
+Для контролируемой проверки нового pinned 3x-ui E2E поддерживает `--reinstall-3xui`: перед удалением `/etc/x-ui` и Warren VPS artifact сохраняются в `/root/warren-backups/`. VPS-комплект проверен 2026-10-07: 3x-ui `v3.9.0` с bundled Xray `26.9.30`, Ubuntu 22.04.5; installer закреплён по SHA256. Проверенный роутерный комплект — OpenWrt/AWG `25.12.5`, Podkop `0.7.21`.

@@ -98,7 +98,7 @@ Warren не пинит все OpenWrt-пакеты. Большинство па�
 
 - `OpenWrt` — аппаратный E2E пинит проверенный образ NanoPi R5S `25.12.5` и его SHA256; rolling `SNAPSHOT` не считается совместимым, пока для его точного ядра нет AWG-пакетов.
 - `Podkop installer` — Warren пинит installer на release `0.7.21` и проверяет SHA256, но не управляет зависимостями Podkop.
-- `3x-ui` — Warren пинит release `v3.5.0` и SHA256 installer, потому что setup зависит от API, путей панели, SQLite/API token и Reality inbound behavior.
+- `3x-ui` — Warren пинит release `v3.9.0` и SHA256 installer, потому что setup зависит от API, путей панели, SQLite/API token и Reality inbound behavior.
 - `AmneziaWG` — Warren использует внешний источник `Slava-Shchipunov/awg-openwrt`, потому что готовых official OpenWrt packages в текущем flow нет.
 - `Warren bundle` — `warren.sh`, `lib/*.sh`, LuCI controller/view/menu/ACL и runner должны быть одной совместимой версии.
 - `Remote Admin bundle` — router agent, VPS helper и Mac control script должны говорить одним protocol version.
@@ -181,6 +181,7 @@ Fallback path:
 - `Редактор Endpoint` — добавление и удаление endpoints.
 - `Статус` — показывает IP-списки и краткое состояние.
 - `Amnezia клиенты` — список, создание, QR/config и удаление AmneziaWG-клиентов.
+- `Корп-VPN` — управление корпоративным туннелем, см. ниже.
 
 Текстовые команды:
 
@@ -194,8 +195,32 @@ Fallback path:
 - `/no_vpn 192.168.1.20` — добавить IP в `Routing Excluded IPs`.
 - `/vpn_only 192.168.1.30` — добавить IP в `Fully Routed IPs`.
 - `/status` — показать короткое состояние.
+- `/corp` — открыть меню Корп-VPN.
+- `/corp_up [код]` — одна попытка подключения к корпсети.
+- `/corp_down` — опустить корп-туннель.
+- `/corp_dns wiki.example.com` — резолвить имя через корп-туннель.
+- `/corp_allow 192.168.1.50` — пустить адрес из LAN в корпсеть.
 
 Если `chat_id` оставить пустым при установке, первый чат, который напишет `/start`, будет автоматически привязан к боту.
+
+### Корп-VPN через бота
+
+Корпоративный туннель (Cisco ASA через `openconnect`) — отдельный модуль со своим CLI `/usr/bin/vivpn`;
+он живёт в репозитории `delonet-ai/delohom-stacks`, Warren его не устанавливает и не чинит. Бот только
+дёргает этот CLI, поэтому режим «одна команда — одна попытка» остаётся на стороне `vivpn`. Если
+`/usr/bin/vivpn` на роутере нет, раздел отвечает, что модуль не установлен, и возвращает в главное меню.
+
+- `Подключить` — всегда через подтверждение: попытка тратит одноразовый второй фактор, а серия отказов
+  блокирует учётную запись AD. Сама попытка — один вызов `vivpn up`, до ~70 секунд.
+- Если seed TOTP на роутере не импортирован, бот просит код сообщением, кладёт его в `/var/run/vivpn.otp`
+  (а не в argv) и удаляет сообщение с кодом из чата. `vivpn` всегда запускается с закрытым stdin, иначе
+  без seed он ушёл бы в `read` и подвесил бота.
+- `Отключить` — `vivpn down`.
+- `Имена через туннель` — список строится из блока `corp-vpn-dns` в `/etc/dnsmasq.conf`, добавление и
+  удаление идут через `vivpn dns add` / `vivpn dns del`, чтобы блок перестраивал он.
+- `Кто ходит в корпсеть` — список `firewall.corp_allow.src_ip`; бот правит его через `uci` и перезагружает
+  firewall. Если правила нет, бот так и говорит.
+- `Проверка` и `Лог` — `vivpn check` и `vivpn log 30`; ANSI-раскраска вырезается, вывод обрезается до 60 строк.
 
 ## Диагностика Podkop/VPS
 
@@ -856,3 +881,12 @@ Acceptance:
 - tests: генератор соблюдает ограничения (`S1+56≠S2`, различные `H`, диапазоны), парсинг параметров из UCI.
 
 Проверка эффекта (вне CI): рукопожатие WG vs AWG-по-новым-дефолтам из реально используемых сетей (мобильные операторы, чужой Wi-Fi).
+
+### Проверка обновления VPS — 2026-10-07
+
+- Fresh reinstall через VPS flow на тестовом VPS из `.env`, Ubuntu 22.04.5 LTS amd64: 3x-ui `3.9.0`, bundled Xray `26.9.30`. Xray upstream помечает этот релиз как prerelease; он входит в стабильный релиз панели.
+- Installer SHA256: `18616fe26c8f6c92db6daa2dcd7cd53c5143ee69ecfd26d8ea6dc9b2c78607a6`; официальный installer проверяет checksum release archive и загружает скрипты из заданного tag.
+- SSH/key exchange, installer, admin setup, panel health/login, Reality inbound, VPS report и Remote Admin helper: успешно. HTTPS через отдельный Xray client к Reality inbound на loopback и с Mac через публичный адрес VPS: HTTP 200 в обоих случаях.
+- Перед переустановкой сохранён backup `/etc/x-ui` и `/root/.warren` в `/root/warren-backups/`.
+- APT upgrade теперь использует `--with-new-pkgs`: обновления с новыми зависимостями проходят без удаления пакетов. На тестовом VPS обновлены netplan, fwupd, sosreport; `dnsmasq-base` остаётся отложенным штатной политикой APT.
+- Системные пакеты остаются на обновляемых репозиториях ОС; версии Ubuntu-пакетов не фиксируются глобально для всех поддерживаемых дистрибутивов. Xray закрепляется составом релиза 3x-ui. Локальные проверки `tools/check.sh`: 71 PASS / 0 FAIL. Полный router/hardware E2E этим VPS-прогоном не проверяется.

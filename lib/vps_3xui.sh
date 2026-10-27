@@ -44,7 +44,7 @@ is_3xui_installed() {
 upgrade_vps_packages() {
   case "$VPS_OS_ID" in
     ubuntu|debian|raspbian|armbian)
-      vps_ssh_timeout 1800 "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade -y && apt-get install -y bash curl ca-certificates coreutils procps openssl dnsutils iproute2'" \
+      vps_ssh_timeout 1800 "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade --with-new-pkgs -y && apt-get install -y bash curl ca-certificates coreutils procps openssl dnsutils iproute2'" \
         || fail "Не удалось обновить пакеты на VPS (apt)"
       ;;
     centos|rhel|almalinux|rocky|fedora|ol)
@@ -73,7 +73,7 @@ upgrade_vps_packages() {
 
 install_3xui() {
   info "Установка 3x-ui может занять некоторое время. Процесс идёт, пожалуйста подождите..."
-  xui_release_tag="${WARREN_3XUI_RELEASE_TAG:-${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.5.0}}"
+  xui_release_tag="${WARREN_3XUI_RELEASE_TAG:-${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.9.0}}"
   xui_installer_sha="${WARREN_3XUI_INSTALL_SHA256:-}"
   [ -n "$xui_installer_sha" ] || fail "Для 3x-ui installer не задан ожидаемый SHA256"
   vps_ssh_timeout 1200 "sh -lc '

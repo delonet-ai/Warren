@@ -15,6 +15,12 @@ AWG_SERVER_NET_PREFIX="${AWG_SERVER_NET_PREFIX:-10.10.10}"
 AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX}.1"
 AWG_LISTEN_PORT="${AWG_LISTEN_PORT:-51820}"
 QOS_STATE_FILE="${QOS_STATE_FILE:-/etc/warren/amnezia-qos.tsv}"
+VIVPN_BIN="${WARREN_TG_BOT_VIVPN:-/usr/bin/vivpn}"
+VIVPN_DEV="${WARREN_TG_BOT_VIVPN_DEV:-vpn-corp}"
+VIVPN_OTP_FILE="${WARREN_TG_BOT_VIVPN_OTP:-/var/run/vivpn.otp}"
+VIVPN_SEED_FILE="${WARREN_TG_BOT_VIVPN_SEED:-/etc/openconnect/totp-vpn-corp.seed}"
+CORP_DNSCONF="${WARREN_TG_BOT_CORP_DNSCONF:-/etc/dnsmasq.conf}"
+CORP_ESC="$(printf '\033')"
 
 log() {
   logger -t warren-tg-bot "$*"
@@ -120,6 +126,15 @@ answer_callback() {
       -d "callback_query_id=${callback_id}" >/dev/null 2>&1 || true
   fi
 }
+# Код второго фактора не должен оставаться в истории чата.
+delete_message() {
+  chat_id="$1"
+  message_id="$2"
+  [ -n "$message_id" ] || return 0
+  curl -fsS -X POST "${API}/deleteMessage" \
+    -d "chat_id=${chat_id}" \
+    -d "message_id=${message_id}" >/dev/null 2>&1 || true
+}
 
 main_keyboard() {
   jq -cn '{
@@ -127,6 +142,7 @@ main_keyboard() {
       [{text:"Добавить в black",callback_data:"black_prompt"},{text:"Добавить в white",callback_data:"white_prompt"}],
       [{text:"IP без VPN",callback_data:"ip:no_vpn"},{text:"IP только с VPN",callback_data:"ip:vpn_only"}],
       [{text:"Amnezia клиенты",callback_data:"amz_menu"}],
+      [{text:"Корп-VPN",callback_data:"corp_menu"}],
       [{text:"Выбор Endpoint",callback_data:"endpoint_choose"}],
       [{text:"Редактор Endpoint",callback_data:"endpoint_editor"}],
       [{text:"Последний VPS",callback_data:"getvps"}],
@@ -826,6 +842,283 @@ add_report_endpoint() {
   add_endpoint "$link"
 }
 
+# ── Корп-VPN (vivpn) ────────────────────────────────────────────────────────
+# Корп-туннель живёт отдельным модулем: openconnect + /usr/bin/vivpn из
+# delohom-stacks. Warren его не ставит и не чинит — бот только дёргает его CLI,
+# поэтому режим «одна команда — одна попытка» остаётся за vivpn.
+
+corp_available() {
+  [ -x "$VIVPN_BIN" ]
+}
+
+corp_require_text() {
+  corp_available && return 0
+  printf "Корп-VPN на роутере не установлен: нет %s.\nЭто отдельный модуль (openconnect + vivpn), Warren его не ставит." "$VIVPN_BIN"
+  return 1
+}
+
+strip_ansi() {
+  sed "s/${CORP_ESC}\[[0-9;]*m//g"
+}
+
+# corp_run <аргументы vivpn>: вывод кладёт в CORP_OUT, возвращает код vivpn.
+# stdin закрыт: без seed vivpn спросил бы код с терминала и завис бы в боте.
+corp_run() {
+  corp_tmp="/tmp/warren-tg-corp.$$"
+  "$VIVPN_BIN" "$@" </dev/null > "$corp_tmp" 2>&1
+  corp_rc="$?"
+  CORP_OUT="$(strip_ansi < "$corp_tmp" | head -n 60)"
+  rm -f "$corp_tmp" 2>/dev/null || true
+  [ -n "$CORP_OUT" ] || CORP_OUT="(пустой вывод vivpn)"
+  return "$corp_rc"
+}
+
+corp_is_up() {
+  command -v ip >/dev/null 2>&1 || return 1
+  ip -4 addr show "$VIVPN_DEV" 2>/dev/null | grep -q 'inet '
+}
+
+corp_has_seed() {
+  [ -s "$VIVPN_SEED_FILE" ]
+}
+
+corp_state_label() {
+  if ! corp_available; then
+    printf "не установлен"
+  elif corp_is_up; then
+    printf "поднят"
+  else
+    printf "опущен"
+  fi
+}
+
+# Имена читаем из блока dnsmasq напрямую: формат описан в самом блоке и стабилен,
+# а разбирать оформленный вывод vivpn было бы хрупко. Запись — только через vivpn.
+corp_dns_names() {
+  sed -n '/^# corp-vpn-dns/,/^# end corp-vpn-dns/p' "$CORP_DNSCONF" 2>/dev/null |
+    sed -n 's|^server=/\([^/]*\)/.*|\1|p' | awk '!seen[$0]++'
+}
+
+corp_dns_count() {
+  corp_dns_names | wc -l | tr -d ' '
+}
+
+corp_allow_values() {
+  uci -q get firewall.corp_allow.src_ip 2>/dev/null | tr ' ' '\n' | sed '/^$/d'
+}
+
+corp_allow_count() {
+  corp_allow_values | wc -l | tr -d ' '
+}
+
+corp_allow_add() {
+  value="$1"
+  valid_ip_or_cidr "$value" || return 3
+  uci -q get firewall.corp_allow >/dev/null 2>&1 || return 4
+  corp_allow_values | grep -Fxq -- "$value" && return 2
+  uci add_list firewall.corp_allow.src_ip="$value" >/dev/null 2>&1 || return 1
+  uci commit firewall >/dev/null 2>&1 || return 1
+  /etc/init.d/firewall reload >/dev/null 2>&1 || true
+  return 0
+}
+
+corp_allow_del() {
+  index="$1"
+  case "$index" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  value="$(corp_allow_values | sed -n "${index}p")"
+  [ -n "$value" ] || return 1
+  uci del_list firewall.corp_allow.src_ip="$value" >/dev/null 2>&1 || return 1
+  uci commit firewall >/dev/null 2>&1 || return 1
+  /etc/init.d/firewall reload >/dev/null 2>&1 || true
+  return 0
+}
+
+corp_menu_keyboard() {
+  if corp_is_up; then
+    toggle_text="Отключить"
+    toggle_data="corp_down"
+  else
+    toggle_text="Подключить"
+    toggle_data="corp_up_ask"
+  fi
+  jq -cn --arg text "$toggle_text" --arg data "$toggle_data" '{
+    inline_keyboard: [
+      [{text:$text,callback_data:$data},{text:"Статус",callback_data:"corp_status"}],
+      [{text:"Имена через туннель",callback_data:"corp_dns"}],
+      [{text:"Кто ходит в корпсеть",callback_data:"corp_allow"}],
+      [{text:"Проверка",callback_data:"corp_check"},{text:"Лог",callback_data:"corp_log"}],
+      [{text:"Главное меню",callback_data:"main"}]
+    ]
+  }'
+}
+
+corp_up_confirm_keyboard() {
+  jq -cn '{
+    inline_keyboard: [
+      [{text:"Да, одна попытка",callback_data:"corp_up_go"}],
+      [{text:"Отмена",callback_data:"corp_menu"}]
+    ]
+  }'
+}
+
+corp_dns_keyboard() {
+  tmp="/tmp/warren-tg-corp-dns.$$"
+  printf '{"inline_keyboard":[[{"text":"Назад","callback_data":"corp_menu"}],[{"text":"Добавить имя","callback_data":"corp_dns_add"}]' > "$tmp"
+  i=1
+  shown=0
+  corp_dns_names | while IFS= read -r dns_name; do
+    [ -n "$dns_name" ] || continue
+    [ "$shown" -lt 18 ] || break
+    printf ',[{"text":%s,"callback_data":"corp_dns_del:%s"}]' "$(jq_string "$dns_name")" "$i" >> "$tmp"
+    i=$((i + 1))
+    shown=$((shown + 1))
+  done
+  printf ']}' >> "$tmp"
+  cat "$tmp"
+  rm -f "$tmp"
+}
+
+corp_allow_keyboard() {
+  tmp="/tmp/warren-tg-corp-allow.$$"
+  printf '{"inline_keyboard":[[{"text":"Назад","callback_data":"corp_menu"}],[{"text":"Добавить адрес","callback_data":"corp_allow_add"}]' > "$tmp"
+  i=1
+  shown=0
+  corp_allow_values | while IFS= read -r allow_ip; do
+    [ -n "$allow_ip" ] || continue
+    [ "$shown" -lt 18 ] || break
+    printf ',[{"text":%s,"callback_data":"corp_allow_del:%s"}]' "$(jq_string "$allow_ip")" "$i" >> "$tmp"
+    i=$((i + 1))
+    shown=$((shown + 1))
+  done
+  printf ']}' >> "$tmp"
+  cat "$tmp"
+  rm -f "$tmp"
+}
+
+corp_dns_text() {
+  count="$(corp_dns_count)"
+  {
+    printf "Имена через корп-туннель\n\n"
+    printf "Эти имена резолвит корп-DNS, приехавший по туннелю. Остальное идёт мимо.\n\n"
+    printf "Всего имён: %s\n" "${count:-0}"
+    if [ "${count:-0}" -gt 18 ]; then
+      printf "В Telegram показаны первые 18 кнопок удаления. Остальные остаются в списке.\n"
+    fi
+    printf "\nНажми имя, чтобы убрать его, или нажми Добавить имя."
+  }
+}
+
+corp_allow_text() {
+  count="$(corp_allow_count)"
+  {
+    printf "Кто ходит в корпсеть\n\n"
+    printf "Адреса из LAN, которым firewall разрешает ходить в корпсеть через туннель.\n\n"
+    printf "Всего адресов: %s\n" "${count:-0}"
+    if [ "${count:-0}" -gt 18 ]; then
+      printf "В Telegram показаны первые 18 кнопок удаления. Остальные остаются в списке.\n"
+    fi
+    printf "\nНажми адрес, чтобы убрать его, или нажми Добавить адрес."
+  }
+}
+
+# Подключение стоит ровно одну попытку второго фактора, а серия отказов
+# блокирует учётную запись AD — поэтому кнопка всегда через подтверждение.
+corp_do_up() {
+  chat_id="$1"
+  code="$2"
+
+  if corp_is_up; then
+    send_keyboard "$chat_id" "Туннель уже поднят — попытка не нужна." "$(corp_menu_keyboard)"
+    return 0
+  fi
+
+  if [ -n "$code" ]; then
+    ( umask 077; printf "%s\n" "$code" > "$VIVPN_OTP_FILE" ) 2>/dev/null || {
+      send_keyboard "$chat_id" "Не смог записать код в ${VIVPN_OTP_FILE}." "$(corp_menu_keyboard)"
+      return 0
+    }
+  elif ! corp_has_seed; then
+    set_pending "$chat_id" corp_otp
+    send_keyboard "$chat_id" "Seed TOTP на роутере не импортирован. Пришли код из аутентификатора одним сообщением — я удалю его из чата сразу после прочтения." "$(back_keyboard)"
+    return 0
+  fi
+
+  send_message "$chat_id" "Подключаюсь к корпсети. Одна попытка, это занимает до 70 секунд."
+  corp_run up
+  rc="$?"
+  rm -f "$VIVPN_OTP_FILE" 2>/dev/null || true
+
+  if [ "$rc" -eq 0 ]; then
+    send_keyboard "$chat_id" "Корп-VPN поднят.\n\n${CORP_OUT}" "$(corp_menu_keyboard)"
+  else
+    send_keyboard "$chat_id" "Попытка не удалась, повторов не будет.\n\n${CORP_OUT}\n\nКаждая попытка — отказ входа в AD, после пяти учётку заблокируют. Сначала посмотри Лог." "$(corp_menu_keyboard)"
+  fi
+}
+
+show_corp_menu() {
+  chat_id="$1"
+  clear_pending "$chat_id"
+  ready_error="$(corp_require_text)" || {
+    send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+    return 0
+  }
+  send_keyboard "$chat_id" "Корп-VPN: $(corp_state_label). Выбери действие." "$(corp_menu_keyboard)"
+}
+
+show_corp_status() {
+  chat_id="$1"
+  ready_error="$(corp_require_text)" || {
+    send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+    return 0
+  }
+  corp_run status || true
+  send_keyboard "$chat_id" "$CORP_OUT" "$(corp_menu_keyboard)"
+}
+
+show_corp_dns() {
+  chat_id="$1"
+  clear_pending "$chat_id"
+  ready_error="$(corp_require_text)" || {
+    send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+    return 0
+  }
+  send_keyboard "$chat_id" "$(corp_dns_text)" "$(corp_dns_keyboard)"
+}
+
+show_corp_allow() {
+  chat_id="$1"
+  clear_pending "$chat_id"
+  ready_error="$(corp_require_text)" || {
+    send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+    return 0
+  }
+  send_keyboard "$chat_id" "$(corp_allow_text)" "$(corp_allow_keyboard)"
+}
+
+# Имя проверяем сами, чтобы не тратить запуск vivpn на мусор; зоны целиком
+# и перестроение блока dnsmasq остаются на стороне vivpn.
+corp_dns_add_name() {
+  name="$(normalize_domain "$1")"
+  valid_domain "$name" || return 3
+  if corp_dns_names | grep -Fxq -- "$name"; then
+    CORP_OUT="$name уже резолвится через туннель."
+    return 2
+  fi
+  corp_run dns add "$name"
+}
+
+corp_dns_del_index() {
+  index="$1"
+  case "$index" in
+    ''|*[!0-9]*) CORP_OUT="Не понял, какое имя удалять."; return 1 ;;
+  esac
+  name="$(corp_dns_names | sed -n "${index}p")"
+  [ -n "$name" ] || { CORP_OUT="Такого имени в списке уже нет."; return 1; }
+  corp_run dns del "$name"
+}
+
 status_text() {
   active_type="$(uci -q get podkop.main.proxy_config_type 2>/dev/null || echo unknown)"
   active_proxy="$(uci -q get podkop.main.proxy_string 2>/dev/null || true)"
@@ -834,8 +1127,8 @@ status_text() {
   endpoints="$(endpoint_count)"
   no_vpn_ips="$(format_ip_list no_vpn)"
   vpn_only_ips="$(format_ip_list vpn_only)"
-  printf "Podkop: %s\nBlack/proxy domains: %s\nWhite/exclusion domains: %s\nEndpoints: %s\nActive endpoint: %s\n\nIP без VPN:\n%s\n\nIP только с VPN:\n%s\n" \
-    "$active_type" "${black_count:-0}" "${white_count:-0}" "${endpoints:-0}" "${active_proxy:-not set}" "$no_vpn_ips" "$vpn_only_ips"
+  printf "Podkop: %s\nBlack/proxy domains: %s\nWhite/exclusion domains: %s\nEndpoints: %s\nActive endpoint: %s\nКорп-VPN: %s\n\nIP без VPN:\n%s\n\nIP только с VPN:\n%s\n" \
+    "$active_type" "${black_count:-0}" "${white_count:-0}" "${endpoints:-0}" "${active_proxy:-not set}" "$(corp_state_label)" "$no_vpn_ips" "$vpn_only_ips"
 }
 
 help_text() {
@@ -856,6 +1149,11 @@ Warren TG bot
 /getvps
 /no_vpn 192.168.1.20
 /vpn_only 192.168.1.30
+/corp - меню Корп-VPN
+/corp_up [код] - одна попытка подключения к корпсети
+/corp_down
+/corp_dns wiki.example.com - резолвить имя через корп-туннель
+/corp_allow 192.168.1.50 - пустить адрес из LAN в корпсеть
 /status
 HELP_EOF
 }
@@ -1019,6 +1317,39 @@ handle_pending_text() {
         send_keyboard "$chat_id" "Не получилось создать клиента. Проверь AmneziaWG на роутере." "$(amz_menu_keyboard)"
       fi
       ;;
+    corp_dns_add)
+      corp_dns_add_name "$text"
+      rc="$?"
+      if [ "$rc" -eq 3 ]; then
+        send_keyboard "$chat_id" "Ожидается полное имя, например wiki.example.com." "$(corp_dns_keyboard)"
+      else
+        send_keyboard "$chat_id" "$CORP_OUT" "$(corp_dns_keyboard)"
+      fi
+      ;;
+    corp_allow_add)
+      corp_allow_add "$text"
+      rc="$?"
+      if [ "$rc" -eq 3 ]; then
+        send_keyboard "$chat_id" "Адрес должен быть в формате 192.168.1.50 или 192.168.1.0/24." "$(corp_allow_keyboard)"
+      elif [ "$rc" -eq 4 ]; then
+        send_keyboard "$chat_id" "Правило firewall.corp_allow на роутере не найдено — это делает модуль корп-VPN, не Warren." "$(corp_menu_keyboard)"
+      elif [ "$rc" -eq 2 ]; then
+        send_keyboard "$chat_id" "Этот адрес уже ходит в корпсеть: ${text}" "$(corp_allow_keyboard)"
+      elif [ "$rc" -eq 0 ]; then
+        send_keyboard "$chat_id" "Пустил в корпсеть: ${text}" "$(corp_allow_keyboard)"
+      else
+        send_keyboard "$chat_id" "Не получилось изменить allowlist. Проверь firewall на роутере." "$(corp_allow_keyboard)"
+      fi
+      ;;
+    corp_otp)
+      delete_message "$chat_id" "$CURRENT_MESSAGE_ID"
+      code="$(printf "%s" "$text" | tr -cd '0-9')"
+      if [ -z "$code" ]; then
+        send_keyboard "$chat_id" "Код должен состоять из цифр." "$(corp_menu_keyboard)"
+        return 0
+      fi
+      corp_do_up "$chat_id" "$code"
+      ;;
     ip_no_vpn)
       add_ip_to_list no_vpn "$text"
       rc="$?"
@@ -1055,6 +1386,7 @@ handle_pending_text() {
 handle_command() {
   chat_id="$1"
   text="$2"
+  CURRENT_MESSAGE_ID="${3:-${CURRENT_MESSAGE_ID:-}}"
 
   handle_pending_text "$chat_id" "$text" && return 0
 
@@ -1134,6 +1466,49 @@ handle_command() {
         return 0
       }
       set_pending "$chat_id" ip_vpn_only
+      handle_pending_text "$chat_id" "$arg"
+      ;;
+    /corp)
+      show_corp_menu "$chat_id"
+      ;;
+    /corp_up)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      [ -z "$arg" ] || delete_message "$chat_id" "$CURRENT_MESSAGE_ID"
+      corp_do_up "$chat_id" "$(printf "%s" "$arg" | tr -cd '0-9')"
+      ;;
+    /corp_down)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      corp_run down || true
+      send_keyboard "$chat_id" "$CORP_OUT" "$(corp_menu_keyboard)"
+      ;;
+    /corp_dns)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      [ -n "$arg" ] || {
+        show_corp_dns "$chat_id"
+        return 0
+      }
+      set_pending "$chat_id" corp_dns_add
+      handle_pending_text "$chat_id" "$arg"
+      ;;
+    /corp_allow)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      [ -n "$arg" ] || {
+        show_corp_allow "$chat_id"
+        return 0
+      }
+      set_pending "$chat_id" corp_allow_add
       handle_pending_text "$chat_id" "$arg"
       ;;
     /use)
@@ -1231,6 +1606,91 @@ handle_callback() {
         send_keyboard "$chat_id" "Клиент удалён." "$(amz_menu_keyboard)"
       else
         send_keyboard "$chat_id" "Не получилось удалить клиента." "$(amz_menu_keyboard)"
+      fi
+      ;;
+    corp_menu)
+      show_corp_menu "$chat_id"
+      ;;
+    corp_status)
+      show_corp_status "$chat_id"
+      ;;
+    corp_up_ask)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      if corp_is_up; then
+        send_keyboard "$chat_id" "Туннель уже поднят — попытка не нужна." "$(corp_menu_keyboard)"
+        return 0
+      fi
+      send_keyboard "$chat_id" "Подключение тратит ровно одну попытку второго фактора. Повторов не будет, а после пяти отказов подряд ASA заблокирует учётную запись AD. Подключаемся?" "$(corp_up_confirm_keyboard)"
+      ;;
+    corp_up_go)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      corp_do_up "$chat_id" ""
+      ;;
+    corp_down)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      corp_run down || true
+      send_keyboard "$chat_id" "$CORP_OUT" "$(corp_menu_keyboard)"
+      ;;
+    corp_check)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      corp_run check || true
+      send_keyboard "$chat_id" "$CORP_OUT" "$(corp_menu_keyboard)"
+      ;;
+    corp_log)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      corp_run log 30 || true
+      send_keyboard "$chat_id" "$CORP_OUT" "$(corp_menu_keyboard)"
+      ;;
+    corp_dns)
+      show_corp_dns "$chat_id"
+      ;;
+    corp_dns_add)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      set_pending "$chat_id" corp_dns_add
+      send_keyboard "$chat_id" "Пришли полное имя, например wiki.example.com. Зону целиком добавлять нельзя — корп-DNS отдаёт на апекс внутренние адреса." "$(back_keyboard)"
+      ;;
+    corp_dns_del:*)
+      idx="${data#corp_dns_del:}"
+      corp_dns_del_index "$idx" || true
+      send_keyboard "$chat_id" "$CORP_OUT" "$(corp_dns_keyboard)"
+      ;;
+    corp_allow)
+      show_corp_allow "$chat_id"
+      ;;
+    corp_allow_add)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      set_pending "$chat_id" corp_allow_add
+      send_keyboard "$chat_id" "Пришли IP или подсеть из LAN, которой разрешаем ходить в корпсеть." "$(back_keyboard)"
+      ;;
+    corp_allow_del:*)
+      idx="${data#corp_allow_del:}"
+      corp_allow_del "$idx"
+      rc="$?"
+      if [ "$rc" -eq 0 ]; then
+        send_keyboard "$chat_id" "Адрес убран из allowlist корпсети." "$(corp_allow_keyboard)"
+      else
+        send_keyboard "$chat_id" "Не получилось убрать адрес из allowlist." "$(corp_allow_keyboard)"
       fi
       ;;
     ip_main)
@@ -1349,12 +1809,12 @@ process_updates() {
   printf "%s" "$updates" | jq -r '
     .result[] |
     if .callback_query then
-      [.update_id, "callback", (.callback_query.message.chat.id // empty), (.callback_query.id // ""), (.callback_query.data // "")] | @tsv
+      [.update_id, "callback", (.callback_query.message.chat.id // empty), (.callback_query.id // ""), "", (.callback_query.data // "")] | @tsv
     else
-      [.update_id, "message", (.message.chat.id // .edited_message.chat.id // empty), "", (.message.text // .edited_message.text // "")] | @tsv
+      [.update_id, "message", (.message.chat.id // .edited_message.chat.id // empty), "", (.message.message_id // .edited_message.message_id // ""), (.message.text // .edited_message.text // "")] | @tsv
     end
   ' 2>/dev/null |
-    while IFS='	' read -r update_id kind chat_id callback_id payload; do
+    while IFS='	' read -r update_id kind chat_id callback_id message_id payload; do
       [ -n "$update_id" ] || continue
       next_offset=$((update_id + 1))
       printf "%s\n" "$next_offset" > "$OFFSET_FILE"
@@ -1373,11 +1833,16 @@ process_updates() {
           ;;
         message)
           [ -n "$payload" ] || continue
-          handle_command "$chat_id" "$payload"
+          handle_command "$chat_id" "$payload" "$message_id"
           ;;
       esac
     done
 }
+
+# tests/run.sh подгружает этот файл, чтобы проверить функции без Telegram.
+if [ "${WARREN_TG_BOT_LIB_ONLY:-0}" = "1" ]; then
+  return 0
+fi
 
 while :; do
   load_config || continue
