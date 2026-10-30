@@ -21,6 +21,7 @@ VIVPN_OTP_FILE="${WARREN_TG_BOT_VIVPN_OTP:-/var/run/vivpn.otp}"
 VIVPN_SEED_FILE="${WARREN_TG_BOT_VIVPN_SEED:-/etc/openconnect/totp-vpn-corp.seed}"
 CORP_DNSCONF="${WARREN_TG_BOT_CORP_DNSCONF:-/etc/dnsmasq.conf}"
 CORP_ESC="$(printf '\033')"
+CORP_NAMES_CACHE="${WARREN_TG_BOT_CORP_NAMES_CACHE:-/tmp/warren-tg-corp-names.$$}"
 
 log() {
   logger -t warren-tg-bot "$*"
@@ -894,9 +895,27 @@ corp_state_label() {
 
 # Имена читаем из блока dnsmasq напрямую: формат описан в самом блоке и стабилен,
 # а разбирать оформленный вывод vivpn было бы хрупко. Запись — только через vivpn.
+#
+# Источник имён — строки "# corp-vpn-name=", потому что строки server= живут в
+# блоке только пока поднят туннель: при опущенном имена должны резолвиться
+# публично, иначе их не видно ни внутри, ни снаружи. Старый формат (имена
+# только в server=) читается как fallback — на роутере может лежать он.
 corp_dns_names() {
-  sed -n '/^# corp-vpn-dns/,/^# end corp-vpn-dns/p' "$CORP_DNSCONF" 2>/dev/null |
-    sed -n 's|^server=/\([^/]*\)/.*|\1|p' | awk '!seen[$0]++'
+  corp_dns_block | sed -n 's|^# corp-vpn-name=||p' | awk '!seen[$0]++' | sed '/^$/d' > "$CORP_NAMES_CACHE"
+  if [ ! -s "$CORP_NAMES_CACHE" ]; then
+    corp_dns_block | sed -n 's|^server=/\([^/]*\)/.*|\1|p' | awk '!seen[$0]++' > "$CORP_NAMES_CACHE"
+  fi
+  cat "$CORP_NAMES_CACHE"
+  rm -f "$CORP_NAMES_CACHE" 2>/dev/null || true
+}
+
+corp_dns_block() {
+  sed -n '/^# corp-vpn-dns/,/^# end corp-vpn-dns/p' "$CORP_DNSCONF" 2>/dev/null
+}
+
+# Привязка к корп-DNS есть, только если в блоке остались строки server=.
+corp_dns_bound() {
+  corp_dns_block | grep -q '^server=/'
 }
 
 corp_dns_count() {
@@ -1002,6 +1021,11 @@ corp_dns_text() {
   {
     printf "Имена через корп-туннель\n\n"
     printf "Эти имена резолвит корп-DNS, приехавший по туннелю. Остальное идёт мимо.\n\n"
+    if corp_dns_bound; then
+      printf "Сейчас имена привязаны к корп-DNS.\n\n"
+    else
+      printf "Сейчас привязки нет (туннель опущен) — имена резолвятся публично.\n\n"
+    fi
     printf "Всего имён: %s\n" "${count:-0}"
     if [ "${count:-0}" -gt 18 ]; then
       printf "В Telegram показаны первые 18 кнопок удаления. Остальные остаются в списке.\n"

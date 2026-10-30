@@ -780,7 +780,35 @@ assert_success "TG bot sources cleanly in library-only mode" \
 
 assert_eq "wiki.example.com jira.example.com" \
   "$(corp_bot_env 'corp_dns_names | tr "\n" " " | sed "s/ $//"')" \
-  "TG bot reads corp DNS names from the dnsmasq block only"
+  "TG bot still reads corp DNS names written only as server= lines"
+
+# vivpn keeps the names in "# corp-vpn-name=" comments and drops the server=
+# lines while the tunnel is down, so the list must survive without them.
+CORP_DNSMASQ_UNBOUND="$CORP_TMP/dnsmasq-unbound.conf"
+cat > "$CORP_DNSMASQ_UNBOUND" <<'EOF'
+# corp-vpn-dns: привязки нет, имена резолвятся публично.
+# corp-vpn-name=wiki.example.com
+# corp-vpn-name=jira.example.com
+# end corp-vpn-dns
+EOF
+
+corp_unbound_env() {
+  WARREN_TG_BOT_LIB_ONLY=1 \
+  WARREN_TG_BOT_VIVPN="$CORP_FAKE_VIVPN" \
+  WARREN_TG_BOT_CORP_DNSCONF="$CORP_DNSMASQ_UNBOUND" \
+  VIVPN_ARGS_FILE="$CORP_TMP/args" \
+    sh -c '. "$1"; eval "$2"' sh "$TG_BOT_BIN" "$1"
+}
+
+assert_eq "wiki.example.com jira.example.com" \
+  "$(corp_unbound_env 'corp_dns_names | tr "\n" " " | sed "s/ $//"')" \
+  "TG bot keeps the corp name list when the tunnel is down and server= lines are gone"
+
+assert_success "TG bot reports the corp names as bound while server= lines are there" \
+  corp_bot_env 'corp_dns_bound'
+
+assert_failure "TG bot reports no corp DNS binding when server= lines are gone" \
+  corp_unbound_env 'corp_dns_bound'
 
 assert_eq "  ✓  готово: status" \
   "$(printf '  \033[0;32m✓\033[0m  готово: status\n' | corp_bot_env 'strip_ansi')" \
