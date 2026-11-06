@@ -8,7 +8,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 ## Слои
 
 ```text
- Mac (dev/admin)                    Router (OpenWrt 25.x apk, pinned 25.12.5)            VPS (Debian/Ubuntu)
+ Mac (dev/admin)                    Router (OpenWrt 25.x apk, pinned 25.12.6)            VPS (Debian/Ubuntu)
  ─────────────────                  ──────────────────────────────────────────              ───────────────────
  tools/test-e2e.sh ──scp/ssh──▶     bootstrap.sh ─▶ warren.sh (orchestrator)                 3x-ui (pinned v3.5.0)
  tools/warren-settings.sh ─ssh─▶        │  source lib/*.sh (WARREN_LIB_LIST)                  └ VLESS+Reality inbound

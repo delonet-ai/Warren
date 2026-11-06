@@ -9,11 +9,13 @@ amnezia_backend_notice() {
 }
 
 amnezia_print_awg_summary() {
+  awg_load_server_params
   say ""
   say "=== Amnezia Private ==="
   say "Backend: AmneziaWG"
   say "Server interface: ${AWG_IFACE}"
   say "Server address: ${AWG_SERVER_IP}/24"
+  say "Listen port: ${AWG_LISTEN_PORT:-не задан}"
   say "Endpoint: ${AWG_ENDPOINT:-не задан}"
   say "Client configs dir: ${AWG_CLIENT_DIR}"
   say ""
@@ -119,3 +121,17 @@ run_amnezia_client_delete_flow() {
   [ -n "$name" ] || fail "Имя Amnezia-клиента пустое"
   amneziawg_delete_client_named "$name"
 }
+
+run_amnezia_rotate_obfuscation_flow() {
+  amnezia_backend_notice
+  amneziawg_require_server_ready
+  say ""
+  say "${YELLOW}ВНИМАНИЕ${NC}  Новые параметры обфускации ломают все выданные конфиги AmneziaWG:"
+  say "клиенты перестанут подключаться, пока не получат новый конфиг или QR."
+  if [ "${WARREN_LUCI_REQUEST:-0}" != "1" ] && [ "${AMZ_ROTATE_CONFIRM:-}" != "yes" ]; then
+    ask "Перегенерировать? Напиши yes" AMZ_ROTATE_CONFIRM ""
+    [ "$AMZ_ROTATE_CONFIRM" = "yes" ] || { say "Отменено."; return 0; }
+  fi
+  amneziawg_rotate_obfuscation
+}
+

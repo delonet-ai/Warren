@@ -329,8 +329,29 @@ warren_diag_report_version_policy() {
   fi
   if uci -q get network.awg0.proto 2>/dev/null | grep -qx 'amneziawg'; then
     warren_diag_ok "AmneziaWG: UCI awg0 proto=amneziawg"
+    warren_diag_check_awg_obfuscation
   else
     warren_diag_warn "AmneziaWG: UCI awg0 proto is not configured"
+  fi
+}
+
+# M19: WireGuard-совместимые значения дают рукопожатие, которое DPI узнаёт как WireGuard.
+warren_diag_check_awg_obfuscation() {
+  d_port="$(uci -q get network.awg0.listen_port 2>/dev/null || true)"
+  d_s1="$(uci -q get network.awg0.awg_s1 2>/dev/null || printf 0)"
+  d_s2="$(uci -q get network.awg0.awg_s2 2>/dev/null || printf 0)"
+  d_h="$(uci -q get network.awg0.awg_h1 2>/dev/null || printf 1),$(uci -q get network.awg0.awg_h2 2>/dev/null || printf 2),$(uci -q get network.awg0.awg_h3 2>/dev/null || printf 3),$(uci -q get network.awg0.awg_h4 2>/dev/null || printf 4)"
+  warren_diag_line "awg_listen_port=${d_port:-missing}"
+  warren_diag_line "awg_addresses=$(uci -q get network.awg0.addresses 2>/dev/null || printf missing)"
+  if [ "$d_s1" = "0" ] && [ "$d_s2" = "0" ] && [ "$d_h" = "1,2,3,4" ]; then
+    warren_diag_line "awg_obfuscation=wireguard-compatible"
+    warren_diag_warn "AmneziaWG: обфускация WireGuard-совместимая (S1=S2=0, H=1..4) — DPI видит обычный WireGuard; поможет «Перегенерировать обфускацию» в управлении Amnezia"
+  else
+    warren_diag_line "awg_obfuscation=custom"
+    warren_diag_ok "AmneziaWG: обфускация настроена (S1/S2/H не WireGuard-совместимые)"
+  fi
+  if [ "$d_port" = "51820" ]; then
+    warren_diag_warn "AmneziaWG: стандартный порт WireGuard 51820 — лишний признак для DPI"
   fi
 }
 

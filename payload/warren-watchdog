@@ -6,6 +6,7 @@ STATE="${WARREN_WATCHDOG_STATE:-/etc/warren/warren-watchdog.state}"
 PODKOP_INIT="${WARREN_WATCHDOG_PODKOP_INIT:-/etc/init.d/podkop}"
 TG_CONF="${WARREN_WATCHDOG_TG_CONF:-/etc/warren/warren-tg-bot.conf}"
 HEALTH="${WARREN_WATCHDOG_HEALTH:-/usr/libexec/warren/podkop-health.sh}"
+UPTIME_FILE="${WARREN_WATCHDOG_UPTIME_FILE:-/proc/uptime}"
 
 # Shared Podkop health probes (podkop_health_reason & co.).
 [ -r "$HEALTH" ] || {
@@ -80,7 +81,18 @@ notify_telegram() {
     "https://api.telegram.org/bot${token}/sendMessage" >/dev/null 2>&1 || true
 }
 
+# После загрузки Podkop сначала качает списки и только потом стартует sing-box:
+# без паузы watchdog тратил на эту гонку 2 из 3 перезапусков на каждом ребуте.
+in_boot_grace() {
+  up="$(cut -d. -f1 "$UPTIME_FILE" 2>/dev/null || true)"
+  case "$up" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$up" -lt "$(conf_number WARREN_WATCHDOG_BOOT_GRACE 180)" ]
+}
+
 run_once() {
+  in_boot_grace && return 0
   now="$(now_epoch)"
   last_restart="$(state_field LAST_RESTART)"
   restart_count="$(state_field RESTART_COUNT)"

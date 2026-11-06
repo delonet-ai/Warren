@@ -1,23 +1,18 @@
 AWG_IFACE="${AWG_IFACE:-awg0}"
 AWG_CLIENT_DIR="${AWG_CLIENT_DIR:-/etc/amneziawg/clients}"
 AWG_SERVER_DIR="${AWG_SERVER_DIR:-/etc/amneziawg}"
-AWG_SERVER_NET_PREFIX="${AWG_SERVER_NET_PREFIX:-10.10.10}"
-AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX}.1"
+# Подсеть и порт сервера: явное значение из окружения, иначе UCI network.awg0,
+# иначе (новый сервер) — свободная подсеть 10.10.N и случайный порт, см. awg_load_server_params.
+AWG_SERVER_NET_PREFIX="${AWG_SERVER_NET_PREFIX:-}"
+AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX:+${AWG_SERVER_NET_PREFIX}.1}"
 AWG_STAGE_DIR="${AWG_STAGE_DIR:-/tmp/amneziawg}"
-AWG_LISTEN_PORT="${AWG_LISTEN_PORT:-51820}"
+AWG_LISTEN_PORT="${AWG_LISTEN_PORT:-}"
+AWG_PORT_MIN="${AWG_PORT_MIN:-20000}"
+AWG_PORT_MAX="${AWG_PORT_MAX:-60000}"
 
 AWG_PACKAGE_SOURCE_DEFAULT="${AWG_PACKAGE_SOURCE_DEFAULT:-${WARREN_AWG_PACKAGE_SOURCE:-slava-shchipunov}}"
 AWG_REPO_BASE_SLAVA="${AWG_REPO_BASE_SLAVA:-${WARREN_AWG_REPO_BASE_SLAVA:-https://github.com/Slava-Shchipunov/awg-openwrt/releases/download}}"
 
-AWG_JC_DEFAULT="${AWG_JC_DEFAULT:-4}"
-AWG_JMIN_DEFAULT="${AWG_JMIN_DEFAULT:-40}"
-AWG_JMAX_DEFAULT="${AWG_JMAX_DEFAULT:-70}"
-AWG_S1_DEFAULT="${AWG_S1_DEFAULT:-0}"
-AWG_S2_DEFAULT="${AWG_S2_DEFAULT:-0}"
-AWG_H1_DEFAULT="${AWG_H1_DEFAULT:-1}"
-AWG_H2_DEFAULT="${AWG_H2_DEFAULT:-2}"
-AWG_H3_DEFAULT="${AWG_H3_DEFAULT:-3}"
-AWG_H4_DEFAULT="${AWG_H4_DEFAULT:-4}"
 
 detect_openwrt_version() {
   AWG_OPENWRT_VERSION="$(. /etc/openwrt_release 2>/dev/null; printf "%s" "${DISTRIB_RELEASE:-}")"
@@ -239,19 +234,149 @@ ensure_awg_server_keys() {
   fi
 }
 
+# awg_rand <min> <max> -> целое из [min, max] по /dev/urandom.
+# Только tr+head: в BusyBox OpenWrt 25.12 нет od, а awk printf "%d" упирается в 2^31-1.
+awg_rand() {
+  r="$(LC_ALL=C tr -dc '0-9' < /dev/urandom 2>/dev/null | head -c 10)"
+  r="$(printf "%s" "$r" | sed 's/^0*//')"
+  case "$r" in
+    *[!0-9]*) fail "awg_rand: не удалось прочитать /dev/urandom" ;;
+  esac
+  printf "%s" "$(( $1 + ${r:-0} % ($2 - $1 + 1) ))"
+}
+
+# awg_rand_distinct <min> <max> <taken...> -> значение, не совпадающее ни с одним из taken.
+awg_rand_distinct() {
+  d_min="$1"; d_max="$2"; shift 2
+  d_try=0
+  while [ "$d_try" -lt 100 ]; do
+    d_val="$(awg_rand "$d_min" "$d_max")"
+    d_dup=0
+    for d_taken in "$@"; do
+      [ "$d_val" = "$d_taken" ] && d_dup=1
+    done
+    [ "$d_dup" = "0" ] && { printf "%s" "$d_val"; return 0; }
+    d_try=$((d_try + 1))
+  done
+  fail "awg_rand: не удалось подобрать уникальное значение в [$d_min, $d_max]"
+}
+
+# M19: параметры обфускации для нового сервера (или ротации) в GEN_*.
+# Правила: H1..H4 попарно различны и вне 1..4; S1/S2 ненулевые и S1+56 != S2
+# (иначе init и response снова одного размера); Jc 4..8; 40 <= Jmin < Jmax <= 1000.
+awg_generate_obfuscation() {
+  GEN_JC="$(awg_rand 4 8)"
+  GEN_JMIN="$(awg_rand 40 100)"
+  GEN_JMAX="$(awg_rand $((GEN_JMIN + 10)) 1000)"
+  GEN_S1="$(awg_rand 15 150)"
+  GEN_S2="$(awg_rand_distinct 15 150 $((GEN_S1 + 56)))"
+  GEN_H1="$(awg_rand 5 2147483647)"
+  GEN_H2="$(awg_rand_distinct 5 2147483647 "$GEN_H1")"
+  GEN_H3="$(awg_rand_distinct 5 2147483647 "$GEN_H1" "$GEN_H2")"
+  GEN_H4="$(awg_rand_distinct 5 2147483647 "$GEN_H1" "$GEN_H2" "$GEN_H3")"
+}
+
+# Дефолты AmneziaWG до M19: рукопожатие побайтово как у WireGuard.
+awg_obfuscation_is_wg_compatible() {
+  [ "${AWG_S1:-0}" = "0" ] && [ "${AWG_S2:-0}" = "0" ] &&
+    [ "${AWG_H1:-1}" = "1" ] && [ "${AWG_H2:-2}" = "2" ] &&
+    [ "${AWG_H3:-3}" = "3" ] && [ "${AWG_H4:-4}" = "4" ]
+}
+
+awg_uci_get() {
+  uci -q get network."$AWG_IFACE"."$1" 2>/dev/null || true
+}
+
+# Единый источник параметров обфускации: явный AWG_* > UCI network.awg0.awg_* >
+# новые случайные (только если сервер ещё не настраивался).
 ensure_awg_obfuscation_defaults() {
-  AWG_JC="${AWG_JC:-$AWG_JC_DEFAULT}"
-  AWG_JMIN="${AWG_JMIN:-$AWG_JMIN_DEFAULT}"
-  AWG_JMAX="${AWG_JMAX:-$AWG_JMAX_DEFAULT}"
-  AWG_S1="${AWG_S1:-$AWG_S1_DEFAULT}"
-  AWG_S2="${AWG_S2:-$AWG_S2_DEFAULT}"
-  AWG_H1="${AWG_H1:-$AWG_H1_DEFAULT}"
-  AWG_H2="${AWG_H2:-$AWG_H2_DEFAULT}"
-  AWG_H3="${AWG_H3:-$AWG_H3_DEFAULT}"
-  AWG_H4="${AWG_H4:-$AWG_H4_DEFAULT}"
+  if [ -n "$(awg_uci_get awg_h1)" ]; then
+    src_jc="$(awg_uci_get awg_jc)"; src_jmin="$(awg_uci_get awg_jmin)"; src_jmax="$(awg_uci_get awg_jmax)"
+    src_s1="$(awg_uci_get awg_s1)"; src_s2="$(awg_uci_get awg_s2)"
+    src_h1="$(awg_uci_get awg_h1)"; src_h2="$(awg_uci_get awg_h2)"
+    src_h3="$(awg_uci_get awg_h3)"; src_h4="$(awg_uci_get awg_h4)"
+  else
+    awg_generate_obfuscation
+    src_jc="$GEN_JC"; src_jmin="$GEN_JMIN"; src_jmax="$GEN_JMAX"
+    src_s1="$GEN_S1"; src_s2="$GEN_S2"
+    src_h1="$GEN_H1"; src_h2="$GEN_H2"; src_h3="$GEN_H3"; src_h4="$GEN_H4"
+  fi
+  AWG_JC="${AWG_JC:-$src_jc}"
+  AWG_JMIN="${AWG_JMIN:-$src_jmin}"
+  AWG_JMAX="${AWG_JMAX:-$src_jmax}"
+  AWG_S1="${AWG_S1:-$src_s1}"
+  AWG_S2="${AWG_S2:-$src_s2}"
+  AWG_H1="${AWG_H1:-$src_h1}"
+  AWG_H2="${AWG_H2:-$src_h2}"
+  AWG_H3="${AWG_H3:-$src_h3}"
+  AWG_H4="${AWG_H4:-$src_h4}"
+}
+
+awg_prefix_in_use() {
+  prefix_re="$(printf "%s" "$1" | sed 's/\./\\./g')"
+  ip -4 -o addr show 2>/dev/null | grep -Eq " inet ${prefix_re}\.[0-9]+/" && return 0
+  uci show network 2>/dev/null | grep -v "^network\.${AWG_IFACE}\." | grep -Eq "'${prefix_re}\.[0-9]+/" && return 0
+  return 1
+}
+
+# Свободная /24 для awg0: 10.10.10, затем 10.10.20 ... 10.10.250 (10.10.10 часто занят wg0).
+awg_pick_free_prefix() {
+  n=10
+  while [ "$n" -le 250 ]; do
+    awg_prefix_in_use "10.10.$n" || { printf "10.10.%s" "$n"; return 0; }
+    n=$((n + 10))
+  done
+  return 1
+}
+
+awg_port_in_use() {
+  uci show network 2>/dev/null | grep -v "^network\.${AWG_IFACE}\." | grep -q "listen_port='$1'" && return 0
+  netstat -lnu 2>/dev/null | grep -Eq "[:.]$1[[:space:]]" && return 0
+  return 1
+}
+
+awg_pick_listen_port() {
+  tries=0
+  while [ "$tries" -lt 50 ]; do
+    port="$(awg_rand "$AWG_PORT_MIN" "$AWG_PORT_MAX")"
+    awg_port_in_use "$port" || { printf "%s" "$port"; return 0; }
+    tries=$((tries + 1))
+  done
+  return 1
+}
+
+# Подсеть и порт из окружения или UCI; для ещё не настроенного сервера —
+# с allocate=1 выбираются свободные (иначе остаются пустыми).
+awg_load_server_params() {
+  allocate="${1:-0}"
+  if [ -z "$AWG_SERVER_NET_PREFIX" ]; then
+    addr="$(awg_uci_get addresses | awk '{print $1}')"
+    case "$addr" in
+      *.*.*.*/*) AWG_SERVER_NET_PREFIX="${addr%.*}" ;;
+    esac
+  fi
+  if [ -z "$AWG_SERVER_NET_PREFIX" ] && [ "$allocate" = "1" ]; then
+    AWG_SERVER_NET_PREFIX="$(awg_pick_free_prefix)" || fail "Не нашёл свободную подсеть 10.10.N.0/24 для ${AWG_IFACE}"
+  fi
+  AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX:+${AWG_SERVER_NET_PREFIX}.1}"
+
+  [ -n "$AWG_LISTEN_PORT" ] || AWG_LISTEN_PORT="$(awg_uci_get listen_port)"
+  if [ -z "$AWG_LISTEN_PORT" ] && [ "$allocate" = "1" ]; then
+    AWG_LISTEN_PORT="$(awg_pick_listen_port)" || fail "Не нашёл свободный UDP-порт ${AWG_PORT_MIN}-${AWG_PORT_MAX} для ${AWG_IFACE}"
+    AWG_PORT_ALLOCATED=1
+  fi
+}
+
+# host -> host:port; host:port оставляет как есть.
+awg_endpoint_with_port() {
+  case "$1" in
+    \[*\]:*|*:*) printf "%s" "$1" ;;
+    *) printf "%s:%s" "$1" "$AWG_LISTEN_PORT" ;;
+  esac
 }
 
 ensure_awg_endpoint() {
+  awg_load_server_params
   if [ -z "${AWG_ENDPOINT:-}" ]; then
     if [ "${WARREN_LUCI_REQUEST:-0}" = "1" ]; then
       wan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n1)"
@@ -262,10 +387,29 @@ ensure_awg_endpoint() {
         return 0
       fi
     fi
-    ask "Endpoint для private-клиентов AmneziaWG (например: my.domain.com:${AWG_LISTEN_PORT})" AWG_ENDPOINT ""
+    ask "Адрес роутера для private-клиентов AmneziaWG (домен или IP; порт ${AWG_LISTEN_PORT} подставится сам)" AWG_ENDPOINT ""
     [ -n "$AWG_ENDPOINT" ] || fail "Endpoint для private-клиентов пустой"
+    AWG_ENDPOINT="$(awg_endpoint_with_port "$AWG_ENDPOINT")"
     conf_set AWG_ENDPOINT "$AWG_ENDPOINT"
+  elif [ "${AWG_PORT_ALLOCATED:-0}" = "1" ]; then
+    # Новый сервер получил случайный порт: endpoint из старого конфига (часто :51820) переводим на него.
+    ep_host="$AWG_ENDPOINT"
+    case "$ep_host" in
+      *:*) ep_host="${ep_host%:*}" ;;
+    esac
+    if [ "$AWG_ENDPOINT" != "${ep_host}:${AWG_LISTEN_PORT}" ]; then
+      AWG_ENDPOINT="${ep_host}:${AWG_LISTEN_PORT}"
+      conf_set AWG_ENDPOINT "$AWG_ENDPOINT"
+      say "${YELLOW}INFO${NC}  Endpoint AmneziaWG переведён на порт сервера: $AWG_ENDPOINT"
+    fi
   fi
+}
+
+# Применить изменения awg0 (пиры, порт, обфускация) без полного перезапуска сети:
+# network restart роняет WAN всего дома на десятки секунд и ломает Podkop до его рестарта.
+awg_apply_network() {
+  /etc/init.d/network reload >/dev/null 2>&1 || true
+  ifup "$AWG_IFACE" >/dev/null 2>&1 || true
 }
 
 amneziawg_server_ready() {
@@ -283,12 +427,13 @@ amneziawg_interface_running() {
 }
 
 amneziawg_require_server_ready() {
+  awg_load_server_params
   if ! amneziawg_server_ready; then
     fail "AmneziaWG server не готов. Сначала запусти пункт 5: Доустановить Amnezia в Podkop."
   fi
 
   if ! amneziawg_interface_running; then
-    /etc/init.d/network restart >/dev/null 2>&1 || true
+    awg_apply_network
     sleep 2
     amneziawg_interface_running || fail "AmneziaWG server настроен, но интерфейс ${AWG_IFACE} не поднят. Проверь /etc/config/network и system log."
   fi
@@ -344,8 +489,10 @@ configure_awg_firewall() {
 configure_amneziawg_server() {
   awg_keygen
   ensure_awg_server_keys
+  awg_load_server_params 1
   ensure_awg_obfuscation_defaults
   ensure_awg_endpoint
+  say "${YELLOW}INFO${NC}  ${AWG_IFACE}: подсеть ${AWG_SERVER_NET_PREFIX}.0/24, UDP-порт ${AWG_LISTEN_PORT}"
 
   uciq set network."$AWG_IFACE"='interface'
   uciq set network."$AWG_IFACE".proto='amneziawg'
@@ -366,7 +513,7 @@ configure_amneziawg_server() {
   uciq commit network
 
   configure_awg_firewall
-  /etc/init.d/network restart >/dev/null 2>&1 || true
+  awg_apply_network
 
   sleep 2
   ip a show "$AWG_IFACE" >/dev/null 2>&1 || warn "Интерфейс ${AWG_IFACE} пока не виден в ip a. Это может быть нормально до первого клиента."
@@ -386,6 +533,8 @@ awg_find_section_by_name() {
 }
 
 awg_next_free_ip32() {
+  awg_load_server_params
+  [ -n "$AWG_SERVER_NET_PREFIX" ] || return 1
   used="$(uci show network 2>/dev/null | sed -n "s/.*'\(${AWG_SERVER_NET_PREFIX}\.[0-9]\+\)\/32'.*/\1/p")"
   i=2
   while [ "$i" -le 254 ]; do
@@ -454,7 +603,7 @@ create_amneziawg_peer() {
   uciq set network."$sec".persistent_keepalive='25'
   uciq add_list network."$sec".allowed_ips="$client_ip32"
   uciq commit network
-  /etc/init.d/network restart >/dev/null 2>&1 || true
+  awg_apply_network
 
   create_amneziawg_peer_config "$name" "$client_priv" "$client_ip32" "$client_psk"
 
@@ -539,7 +688,7 @@ amneziawg_delete_client_named() {
 
   uciq delete network."$sec"
   uciq commit network
-  /etc/init.d/network restart >/dev/null 2>&1 || true
+  awg_apply_network
 
   rm -f "$AWG_CLIENT_DIR/$name.conf" 2>/dev/null || true
   if command -v qos_remove_client >/dev/null 2>&1; then
@@ -563,6 +712,7 @@ amneziawg_manage_menu() {
     say "3) Показать текстовый конфиг клиента"
     say "4) Создать нового клиента"
     say "5) Удалить клиента"
+    say "6) Перегенерировать обфускацию (перевыпуск всех конфигов)"
     say "0) Назад"
     ask "Выбор" act "1"
 
@@ -572,8 +722,54 @@ amneziawg_manage_menu() {
       3) ask "Имя клиента" n ""; amneziawg_show_conf_text "$n" ;;
       4) amneziawg_create_client ;;
       5) amneziawg_delete_client ;;
+      6) run_amnezia_rotate_obfuscation_flow ;;
       0) break ;;
       *) warn "Неверный выбор" ;;
     esac
   done
 }
+
+# Подменяет параметры обфускации в готовом клиентском конфиге; ключи и адрес не трогает.
+awg_rewrite_client_obfuscation() {
+  file="$1"
+  tmp="${file}.tmp.$$"
+  sed -e "s/^Jc = .*/Jc = $AWG_JC/" -e "s/^Jmin = .*/Jmin = $AWG_JMIN/" -e "s/^Jmax = .*/Jmax = $AWG_JMAX/" \
+      -e "s/^S1 = .*/S1 = $AWG_S1/" -e "s/^S2 = .*/S2 = $AWG_S2/" \
+      -e "s/^H1 = .*/H1 = $AWG_H1/" -e "s/^H2 = .*/H2 = $AWG_H2/" \
+      -e "s/^H3 = .*/H3 = $AWG_H3/" -e "s/^H4 = .*/H4 = $AWG_H4/" "$file" > "$tmp" &&
+    chmod 600 "$tmp" && mv "$tmp" "$file"
+}
+
+# M19: новые параметры обфускации сервера + перевыпуск конфигов всех клиентов.
+# Старые конфиги после этого перестают подключаться.
+amneziawg_rotate_obfuscation() {
+  amneziawg_require_server_ready
+  awg_generate_obfuscation
+  AWG_JC="$GEN_JC"; AWG_JMIN="$GEN_JMIN"; AWG_JMAX="$GEN_JMAX"
+  AWG_S1="$GEN_S1"; AWG_S2="$GEN_S2"
+  AWG_H1="$GEN_H1"; AWG_H2="$GEN_H2"; AWG_H3="$GEN_H3"; AWG_H4="$GEN_H4"
+
+  uciq set network."$AWG_IFACE".awg_jc="$AWG_JC"
+  uciq set network."$AWG_IFACE".awg_jmin="$AWG_JMIN"
+  uciq set network."$AWG_IFACE".awg_jmax="$AWG_JMAX"
+  uciq set network."$AWG_IFACE".awg_s1="$AWG_S1"
+  uciq set network."$AWG_IFACE".awg_s2="$AWG_S2"
+  uciq set network."$AWG_IFACE".awg_h1="$AWG_H1"
+  uciq set network."$AWG_IFACE".awg_h2="$AWG_H2"
+  uciq set network."$AWG_IFACE".awg_h3="$AWG_H3"
+  uciq set network."$AWG_IFACE".awg_h4="$AWG_H4"
+  uciq commit network
+
+  rotated=0
+  if [ -d "$AWG_CLIENT_DIR" ]; then
+    for conf_file in "$AWG_CLIENT_DIR"/*.conf; do
+      [ -f "$conf_file" ] || continue
+      awg_rewrite_client_obfuscation "$conf_file" || fail "Не удалось перевыпустить $conf_file"
+      rotated=$((rotated + 1))
+    done
+  fi
+
+  awg_apply_network
+  done_ "Обфускация ${AWG_IFACE} перегенерирована, перевыпущено конфигов: $rotated. Раздай клиентам новые конфиги/QR — старые больше не подключатся."
+}
+

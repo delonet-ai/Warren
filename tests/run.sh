@@ -84,6 +84,8 @@ WARREN_PAYLOAD_DIR="$PROJECT_DIR/payload"
 . "$PROJECT_DIR/lib/watchdog.sh"
 # shellcheck disable=SC1091
 . "$PROJECT_DIR/lib/remote_admin.sh"
+# shellcheck disable=SC1091
+. "$PROJECT_DIR/lib/amneziawg.sh"
 
 printf "1..72\n"
 
@@ -116,7 +118,7 @@ assert_eq \
   "https://raw.githubusercontent.com/itdoginfo/podkop/refs/tags/0.7.21/install.sh" \
   "$(warren_podkop_install_url_default)" \
   "Podkop pinned installer URL contains one canonical tag"
-assert_eq "25.12.5" "$WARREN_OPENWRT_PINNED_RELEASE" "tested OpenWrt release is pinned"
+assert_eq "25.12.6" "$WARREN_OPENWRT_PINNED_RELEASE" "tested OpenWrt release is pinned"
 PODKOP_INSTALL_SHA256=""
 WARREN_3XUI_RELEASE_TAG=""
 warren_versions_apply_defaults
@@ -688,6 +690,23 @@ watchdog_recovers_engine() {
 }
 assert_success "Podkop Watchdog restarts a missing engine once" watchdog_recovers_engine
 
+watchdog_waits_after_boot() {
+  rm -rf "$WATCHDOG_RESTARTS" "$WARREN_WATCHDOG_STATE" "$WATCHDOG_PROC"
+  mkdir -p "$WATCHDOG_PROC"
+  printf "42.17 80.00\n" > "$TEST_TMP/uptime-early"
+  PATH="$WATCHDOG_TEST_BIN:$PATH" \
+  WARREN_TEST_WATCHDOG_RESTARTS="$WATCHDOG_RESTARTS" \
+  WARREN_WATCHDOG_CONF="$WARREN_WATCHDOG_CONF" \
+  WARREN_WATCHDOG_STATE="$WARREN_WATCHDOG_STATE" \
+  WARREN_WATCHDOG_PODKOP_INIT="$WATCHDOG_TEST_BIN/podkop-init" \
+  WARREN_WATCHDOG_HEALTH="$PODKOP_HEALTH_BIN" \
+  WARREN_WATCHDOG_UPTIME_FILE="$TEST_TMP/uptime-early" \
+  PODKOP_HEALTH_PROC="$WATCHDOG_PROC" \
+    "$WARREN_WATCHDOG_BIN" run-once
+  [ ! -e "$WATCHDOG_RESTARTS" ] && [ ! -e "$WARREN_WATCHDOG_STATE" ]
+}
+assert_success "Podkop Watchdog does not restart Podkop during the boot grace period" watchdog_waits_after_boot
+
 watchdog_skips_self_recovered_podkop() {
   rm -rf "$WATCHDOG_RESTARTS" "$WARREN_WATCHDOG_STATE" "$WATCHDOG_PROC"
   mkdir -p "$WATCHDOG_PROC"
@@ -738,7 +757,7 @@ watchdog_stops_after_three_failures() {
 }
 assert_success "Podkop Watchdog stops after three rapid failures" watchdog_stops_after_three_failures
 
-# --- TG bot: Корп-VPN (vivpn) ------------------------------------------------
+# --- TG bot: Vivpn --------------------------------------------------------
 TG_BOT_BIN="$PROJECT_DIR/payload/warren-tg-bot"
 CORP_TMP="$TEST_TMP/corp"
 mkdir -p "$CORP_TMP"
@@ -839,7 +858,7 @@ corp_available_follows_the_vivpn_binary() {
     sh -c '. "$1"; corp_available' sh "$TG_BOT_BIN" && return 1
   return 0
 }
-assert_success "TG bot hides Корп-VPN when vivpn is not installed" corp_available_follows_the_vivpn_binary
+assert_success "TG bot hides Vivpn when vivpn is not installed" corp_available_follows_the_vivpn_binary
 
 every_corp_button_has_a_handler() {
   grep -o 'callback_data:"corp[a-z_]*"' "$TG_BOT_BIN" |
@@ -852,7 +871,7 @@ every_corp_button_has_a_handler() {
       }
     done
 }
-assert_success "every Корп-VPN button has a callback handler in the TG bot" \
+assert_success "every Vivpn button has a callback handler in the TG bot" \
   every_corp_button_has_a_handler
 
 # Регрессия: пустое поле в середине TSV съедалось IFS=<tab> в ash, и
@@ -899,6 +918,186 @@ if command -v jq >/dev/null 2>&1; then
 else
   printf "# jq not installed, skipping TG bot update-parsing tests\n"
 fi
+
+
+# ── M19: AmneziaWG obfuscation by default ───────────────────────────────────
+AWG_T="$TEST_TMP/awg"
+mkdir -p "$AWG_T/bin" "$AWG_T/clients"
+cat > "$AWG_T/bin/uci" <<'EOF'
+#!/bin/sh
+# Fake uci over a "key='value'" file: [-q] get <key> | show <package>
+[ "$1" = "-q" ] && shift
+case "$1" in
+  get) v="$(grep "^$2=" "$FAKE_UCI_DB" 2>/dev/null | head -n1)" || exit 1
+       [ -n "$v" ] || exit 1
+       printf "%s\n" "${v#*=}" | sed "s/^'//; s/'\$//" ;;
+  show) grep "^$2[.=]" "$FAKE_UCI_DB" 2>/dev/null ;;
+  *) exit 0 ;;
+esac
+EOF
+cat > "$AWG_T/bin/ip" <<'EOF'
+#!/bin/sh
+cat "$FAKE_IP_ADDR" 2>/dev/null
+EOF
+printf '#!/bin/sh\nexit 0\n' > "$AWG_T/bin/netstat"
+chmod +x "$AWG_T/bin/uci" "$AWG_T/bin/ip" "$AWG_T/bin/netstat"
+
+# Router with prod-like wg0 on 10.10.10.0/24:51820 and no awg0 yet.
+AWG_DB_FRESH="$AWG_T/fresh.db"
+cat > "$AWG_DB_FRESH" <<'EOF'
+network.wg0=interface
+network.wg0.listen_port='51820'
+network.wg0.addresses='10.10.10.1/24'
+network.@wireguard_wg0[0].allowed_ips='10.10.10.2/32'
+EOF
+AWG_IP_FRESH="$AWG_T/ip.txt"
+printf '5: wg0    inet 10.10.10.1/24 scope global wg0\n' > "$AWG_IP_FRESH"
+
+AWG_DB_SET="$AWG_T/set.db"
+cat "$AWG_DB_FRESH" > "$AWG_DB_SET"
+cat >> "$AWG_DB_SET" <<'EOF'
+network.awg0=interface
+network.awg0.proto='amneziawg'
+network.awg0.listen_port='41234'
+network.awg0.addresses='10.10.20.1/24'
+network.awg0.awg_jc='6'
+network.awg0.awg_jmin='55'
+network.awg0.awg_jmax='700'
+network.awg0.awg_s1='33'
+network.awg0.awg_s2='121'
+network.awg0.awg_h1='123456789'
+network.awg0.awg_h2='223456789'
+network.awg0.awg_h3='323456789'
+network.awg0.awg_h4='423456789'
+EOF
+
+awg_env() (
+  PATH="$AWG_T/bin:$PATH"
+  FAKE_UCI_DB="$1" FAKE_IP_ADDR="$AWG_IP_FRESH"
+  export PATH FAKE_UCI_DB FAKE_IP_ADDR
+  AWG_SERVER_NET_PREFIX="" AWG_LISTEN_PORT=""
+  AWG_JC="" AWG_JMIN="" AWG_JMAX="" AWG_S1="" AWG_S2="" AWG_H1="" AWG_H2="" AWG_H3="" AWG_H4=""
+  shift
+  "$@"
+)
+
+awg_generated_ok() {
+  awg_generate_obfuscation
+  [ "$GEN_JC" -ge 4 ] && [ "$GEN_JC" -le 8 ] || return 1
+  [ "$GEN_JMIN" -ge 40 ] && [ "$GEN_JMIN" -lt "$GEN_JMAX" ] && [ "$GEN_JMAX" -le 1000 ] || return 1
+  [ "$GEN_S1" -ge 15 ] && [ "$GEN_S1" -le 150 ] && [ "$GEN_S2" -ge 15 ] && [ "$GEN_S2" -le 150 ] || return 1
+  [ $((GEN_S1 + 56)) -ne "$GEN_S2" ] || return 1
+  for h in "$GEN_H1" "$GEN_H2" "$GEN_H3" "$GEN_H4"; do
+    [ "$h" -ge 5 ] && [ "$h" -le 2147483647 ] || return 1
+  done
+  [ "$(printf "%s\n%s\n%s\n%s\n" "$GEN_H1" "$GEN_H2" "$GEN_H3" "$GEN_H4" | sort -u | wc -l | tr -d ' ')" = "4" ]
+}
+
+awg_generator_holds_constraints() {
+  i=0
+  while [ "$i" -lt 40 ]; do
+    awg_generated_ok || return 1
+    i=$((i + 1))
+  done
+}
+assert_success "M19: generated AWG obfuscation keeps H distinct, S1+56!=S2 and ranges (40 runs)" \
+  awg_generator_holds_constraints
+
+# Регрессия 2026-11-06: на OpenWrt 25.12 нет od, а awk-фолбэк выдавал константу 2^31-1,
+# из-за чего цикл подбора различных H висел вечно.
+awg_rand_spreads() {
+  vals=""
+  i=0
+  while [ "$i" -lt 20 ]; do
+    vals="$vals
+$(awg_rand 5 2147483647)"
+    i=$((i + 1))
+  done
+  [ "$(printf "%s\n" "$vals" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')" -ge 18 ]
+}
+assert_success "M19: awg_rand gives spread values over the full H range (no constant fallback)" awg_rand_spreads
+assert_failure "M19: awg_rand does not depend on od or awk (absent/broken on BusyBox 25.12)" \
+  grep -Eq 'od -An|awk -v s=' "$PROJECT_DIR/lib/amneziawg.sh"
+
+awg_legacy_is_wg() (
+  AWG_S1=0 AWG_S2=0 AWG_H1=1 AWG_H2=2 AWG_H3=3 AWG_H4=4
+  awg_obfuscation_is_wg_compatible
+)
+assert_success "M19: legacy defaults are detected as WireGuard-compatible" awg_legacy_is_wg
+
+awg_generated_not_wg() (
+  awg_generate_obfuscation
+  AWG_S1="$GEN_S1" AWG_S2="$GEN_S2" AWG_H1="$GEN_H1" AWG_H2="$GEN_H2" AWG_H3="$GEN_H3" AWG_H4="$GEN_H4"
+  ! awg_obfuscation_is_wg_compatible
+)
+assert_success "M19: generated obfuscation is not WireGuard-compatible" awg_generated_not_wg
+
+awg_params_from_uci() {
+  ensure_awg_obfuscation_defaults
+  awg_load_server_params
+  printf "%s|%s|%s|%s|%s|%s|%s" "$AWG_JC" "$AWG_S1" "$AWG_S2" "$AWG_H4" "$AWG_SERVER_NET_PREFIX" "$AWG_SERVER_IP" "$AWG_LISTEN_PORT"
+}
+assert_eq "6|33|121|423456789|10.10.20|10.10.20.1|41234" "$(awg_env "$AWG_DB_SET" awg_params_from_uci)" \
+  "M19: existing server params (obfuscation, subnet, port) are read from UCI, not regenerated"
+
+awg_fresh_alloc() {
+  awg_load_server_params 1
+  ensure_awg_obfuscation_defaults
+  [ "$AWG_SERVER_NET_PREFIX" = "10.10.20" ] || { echo "prefix=$AWG_SERVER_NET_PREFIX"; return 1; }
+  [ "$AWG_LISTEN_PORT" -ge 20000 ] && [ "$AWG_LISTEN_PORT" -le 60000 ] || { echo "port=$AWG_LISTEN_PORT"; return 1; }
+  [ "$AWG_S1" != "0" ] && [ "$AWG_H1" != "1" ] || return 1
+  echo ok
+}
+assert_eq "ok" "$(awg_env "$AWG_DB_FRESH" awg_fresh_alloc)" \
+  "M19: fresh awg0 next to wg0 gets 10.10.20.0/24, random port 20000-60000 and generated obfuscation"
+
+assert_eq "router.example.com:41234|1.2.3.4:5555" \
+  "$(AWG_LISTEN_PORT=41234; printf "%s|%s" "$(awg_endpoint_with_port router.example.com)" "$(awg_endpoint_with_port 1.2.3.4:5555)")" \
+  "M19: endpoint without port gets the server port, explicit port is kept"
+
+awg_rotate_rewrites_conf() (
+  f="$AWG_T/clients/phone.conf"
+  cat > "$f" <<'EOF'
+[Interface]
+PrivateKey = CLIENTKEY=
+Address = 10.10.20.2/32
+DNS = 10.10.20.1
+Jc = 4
+Jmin = 40
+Jmax = 70
+S1 = 0
+S2 = 0
+H1 = 1
+H2 = 2
+H3 = 3
+H4 = 4
+
+[Peer]
+PublicKey = SERVERKEY=
+Endpoint = router.example.com:41234
+EOF
+  AWG_JC=7 AWG_JMIN=50 AWG_JMAX=600 AWG_S1=20 AWG_S2=90 AWG_H1=11 AWG_H2=22 AWG_H3=33 AWG_H4=44
+  awg_rewrite_client_obfuscation "$f" || return 1
+  grep -qx "PrivateKey = CLIENTKEY=" "$f" && grep -qx "Jc = 7" "$f" && grep -qx "S2 = 90" "$f" &&
+    grep -qx "H4 = 44" "$f" && grep -qx "Endpoint = router.example.com:41234" "$f"
+)
+assert_success "M19: rotation rewrites obfuscation in client conf and keeps keys/endpoint" awg_rotate_rewrites_conf
+
+# Регрессия 2026-11-06: каждый create/delete клиента делал network restart — WAN дома
+# падал на ~35 с, Podkop оставался сломанным, а watchdog выжигал бюджет перезапусков.
+assert_failure "AWG client changes never restart the whole network (lib + TG bot)" \
+  grep -n '/etc/init.d/network restart' "$PROJECT_DIR/lib/amneziawg.sh" "$PROJECT_DIR/payload/warren-tg-bot"
+
+tg_awg_env() {
+  PATH="$AWG_T/bin:$PATH" FAKE_UCI_DB="$1" WARREN_TG_BOT_LIB_ONLY=1 \
+    sh -c '. "$1"; eval "$2"' sh "$TG_BOT_BIN" "$2"
+}
+assert_eq "33|121|423456789|10.10.20.1" \
+  "$(tg_awg_env "$AWG_DB_SET" 'amz_load_server_params; amz_obfuscation_defaults && printf "%s|%s|%s|%s" "$AWG_S1" "$AWG_S2" "$AWG_H4" "$AWG_SERVER_IP"')" \
+  "M19: TG bot takes obfuscation and server address from UCI, same as shell"
+assert_eq "refused" \
+  "$(tg_awg_env "$AWG_DB_FRESH" 'amz_obfuscation_defaults 2>/dev/null && echo issued || echo refused')" \
+  "M19: TG bot refuses to issue a config when awg0 obfuscation is missing in UCI"
 
 printf "\nPassed: %d  Failed: %d\n" "$PASS_COUNT" "$FAIL_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

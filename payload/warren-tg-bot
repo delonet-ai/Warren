@@ -11,9 +11,10 @@ AMZ_CACHE="${WARREN_TG_BOT_AMZ_CACHE:-/tmp/warren-tg-bot-amnezia.tsv}"
 AWG_IFACE="${AWG_IFACE:-awg0}"
 AWG_CLIENT_DIR="${AWG_CLIENT_DIR:-/etc/amneziawg/clients}"
 AWG_SERVER_DIR="${AWG_SERVER_DIR:-/etc/amneziawg}"
-AWG_SERVER_NET_PREFIX="${AWG_SERVER_NET_PREFIX:-10.10.10}"
-AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX}.1"
-AWG_LISTEN_PORT="${AWG_LISTEN_PORT:-51820}"
+# Подсеть, порт и обфускация сервера читаются из UCI network.awg0 (amz_load_server_params):
+# конфиги из бота должны совпадать с выданными Warren из shell и LuCI.
+AWG_SERVER_NET_PREFIX="${AWG_SERVER_NET_PREFIX:-}"
+AWG_SERVER_IP=""
 QOS_STATE_FILE="${QOS_STATE_FILE:-/etc/warren/amnezia-qos.tsv}"
 VIVPN_BIN="${WARREN_TG_BOT_VIVPN:-/usr/bin/vivpn}"
 VIVPN_DEV="${WARREN_TG_BOT_VIVPN_DEV:-vpn-corp}"
@@ -143,7 +144,7 @@ main_keyboard() {
       [{text:"Добавить в black",callback_data:"black_prompt"},{text:"Добавить в white",callback_data:"white_prompt"}],
       [{text:"IP без VPN",callback_data:"ip:no_vpn"},{text:"IP только с VPN",callback_data:"ip:vpn_only"}],
       [{text:"Amnezia клиенты",callback_data:"amz_menu"}],
-      [{text:"Корп-VPN",callback_data:"corp_menu"}],
+      [{text:"Vivpn",callback_data:"corp_menu"}],
       [{text:"Выбор Endpoint",callback_data:"endpoint_choose"}],
       [{text:"Редактор Endpoint",callback_data:"endpoint_editor"}],
       [{text:"Последний VPS",callback_data:"getvps"}],
@@ -182,6 +183,12 @@ restart_podkop() {
   /etc/init.d/podkop restart >/dev/null 2>&1 || true
 }
 
+# Как awg_apply_network в lib/amneziawg.sh: без полного рестарта сети (он роняет WAN и Podkop).
+amz_apply_network() {
+  /etc/init.d/network reload >/dev/null 2>&1 || true
+  ifup "$AWG_IFACE" >/dev/null 2>&1 || true
+}
+
 amz_server_ready() {
   command -v awg >/dev/null 2>&1 || return 1
   [ -f "$AWG_SERVER_DIR/server.key" ] || return 1
@@ -202,7 +209,7 @@ amz_require_ready_text() {
     return 1
   fi
   if ! amz_interface_running; then
-    /etc/init.d/network restart >/dev/null 2>&1 || true
+    amz_apply_network
     sleep 2
     if ! amz_interface_running; then
       printf "AmneziaWG server настроен, но интерфейс %s не поднят. Проверь OpenWrt network/system log." "$AWG_IFACE"
@@ -237,7 +244,23 @@ amz_client_exists() {
   return 1
 }
 
+amz_uci_get() {
+  uci -q get network."$AWG_IFACE"."$1" 2>/dev/null || true
+}
+
+amz_load_server_params() {
+  if [ -z "$AWG_SERVER_NET_PREFIX" ]; then
+    addr="$(amz_uci_get addresses | awk '{print $1}')"
+    case "$addr" in
+      *.*.*.*/*) AWG_SERVER_NET_PREFIX="${addr%.*}" ;;
+    esac
+  fi
+  AWG_SERVER_IP="${AWG_SERVER_NET_PREFIX:+${AWG_SERVER_NET_PREFIX}.1}"
+  [ -n "$AWG_SERVER_NET_PREFIX" ]
+}
+
 amz_next_free_ip32() {
+  amz_load_server_params || return 1
   used="$(uci show network 2>/dev/null | sed -n "s/.*'\(${AWG_SERVER_NET_PREFIX}\.[0-9]\+\)\/32'.*/\1/p")"
   i=2
   while [ "$i" -le 254 ]; do
@@ -248,16 +271,22 @@ amz_next_free_ip32() {
   return 1
 }
 
+# Параметры обфускации — только из UCI сервера; без них конфиг не выпускаем.
 amz_obfuscation_defaults() {
-  AWG_JC="${AWG_JC:-4}"
-  AWG_JMIN="${AWG_JMIN:-40}"
-  AWG_JMAX="${AWG_JMAX:-70}"
-  AWG_S1="${AWG_S1:-0}"
-  AWG_S2="${AWG_S2:-0}"
-  AWG_H1="${AWG_H1:-1}"
-  AWG_H2="${AWG_H2:-2}"
-  AWG_H3="${AWG_H3:-3}"
-  AWG_H4="${AWG_H4:-4}"
+  AWG_JC="$(amz_uci_get awg_jc)"
+  AWG_JMIN="$(amz_uci_get awg_jmin)"
+  AWG_JMAX="$(amz_uci_get awg_jmax)"
+  AWG_S1="$(amz_uci_get awg_s1)"
+  AWG_S2="$(amz_uci_get awg_s2)"
+  AWG_H1="$(amz_uci_get awg_h1)"
+  AWG_H2="$(amz_uci_get awg_h2)"
+  AWG_H3="$(amz_uci_get awg_h3)"
+  AWG_H4="$(amz_uci_get awg_h4)"
+  for v in "$AWG_JC" "$AWG_JMIN" "$AWG_JMAX" "$AWG_S1" "$AWG_S2" "$AWG_H1" "$AWG_H2" "$AWG_H3" "$AWG_H4"; do
+    case "$v" in
+      ''|*[!0-9]*) log "awg obfuscation params missing in uci network.${AWG_IFACE}"; return 1 ;;
+    esac
+  done
 }
 
 amz_create_config() {
@@ -266,7 +295,8 @@ amz_create_config() {
   client_ip32="$3"
   client_psk="$4"
   file="$AWG_CLIENT_DIR/$name.conf"
-  amz_obfuscation_defaults
+  amz_load_server_params || return 1
+  amz_obfuscation_defaults || return 1
   cat > "$file" <<AMZ_CONF_EOF
 [Interface]
 PrivateKey = $client_priv
@@ -309,7 +339,7 @@ amz_create_client() {
   uci set network."$sec".persistent_keepalive='25'
   uci add_list network."$sec".allowed_ips="$client_ip32"
   uci commit network || return 1
-  /etc/init.d/network restart >/dev/null 2>&1 || true
+  amz_apply_network
   amz_create_config "$name" "$client_priv" "$client_ip32" "$client_psk" || {
     uci delete network."$sec" >/dev/null 2>&1 || true
     uci commit network >/dev/null 2>&1 || true
@@ -438,7 +468,7 @@ amz_delete_by_index() {
   [ -n "$sec" ] || return 1
   uci delete network."$sec" || return 1
   uci commit network || return 1
-  /etc/init.d/network restart >/dev/null 2>&1 || true
+  amz_apply_network
   rm -f "$AWG_CLIENT_DIR/$name.conf" 2>/dev/null || true
   amz_qos_remove_client "$name"
   amz_qos_apply_after_delete
@@ -843,7 +873,7 @@ add_report_endpoint() {
   add_endpoint "$link"
 }
 
-# ── Корп-VPN (vivpn) ────────────────────────────────────────────────────────
+# ── Vivpn ────────────────────────────────────────────────────────────────
 # Корп-туннель живёт отдельным модулем: openconnect + /usr/bin/vivpn из
 # delohom-stacks. Warren его не ставит и не чинит — бот только дёргает его CLI,
 # поэтому режим «одна команда — одна попытка» остаётся за vivpn.
@@ -854,7 +884,7 @@ corp_available() {
 
 corp_require_text() {
   corp_available && return 0
-  printf "Корп-VPN на роутере не установлен: нет %s.\nЭто отдельный модуль (openconnect + vivpn), Warren его не ставит." "$VIVPN_BIN"
+  printf "Vivpn на роутере не установлен: нет %s.\nЭто отдельный модуль (openconnect + vivpn), Warren его не ставит." "$VIVPN_BIN"
   return 1
 }
 
@@ -1075,7 +1105,7 @@ corp_do_up() {
   rm -f "$VIVPN_OTP_FILE" 2>/dev/null || true
 
   if [ "$rc" -eq 0 ]; then
-    send_keyboard "$chat_id" "Корп-VPN поднят.\n\n${CORP_OUT}" "$(corp_menu_keyboard)"
+    send_keyboard "$chat_id" "Vivpn поднят.\n\n${CORP_OUT}" "$(corp_menu_keyboard)"
   else
     send_keyboard "$chat_id" "Попытка не удалась, повторов не будет.\n\n${CORP_OUT}\n\nКаждая попытка — отказ входа в AD, после пяти учётку заблокируют. Сначала посмотри Лог." "$(corp_menu_keyboard)"
   fi
@@ -1088,7 +1118,7 @@ show_corp_menu() {
     send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
     return 0
   }
-  send_keyboard "$chat_id" "Корп-VPN: $(corp_state_label). Выбери действие." "$(corp_menu_keyboard)"
+  send_keyboard "$chat_id" "Vivpn: $(corp_state_label). Выбери действие." "$(corp_menu_keyboard)"
 }
 
 show_corp_status() {
@@ -1151,7 +1181,7 @@ status_text() {
   endpoints="$(endpoint_count)"
   no_vpn_ips="$(format_ip_list no_vpn)"
   vpn_only_ips="$(format_ip_list vpn_only)"
-  printf "Podkop: %s\nBlack/proxy domains: %s\nWhite/exclusion domains: %s\nEndpoints: %s\nActive endpoint: %s\nКорп-VPN: %s\n\nIP без VPN:\n%s\n\nIP только с VPN:\n%s\n" \
+  printf "Podkop: %s\nBlack/proxy domains: %s\nWhite/exclusion domains: %s\nEndpoints: %s\nActive endpoint: %s\nVivpn: %s\n\nIP без VPN:\n%s\n\nIP только с VPN:\n%s\n" \
     "$active_type" "${black_count:-0}" "${white_count:-0}" "${endpoints:-0}" "${active_proxy:-not set}" "$(corp_state_label)" "$no_vpn_ips" "$vpn_only_ips"
 }
 
@@ -1173,7 +1203,7 @@ Warren TG bot
 /getvps
 /no_vpn 192.168.1.20
 /vpn_only 192.168.1.30
-/corp - меню Корп-VPN
+/corp - меню Vivpn
 /corp_up [код] - одна попытка подключения к корпсети
 /corp_down
 /corp_dns wiki.example.com - резолвить имя через корп-туннель
@@ -1356,7 +1386,7 @@ handle_pending_text() {
       if [ "$rc" -eq 3 ]; then
         send_keyboard "$chat_id" "Адрес должен быть в формате 192.168.1.50 или 192.168.1.0/24." "$(corp_allow_keyboard)"
       elif [ "$rc" -eq 4 ]; then
-        send_keyboard "$chat_id" "Правило firewall.corp_allow на роутере не найдено — это делает модуль корп-VPN, не Warren." "$(corp_menu_keyboard)"
+        send_keyboard "$chat_id" "Правило firewall.corp_allow на роутере не найдено — это делает модуль vivpn, не Warren." "$(corp_menu_keyboard)"
       elif [ "$rc" -eq 2 ]; then
         send_keyboard "$chat_id" "Этот адрес уже ходит в корпсеть: ${text}" "$(corp_allow_keyboard)"
       elif [ "$rc" -eq 0 ]; then

@@ -34,6 +34,7 @@ rf_bundle_wip|99|service|0|run_rf_bundle_wip_flow|Установить всё и
 diagnostics_emergency|-|service|0|run_diagnostics_emergency_flow|Диагностика с DNS-fallback
 amnezia_client_create|-|service|0|run_amnezia_client_create_flow|Создать Amnezia-клиента
 amnezia_client_delete|-|service|0|run_amnezia_client_delete_flow|Удалить Amnezia-клиента
+amnezia_rotate_obfuscation|-|service|0|run_amnezia_rotate_obfuscation_flow|Перегенерировать обфускацию AmneziaWG
 remote_admin_config|-|service|0|run_remote_admin_config_flow|Сохранить конфиг Remote Admin
 remote_admin_poll_now|-|service|0|remote_admin_poll_now_flow|Remote Admin: проверить сейчас
 remote_admin_router_install|-|service|0|remote_admin_install_router_agent|Remote Admin: установить router agent
