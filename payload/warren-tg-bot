@@ -997,10 +997,31 @@ corp_menu_keyboard() {
       [{text:$text,callback_data:$data},{text:"Статус",callback_data:"corp_status"}],
       [{text:"Имена через туннель",callback_data:"corp_dns"}],
       [{text:"Кто ходит в корпсеть",callback_data:"corp_allow"}],
+      [{text:"Сертификат сервера",callback_data:"corp_cert"}],
       [{text:"Проверка",callback_data:"corp_check"},{text:"Лог",callback_data:"corp_log"}],
       [{text:"Главное меню",callback_data:"main"}]
     ]
   }'
+}
+
+# vivpn cert: 0 — в порядке, 10 — сменился и проверку прошёл (можно принять),
+# 11 — сменился и проверку НЕ прошёл, 12 — сервер не ответил.
+# Пин кнопка не передаёт: vivpn cert accept проверяет сертификат заново.
+corp_cert_keyboard() {
+  if [ "${1:-0}" = 10 ]; then
+    jq -cn '{
+      inline_keyboard: [
+        [{text:"Принять новый сертификат",callback_data:"corp_cert_accept"}],
+        [{text:"Назад",callback_data:"corp_menu"}]
+      ]
+    }'
+  else
+    jq -cn '{
+      inline_keyboard: [
+        [{text:"Проверить ещё раз",callback_data:"corp_cert"},{text:"Назад",callback_data:"corp_menu"}]
+      ]
+    }'
+  fi
 }
 
 corp_up_confirm_keyboard() {
@@ -1700,6 +1721,23 @@ handle_callback() {
         return 0
       }
       corp_run check || true
+      send_keyboard "$chat_id" "$CORP_OUT" "$(corp_menu_keyboard)"
+      ;;
+    corp_cert)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      corp_cert_rc=0
+      corp_run cert || corp_cert_rc="$?"
+      send_keyboard "$chat_id" "$CORP_OUT" "$(corp_cert_keyboard "$corp_cert_rc")"
+      ;;
+    corp_cert_accept)
+      ready_error="$(corp_require_text)" || {
+        send_keyboard "$chat_id" "$ready_error" "$(main_keyboard)"
+        return 0
+      }
+      corp_run cert accept || true
       send_keyboard "$chat_id" "$CORP_OUT" "$(corp_menu_keyboard)"
       ;;
     corp_log)

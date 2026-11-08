@@ -874,6 +874,18 @@ every_corp_button_has_a_handler() {
 assert_success "every Vivpn button has a callback handler in the TG bot" \
   every_corp_button_has_a_handler
 
+# Кнопка «Принять» появляется только на код 10 (сменился и прошёл проверку)
+# и не несёт пин: vivpn cert accept проверяет сертификат заново.
+corp_cert_offers_accept_only_when_verified() {
+  corp_bot_env 'corp_cert_keyboard 10' | grep -q '"callback_data":"corp_cert_accept"' || return 1
+  for rc in 0 11 12; do
+    corp_bot_env "corp_cert_keyboard $rc" | grep -q 'corp_cert_accept' && return 1
+  done
+  return 0
+}
+assert_success "TG bot offers to accept a server certificate only after vivpn verified it" \
+  corp_cert_offers_accept_only_when_verified
+
 # Регрессия: пустое поле в середине TSV съедалось IFS=<tab> в ash, и
 # callback_data приезжала в message_id — все кнопки отвечали "Неизвестная кнопка".
 cat > "$CORP_TMP/updates.json" <<'EOF'
