@@ -1332,5 +1332,54 @@ assert_success "the Xray pin installs unzip itself when the VPS has none" \
 assert_success "a failed Xray pin prints what the VPS said" \
   grep -q 'say "\$xray_pin_out"' "$PROJECT_DIR/lib/vps_3xui.sh"
 
+# --- Random material ------------------------------------------------------
+# Регрессия 2026-11-22: запасной путь `date +%s` выдавал один и тот же обрезок
+# времени, и на боевом VPS все shortId оказались кусками "1793962707".
+assert_failure "no predictable date-based fallback for random material" \
+  grep -qE 'date \+%s \| tr -dc' "$PROJECT_DIR/lib/vps_reality.sh"
+
+random_material_sane() (
+  seen=""
+  for i in 1 2 3 4 5; do
+    h="$(random_hex 14)"
+    case "$h" in
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+      *) printf "bad hex: [%s]\n" "$h" >&2; return 1 ;;
+    esac
+    case " $seen " in *" $h "*) printf "repeat: %s\n" "$h" >&2; return 1 ;; esac
+    seen="$seen $h"
+  done
+)
+assert_success "random_hex gives 14 hex chars and does not repeat itself" random_material_sane
+
+random_token_sane() (
+  a="$(random_token 18)"; b="$(random_token 18)"
+  [ "${#a}" -eq 18 ] && [ "${#b}" -eq 18 ] && [ "$a" != "$b" ]
+)
+assert_success "random_token gives the asked length and differs between calls" random_token_sane
+
+# --- Reality keypair parsing ----------------------------------------------
+# Регрессия 2026-11-22: после пина ядра на 25.12.8 `xray x25519` стал печатать
+# публичный ключ как "Password:", и generate_reality_materials падал на
+# "Не удалось получить publicKey". Hash32 ключом не является.
+parse_keypair() (
+  reality_parse_keypair "$1" >/dev/null 2>&1 || { echo "parse failed"; return 0; }
+  printf "%s|%s" "$REALITY_PRIVATE_KEY" "$REALITY_PUBLIC_KEY"
+)
+assert_eq "PRIV|PUB" \
+  "$(parse_keypair "PrivateKey: PRIV
+Password: PUB
+Hash32: NOTAKEY")" \
+  "Xray 25.x x25519 output: Password is the public key, Hash32 is not"
+assert_eq "PRIV|PUB" \
+  "$(parse_keypair "PrivateKey: PRIV
+PublicKey: PUB")" \
+  "Xray 26.x x25519 output is still parsed"
+assert_eq "PRIV|PUB" \
+  "$(parse_keypair '{"success":true,"obj":{"privateKey":"PRIV","publicKey":"PUB"}}')" \
+  "3x-ui API JSON keypair is still parsed"
+assert_eq "parse failed" "$(parse_keypair "Hash32: NOTAKEY")" \
+  "a response without a keypair is rejected"
+
 printf "\nPassed: %d  Failed: %d\n" "$PASS_COUNT" "$FAIL_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

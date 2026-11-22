@@ -1,11 +1,16 @@
 # VLESS Reality: key material, inbound payload/creation and client link.
 
+# Запасной путь — /dev/urandom, а не `date +%s`: он давал один и тот же обрезок
+# unix-времени на все значения сразу. На VPS 2026-11-06 так родился inbound, где
+# все shortId были кусками "1793962707", а client email — "17939627".
 random_token() {
   len="${1:-16}"
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -base64 $((len * 2)) | tr -dc 'A-Za-z0-9' | head -c "$len"
+  elif [ -r /dev/urandom ]; then
+    tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$len"
   else
-    date +%s | tr -dc 'A-Za-z0-9' | head -c "$len"
+    fail "Нет ни openssl, ни /dev/urandom: нечем сгенерировать случайные значения"
   fi
 }
 
@@ -14,8 +19,10 @@ random_hex() {
   if command -v openssl >/dev/null 2>&1; then
     bytes=$(((len + 1) / 2))
     openssl rand -hex "$bytes" | cut -c1-"$len"
+  elif [ -r /dev/urandom ]; then
+    tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c "$len"
   else
-    date +%s | tr -dc 'a-f0-9' | head -c "$len"
+    fail "Нет ни openssl, ни /dev/urandom: нечем сгенерировать случайные значения"
   fi
 }
 
@@ -27,6 +34,23 @@ vps_client_name() {
   else
     printf "%s" "$_vcn_base"
   fi
+}
+
+# Разбирает вывод `xray x25519` или ответ API 3x-ui в REALITY_PRIVATE_KEY/PUBLIC_KEY.
+# Форматы разных версий ядра отличаются: Xray 26.x печатает "PublicKey:", Xray 25.x —
+# "Password:" (плюс "Hash32:", который ключом не является), а API отдаёт JSON.
+reality_parse_keypair() {
+  _rpk_text="$1"
+  REALITY_PRIVATE_KEY="$(printf "%s" "$_rpk_text" | json_get_first_string "privateKey" "private_key" "privatekey" "privateKeyValue" 2>/dev/null || true)"
+  REALITY_PUBLIC_KEY="$(printf "%s" "$_rpk_text" | json_get_first_string "publicKey" "public_key" "publickey" "publicKeyValue" "Password" "password" "Password (PublicKey)" 2>/dev/null || true)"
+
+  [ -n "$REALITY_PRIVATE_KEY" ] || REALITY_PRIVATE_KEY="$(printf "%s\n" "$_rpk_text" | sed -n 's/^PrivateKey: *//p' | head -n1 | tr -d ' \t\n\r')"
+  for _rpk_label in "PublicKey" "Password (PublicKey)" "Password"; do
+    [ -z "$REALITY_PUBLIC_KEY" ] || break
+    REALITY_PUBLIC_KEY="$(printf "%s\n" "$_rpk_text" | sed -n "s/^${_rpk_label}: *//p" | head -n1 | tr -d ' \t\n\r')"
+  done
+
+  [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]
 }
 
 generate_reality_materials() {
@@ -107,13 +131,7 @@ generate_reality_materials() {
   [ -n "$cert_resp" ] || fail "Не удалось сгенерировать X25519 ключи через API 3x-ui или локальный xray"
 
   cert_text="$(printf "%s\n" "$cert_resp" | tr -d '\r')"
-  REALITY_PRIVATE_KEY="$(printf "%s" "$cert_text" | json_get_first_string "privateKey" "private_key" "privatekey" "privateKeyValue" 2>/dev/null || true)"
-  REALITY_PUBLIC_KEY="$(printf "%s" "$cert_text" | json_get_first_string "publicKey" "public_key" "publickey" "publicKeyValue" "Password" "password" "Password (PublicKey)" 2>/dev/null || true)"
-  if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
-    REALITY_PRIVATE_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^PrivateKey: *//p' | head -n1 | tr -d ' \t\n\r')"
-    [ -n "$REALITY_PUBLIC_KEY" ] || REALITY_PUBLIC_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^PublicKey: *//p' | head -n1 | tr -d ' \t\n\r')"
-    [ -n "$REALITY_PUBLIC_KEY" ] || REALITY_PUBLIC_KEY="$(printf "%s\n" "$cert_text" | sed -n 's/^Password (PublicKey): *//p' | head -n1 | tr -d ' \t\n\r')"
-  fi
+  reality_parse_keypair "$cert_text"
   if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
     say "${YELLOW}INFO${NC}  Raw X25519 response: $cert_text"
   else
