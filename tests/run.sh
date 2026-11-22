@@ -1111,5 +1111,155 @@ assert_eq "refused" \
   "$(tg_awg_env "$AWG_DB_FRESH" 'amz_obfuscation_defaults 2>/dev/null && echo issued || echo refused')" \
   "M19: TG bot refuses to issue a config when awg0 obfuscation is missing in UCI"
 
+# ── Podkop user domain lists: text (user_domains_text) and dynamic ──────────
+PK_T="$TEST_TMP/podkop-lists"
+mkdir -p "$PK_T/bin" "$PK_T/db"
+# Fake uci: each key is a file under $FAKE_UCI_DIR, lists get a .list file.
+# Keeps newlines, so a text list survives the round trip like on the router.
+cat > "$PK_T/bin/uci" <<'EOF'
+#!/bin/sh
+[ "$1" = "-q" ] && shift
+cmd="$1"
+key="${2%%=*}"
+val="${2#*=}"
+file="$FAKE_UCI_DIR/$key"
+case "$cmd" in
+  get)
+    if [ -f "$file.list" ]; then tr '\n' ' ' < "$file.list" | sed 's/ $//'; printf '\n'; exit 0; fi
+    [ -f "$file" ] || exit 1
+    cat "$file" ;;
+  set) printf '%s' "$val" > "$file" ;;
+  add_list) printf '%s\n' "$val" >> "$file.list" ;;
+  del) rm -f "$file" "$file.list" ;;
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "$PK_T/bin/uci"
+
+pk_env() (
+  PATH="$PK_T/bin:$PATH"
+  FAKE_UCI_DIR="$1"
+  export PATH FAKE_UCI_DIR
+  shift
+  "$@"
+)
+
+pk_db() {
+  rm -rf "$PK_T/db"
+  mkdir -p "$PK_T/db"
+}
+
+pk_get() {
+  pk_env "$PK_T/db" uci -q get "$1" 2>/dev/null || true
+}
+
+pk_domain_count() {
+  pk_get podkop.main.user_domains_text | sed 's|//.*||' | tr ', ' '\n' | sed '/^$/d' | awk 'END { print NR }'
+}
+
+# Fresh install: no list type yet -> text, and all defaults land in one field.
+pk_db
+pk_env "$PK_T/db" podkop_ensure_user_domain_list_type
+assert_eq "text" "$(pk_get podkop.main.user_domain_list_type)" \
+  "fresh podkop gets the text list type"
+
+pk_env "$PK_T/db" configure_podkop_user_domains >/dev/null
+assert_eq "$(podkop_default_user_domains | wc -l | tr -d ' ')" "$(pk_domain_count)" \
+  "default domains are written into user_domains_text"
+assert_eq "1" "$(pk_get podkop.main.user_domains_text | grep -c '^// Warren: Roborock$')" \
+  "the Warren block in the text list is marked with a comment"
+
+pk_env "$PK_T/db" configure_podkop_user_domains >/dev/null
+assert_eq "$(podkop_default_user_domains | wc -l | tr -d ' ')" "$(pk_domain_count)" \
+  "a second run adds no duplicates to the text list"
+assert_eq "1" "$(pk_get podkop.main.user_domains_text | grep -c '^// Warren: Roborock$')" \
+  "a second run does not repeat the marker comment"
+
+# Hand-typed text list with comments: kept as is, defaults appended after it.
+pk_db
+printf 'text' > "$PK_T/db/podkop.main.user_domain_list_type"
+printf '%s' 'github.com
+// личное
+my.example.com files.roborock.com // уже через туннель' \
+  > "$PK_T/db/podkop.main.user_domains_text"
+pk_env "$PK_T/db" configure_podkop_user_domains >/dev/null
+assert_eq "github.com" "$(pk_get podkop.main.user_domains_text | sed -n '1p')" \
+  "hand-typed lines keep their place in the text list"
+assert_eq "1" "$(pk_get podkop.main.user_domains_text | grep -c 'files.roborock.com')" \
+  "a domain already present in the text list is not added twice"
+assert_eq "1" "$(pk_get podkop.main.user_domains_text | grep -c '// личное')" \
+  "user comments survive the merge"
+
+# Dynamic list stays dynamic: the type is never switched under a filled list.
+pk_db
+printf 'dynamic' > "$PK_T/db/podkop.main.user_domain_list_type"
+printf 'github.com\nmqtt-ru.roborock.com\n' > "$PK_T/db/podkop.main.user_domains.list"
+pk_env "$PK_T/db" podkop_ensure_user_domain_list_type
+assert_eq "dynamic" "$(pk_get podkop.main.user_domain_list_type)" \
+  "an existing list type is never overwritten"
+pk_env "$PK_T/db" configure_podkop_user_domains >/dev/null
+assert_eq "dynamic" "$(pk_get podkop.main.user_domain_list_type)" \
+  "a filled dynamic list is not silently switched to text"
+assert_eq "" "$(pk_get podkop.main.user_domains_text)" \
+  "nothing is written into the text field while the list is dynamic"
+assert_eq "1" "$(pk_get podkop.main.user_domains | tr ' ' '\n' | grep -c '^mqtt-ru.roborock.com$')" \
+  "an existing dynamic entry is not duplicated"
+assert_eq "$(($(podkop_default_user_domains | wc -l) + 1))" \
+  "$(pk_get podkop.main.user_domains | tr ' ' '\n' | sed '/^$/d' | wc -l | tr -d ' ')" \
+  "missing defaults are appended to the dynamic list"
+
+# ── Mac-side backup of a text list (podkop user_domains_text) ──────────────
+TEXT_DIR="$TEST_TMP/settings-text"
+mkdir -p "$TEXT_DIR/snap" "$TEXT_DIR/tmp"
+cat > "$TEXT_DIR/router.uci" <<'TEXT_EOF'
+config section 'main'
+	option connection_type 'proxy'
+	option user_domain_list_type 'text'
+	option user_domains_text 'github.com
+// o'\''reilly
+oreilly.com steam.com'
+	list fully_routed_ips '192.168.1.137'
+TEXT_EOF
+cat > "$TEXT_DIR/live.uci" <<'TEXT_EOF'
+config section 'main'
+	option connection_type 'proxy'
+	option user_domains_text 'only-on-router.example'
+TEXT_EOF
+
+settings_text_tool() {
+  WARREN_SETTINGS_LIB_ONLY=1 sh -c '
+    set -eu
+    . "$1/tools/warren-settings.sh"
+    WS_TMP="$2/tmp"
+    mkdir -p "$WS_TMP"
+    warren_settings_parse_export < "$2/router.uci" > "$WS_TMP/router.tsv"
+    warren_settings_parse_export < "$2/live.uci" > "$WS_TMP/live.tsv"
+    warren_settings_write_lists "$WS_TMP/router.tsv" "$2/snap"
+    shift 2
+    "$@"
+  ' _ "$PROJECT_DIR" "$TEXT_DIR" "$@"
+}
+
+assert_eq "text	main	section	user_domains_text	3" \
+  "$(settings_text_tool true >/dev/null 2>&1; awk -F'\t' '$1 == "main.user_domains_text.txt" { print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }' \
+     "$TEXT_DIR/snap/lists/index.tsv")" \
+  "a multi-line text list is captured line by line, kind=text"
+
+assert_eq "// o'reilly" "$(sed -n '2p' "$TEXT_DIR/snap/lists/main.user_domains_text.txt")" \
+  "comments inside a text list are saved as their own lines"
+
+settings_text_restore() {
+  settings_text_tool warren_settings_restore_commands "$TEXT_DIR/snap" "$TEXT_DIR/tmp/live.tsv" "$1"
+}
+
+assert_eq "1" "$(settings_text_restore replace | grep -c "^set podkop.main.user_domains_text='github.com$")" \
+  "a text list is restored by one multi-line set, not add_list"
+
+assert_eq "0" "$(settings_text_restore replace | grep -c "add_list podkop.main.user_domains_text")" \
+  "a text list never turns into add_list commands"
+
+assert_eq "1" "$(settings_text_restore merge | grep -c "^only-on-router.example'$")" \
+  "merge keeps a router-only line of the text list"
+
 printf "\nPassed: %d  Failed: %d\n" "$PASS_COUNT" "$FAIL_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

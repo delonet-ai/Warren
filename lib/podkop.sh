@@ -195,7 +195,7 @@ configure_podkop_common_settings() {
   uciq get podkop.main >/dev/null || uciq set podkop.main='section'
   uciq set podkop.main.connection_type='proxy'
   uciq set podkop.main.enable_udp_over_tcp='0'
-  uciq set podkop.main.user_domain_list_type='dynamic'
+  podkop_ensure_user_domain_list_type
   uciq set podkop.main.user_subnet_list_type='disabled'
   uciq set podkop.main.mixed_proxy_enabled='0'
 }
@@ -214,6 +214,105 @@ configure_podkop_community_lists() {
   if [ "${LIST_GOOGLE_AI:-0}" = "1" ]; then
     uciq add_list podkop.main.community_lists='google_ai'
   fi
+}
+
+# Тип пользовательского списка доменов. Выбранный пользователем (dynamic или
+# text) не трогаем: смена типа молча выключает уже набранный список.
+# На чистой установке — text: одно поле, вставка пачкой, комментарии через //.
+podkop_ensure_user_domain_list_type() {
+  case "$(uci -q get podkop.main.user_domain_list_type 2>/dev/null || true)" in
+    dynamic|text) return 0 ;;
+  esac
+  uciq set podkop.main.user_domain_list_type='text'
+}
+
+# Домены, которые Warren заводит в белый список Podkop (user_domains секции
+# main) по умолчанию: без них облако роботов-пылесосов Roborock не работает.
+podkop_default_user_domains() {
+  cat <<'WARREN_DEFAULT_DOMAINS'
+euiot.roborock.com
+usiot.roborock.com
+cniot.roborock.com
+ruiot.roborock.com
+api-eu.roborock.com
+api-us.roborock.com
+api-cn.roborock.com
+api-ru.roborock.com
+wood-eu.roborock.com
+wood-us.roborock.com
+wood-ru.roborock.com
+mqtt-eu.roborock.com
+mqtt-us.roborock.com
+mqtt-us-2.roborock.com
+mqtt-ru.roborock.com
+mqtt-cn.roborock.com
+files.roborock.com
+image.roborock.com
+WARREN_DEFAULT_DOMAINS
+}
+
+WARREN_PODKOP_DOMAINS_MARK="// Warren: Roborock"
+
+# Добавляет отсутствующие домены по умолчанию в белый список Podkop.
+# Работает с обоими типами списка: text (user_domains_text, одно поле с
+# комментариями) и dynamic (список UCI user_domains). Уже набранное руками
+# не удаляет и не переупорядочивает.
+configure_podkop_user_domains() {
+  podkop_user_domains_type="$(uci -q get podkop.main.user_domain_list_type 2>/dev/null || true)"
+  [ "$podkop_user_domains_type" = "dynamic" ] || podkop_user_domains_type="text"
+
+  if [ "$podkop_user_domains_type" = "text" ]; then
+    podkop_user_domains_text="$(uci -q get podkop.main.user_domains_text 2>/dev/null || true)"
+    # Как это читает сам Podkop: комментарии до конца строки, разделители —
+    # перевод строки, запятая и пробел (parse_domain_or_subnet_string_to_commas_string).
+    podkop_user_domains_present="$(printf "%s\n" "$podkop_user_domains_text" | sed 's|//.*||' | tr ', ' '\n' | sed '/^$/d' | tr '\n' ' ')"
+  else
+    podkop_user_domains_present="$(uci -q get podkop.main.user_domains 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | tr '\n' ' ')"
+  fi
+
+  podkop_user_domains_missing=""
+  for podkop_user_domain in $(podkop_default_user_domains); do
+    case " $podkop_user_domains_present " in
+      *" $podkop_user_domain "*) continue ;;
+    esac
+    podkop_user_domains_present="$podkop_user_domains_present$podkop_user_domain "
+    podkop_user_domains_missing="$podkop_user_domains_missing$podkop_user_domain "
+  done
+
+  [ -n "$podkop_user_domains_missing" ] || return 0
+
+  if [ "$podkop_user_domains_type" = "text" ]; then
+    podkop_user_domains_block=""
+    case "$podkop_user_domains_text" in
+      *"$WARREN_PODKOP_DOMAINS_MARK"*) ;;
+      *) podkop_user_domains_block="$WARREN_PODKOP_DOMAINS_MARK" ;;
+    esac
+    for podkop_user_domain in $podkop_user_domains_missing; do
+      if [ -n "$podkop_user_domains_block" ]; then
+        podkop_user_domains_block="$podkop_user_domains_block
+$podkop_user_domain"
+      else
+        podkop_user_domains_block="$podkop_user_domain"
+      fi
+    done
+
+    podkop_user_domains_text="$(printf "%s\n" "$podkop_user_domains_text" | sed -e 's/[[:space:]]*$//' | sed -e '/./,$!d')"
+    if [ -n "$podkop_user_domains_text" ]; then
+      podkop_user_domains_text="$podkop_user_domains_text
+$podkop_user_domains_block"
+    else
+      podkop_user_domains_text="$podkop_user_domains_block"
+    fi
+
+    uciq set podkop.main.user_domain_list_type='text'
+    uciq set podkop.main.user_domains_text="$podkop_user_domains_text"
+  else
+    for podkop_user_domain in $podkop_user_domains_missing; do
+      uciq add_list podkop.main.user_domains="$podkop_user_domain"
+    done
+  fi
+
+  done_ "В белый список Podkop добавлено доменов: $(printf "%s" "$podkop_user_domains_missing" | wc -w | tr -d ' ')"
 }
 
 configure_podkop_full() {
@@ -246,6 +345,7 @@ configure_podkop_full() {
   uciq -q del podkop.main.urltest_proxy_links || true
   uciq -q del podkop.main.selector_proxy_links || true
   configure_podkop_community_lists
+  configure_podkop_user_domains
 
   uciq commit podkop
   /etc/init.d/podkop restart >/dev/null 2>&1 || true

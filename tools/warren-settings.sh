@@ -108,6 +108,11 @@ router_autodetect_bind() {
 # но создавать заново мы не берёмся (см. warren_settings_restore_commands).
 warren_settings_parse_export() {
   awk '
+    function quotes_balanced(s,   t) {
+      t = s
+      gsub(/\047\134\047\047/, "", t)
+      return (gsub(/\047/, "&", t) % 2) == 0
+    }
     function unquote(s,   q, p, out) {
       q = "\047"
       if (substr(s, 1, 1) == q && substr(s, length(s), 1) == q) {
@@ -145,6 +150,11 @@ warren_settings_parse_export() {
     /^[[:space:]]*(option|list)[[:space:]]/ {
       line = $0
       sub(/^[[:space:]]+/, "", line)
+      # Многострочное значение (option ... 'a.com\nb.com') — дочитываем до
+      # закрывающей кавычки, иначе текстовый список развалится построчно.
+      while (!quotes_balanced(line) && (getline extra) > 0) {
+        line = line "\n" extra
+      }
       kind = line
       sub(/[[:space:]].*/, "", kind)
       rest = line
@@ -154,7 +164,18 @@ warren_settings_parse_export() {
       val = rest
       sub(/^[^[:space:]]+[[:space:]]*/, "", val)
       if (sref == "") next
-      printf "%s\t%s\t%s\t%s\n", kind, sref, opt, unquote(val)
+      val = unquote(val)
+      # Текстовый список Podkop (user_domains_text) — это одна опция с
+      # переводами строк. Отдаём её построчно, kind = text: ниже всё работает
+      # как со списком, а при восстановлении строки снова склеиваются.
+      if (kind == "option" && opt ~ /_text$/) {
+        parts = split(val, textline, "\n")
+        for (i = 1; i <= parts; i++) {
+          printf "text\t%s\t%s\t%s\n", sref, opt, textline[i]
+        }
+        next
+      }
+      printf "%s\t%s\t%s\t%s\n", kind, sref, opt, val
     }
   '
 }
@@ -165,6 +186,7 @@ warren_settings_is_list_option() {
     *proxy*) return 1 ;;
     source_network_interfaces) return 1 ;;
     user_domains|user_subnets|community_lists) return 0 ;;
+    *_domains_text|*_subnets_text) return 0 ;;
     user_domain_list_type|user_subnet_list_type) return 0 ;;
     *_domains|*_subnets|*_ips|*_domain_list|*_subnet_list) return 0 ;;
     *) return 1 ;;
@@ -201,7 +223,7 @@ warren_settings_sections() {
 warren_settings_values() {
   # warren_settings_values <parsed.tsv> <section> <option>
   awk -F'\t' -v s="$2" -v o="$3" \
-    '($1 == "list" || $1 == "option") && $2 == s && $3 == o { print $4 }' "$1"
+    '($1 == "list" || $1 == "option" || $1 == "text") && $2 == s && $3 == o { print $4 }' "$1"
 }
 
 # warren_settings_write_lists <parsed.tsv> <snapshot dir>
@@ -216,7 +238,7 @@ warren_settings_write_lists() {
   warren_settings_sections "$_ws_parsed" > "$_ws_snap/sections.tsv"
 
   _ws_keys="$(ws_tmp_dir)/keys.tsv"
-  awk -F'\t' '$1 == "list" || $1 == "option" { print $1 "\t" $2 "\t" $3 }' "$_ws_parsed" \
+  awk -F'\t' '$1 == "list" || $1 == "option" || $1 == "text" { print $1 "\t" $2 "\t" $3 }' "$_ws_parsed" \
     | sort -u > "$_ws_keys"
 
   while IFS="$TAB" read -r _ws_kind _ws_sec _ws_opt; do
@@ -275,6 +297,23 @@ warren_settings_restore_commands() {
       _ws_value="$(awk 'NR == 1 { print }' "$_ws_snap/lists/$_ws_file")"
       [ -n "${_ws_value:-}" ] || continue
       printf "set podkop.%s.%s=%s\n" "$_ws_sec" "$_ws_opt" "$(warren_settings_uci_quote "$_ws_value")"
+      continue
+    fi
+
+    if [ "$_ws_kind" = "text" ]; then
+      _ws_values="$_ws_work/values.txt"
+      cp "$_ws_snap/lists/$_ws_file" "$_ws_values"
+      if [ "$_ws_mode" = "merge" ]; then
+        warren_settings_values "$_ws_live" "$_ws_sec" "$_ws_opt" | while IFS= read -r _ws_item; do
+          [ -n "$_ws_item" ] || continue
+          grep -Fqx -- "$_ws_item" "$_ws_snap/lists/$_ws_file" && continue
+          printf "%s\n" "$_ws_item" >> "$_ws_values"
+        done
+      fi
+      # uci -q batch принимает многострочное значение в кавычках (проверено на
+      # 24.10/25.12), поэтому текстовый список возвращается одной командой set.
+      printf "set podkop.%s.%s=%s\n" "$_ws_sec" "$_ws_opt" \
+        "$(warren_settings_uci_quote "$(cat "$_ws_values")")"
       continue
     fi
 
