@@ -70,6 +70,7 @@ warren_assign_config_key() {
     VPS_HOST) VPS_HOST="$val" ;;
     VPS_SSH_PORT) VPS_SSH_PORT="$val" ;;
     VPS_ROOT_PASSWORD) VPS_ROOT_PASSWORD="$val" ;;
+    VPS_LOCATION) VPS_LOCATION="$val" ;;
     SELECTED_VPS_REPORT) SELECTED_VPS_REPORT="$val" ;;
     AUTO_VPS_SOURCE) AUTO_VPS_SOURCE="$val" ;;
     REMOTE_ADMIN_ROUTER_ID) REMOTE_ADMIN_ROUTER_ID="$val" ;;
@@ -109,6 +110,7 @@ load_conf_if_exists() {
   _conf_safe_read_key VPS_HOST "$CONF"
   _conf_safe_read_key VPS_SSH_PORT "$CONF"
   _conf_safe_read_key VPS_ROOT_PASSWORD "$CONF"
+  _conf_safe_read_key VPS_LOCATION "$CONF"
   _conf_safe_read_key SELECTED_VPS_REPORT "$CONF"
   _conf_safe_read_key AUTO_VPS_SOURCE "$CONF"
   _conf_safe_read_key REMOTE_ADMIN_ROUTER_ID "$CONF"
@@ -138,6 +140,7 @@ save_conf() {
     printf "VPS_HOST=%s\n" "$(quote_sh "${VPS_HOST:-}")"
     printf "VPS_SSH_PORT=%s\n" "$(quote_sh "${VPS_SSH_PORT:-}")"
     printf "VPS_ROOT_PASSWORD=%s\n" "$(quote_sh "${VPS_ROOT_PASSWORD:-}")"
+    printf "VPS_LOCATION=%s\n" "$(quote_sh "${VPS_LOCATION:-}")"
     printf "SELECTED_VPS_REPORT=%s\n" "$(quote_sh "${SELECTED_VPS_REPORT:-}")"
     printf "AUTO_VPS_SOURCE=%s\n" "$(quote_sh "${AUTO_VPS_SOURCE:-}")"
     printf "REMOTE_ADMIN_ROUTER_ID=%s\n" "$(quote_sh "${REMOTE_ADMIN_ROUTER_ID:-}")"

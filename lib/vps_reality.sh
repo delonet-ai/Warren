@@ -20,7 +20,13 @@ random_hex() {
 }
 
 vps_client_name() {
-  printf "%s" "${VPS_HOST:-warren}" | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//'
+  _vcn_base="$(printf "%s" "${VPS_HOST:-warren}" | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//')"
+  _vcn_loc="$(vps_location_code)"
+  if [ -n "$_vcn_loc" ]; then
+    printf "%s-%s" "$_vcn_base" "$_vcn_loc"
+  else
+    printf "%s" "$_vcn_base"
+  fi
 }
 
 generate_reality_materials() {
@@ -267,6 +273,8 @@ configure_vless_reality() {
     printf "SSH root password: %s\n" "${VPS_ROOT_PASSWORD:-unknown}"
     printf "Password storage note: root password was kept during setup and removed from warren.conf after success; this 0600 report remains the recovery copy.\n"
     printf "OS: %s\n" "${VPS_OS_PRETTY:-unknown}"
+    printf "Location: %s\n" "$(vps_location_code)"
+    printf "Xray core: %s\n" "${WARREN_XRAY_PINNED_RELEASE_TAG:-unknown}"
     printf "3x-ui URL: %s\n" "${PANEL_URL:-unknown}"
     printf "3x-ui username: %s\n" "${PANEL_USERNAME:-unknown}"
     printf "3x-ui password: %s\n" "${PANEL_PASSWORD:-unknown}"

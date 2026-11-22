@@ -167,6 +167,15 @@ exchange_vps_keys() {
   vps_step_done "SSH-ключ установлен, дальнейший доступ будет без пароля"
 }
 
+# Best-effort ISO country code of the VPS, asked from the VPS itself.
+vps_detect_location() {
+  [ -n "${VPS_HOST:-}" ] || return 1
+  _vdl_raw="$(vps_ssh_timeout 25 "sh -lc 'curl -fsS --connect-timeout 5 --max-time 10 https://ipinfo.io/country 2>/dev/null || curl -fsS --connect-timeout 5 --max-time 10 https://ifconfig.co/country-iso 2>/dev/null || true'" 2>/dev/null || true)"
+  _vdl_code="$(printf "%s" "$_vdl_raw" | tr '[:lower:]' '[:upper:]' | tr -dc 'A-Z' | cut -c1-2)"
+  [ -n "$_vdl_code" ] || return 1
+  printf "%s" "$_vdl_code"
+}
+
 detect_vps_os() {
   os_info="$(vps_ssh "sh -lc '. /etc/os-release 2>/dev/null && printf \"%s|%s|%s\n\" \"\${ID:-unknown}\" \"\${VERSION_ID:-unknown}\" \"\${PRETTY_NAME:-unknown}\"'")" \
     || fail "Не удалось определить ОС на VPS"

@@ -1111,6 +1111,35 @@ assert_eq "refused" \
   "$(tg_awg_env "$AWG_DB_FRESH" 'amz_obfuscation_defaults 2>/dev/null && echo issued || echo refused')" \
   "M19: TG bot refuses to issue a config when awg0 obfuscation is missing in UCI"
 
+# --- Location id in the Podkop name --------------------------------------
+# Podkop shows the VLESS link fragment (getProxyUrlName), so the location tag
+# has to ride on CLIENT_COMMENT / vps_client_name.
+assert_eq "USA" "$(VPS_LOCATION=' usa ' vps_location_code)" \
+  "location id is normalised to upper case without spaces"
+assert_eq "GE" "$(VPS_LOCATION='ge/!' vps_location_code)" \
+  "location id drops characters that would break the link fragment"
+assert_eq "" "$(VPS_LOCATION='' vps_location_code)" \
+  "empty location id stays empty"
+assert_eq "203.0.113.10-FI" "$(VPS_HOST=203.0.113.10 VPS_LOCATION=fi vps_client_name)" \
+  "client name carries the location id for Podkop"
+assert_eq "203.0.113.10" "$(VPS_HOST=203.0.113.10 VPS_LOCATION= vps_client_name)" \
+  "client name stays unchanged when no location id is set"
+
+vless_link_carries_location() (
+  VPS_HOST=203.0.113.10 VPS_LOCATION=kz
+  CLIENT_UUID=11111111-2222-4333-8444-555555555555 CLIENT_FLOW=xtls-rprx-vision
+  INBOUND_PORT=443 REALITY_PUBLIC_KEY=pbk REALITY_FINGERPRINT=chrome
+  REALITY_SERVER_NAME_1=login.vk.com SID_PRIMARY=abcd
+  CLIENT_COMMENT="$(vps_client_name)"
+  runtime_state_set() { :; }
+  build_vless_link || return 1
+  case "$VLESS_LINK" in
+    *"#203.0.113.10-KZ") return 0 ;;
+    *) printf "%s\n" "$VLESS_LINK" >&2; return 1 ;;
+  esac
+)
+assert_success "VLESS link fragment ends with the location id" vless_link_carries_location
+
 # ── Podkop user domain lists: text (user_domains_text) and dynamic ──────────
 PK_T="$TEST_TMP/podkop-lists"
 mkdir -p "$PK_T/bin" "$PK_T/db"
@@ -1260,6 +1289,41 @@ assert_eq "0" "$(settings_text_restore replace | grep -c "add_list podkop.main.u
 
 assert_eq "1" "$(settings_text_restore merge | grep -c "^only-on-router.example'$")" \
   "merge keeps a router-only line of the text list"
+
+# --- Xray core pin ---------------------------------------------------------
+# Xray едет внутри релиза 3x-ui, и 26.x ломает REALITY для sing-box (Podkop):
+# ядро обязано пиниться отдельно и подменяться после установки панели.
+assert_eq "amd64|Xray-linux-64" \
+  "$(warren_xray_pin_for_machine x86_64 | cut -d'|' -f1,2)" \
+  "Xray pin maps x86_64 to the amd64 binary and the linux-64 asset"
+assert_eq "arm64|Xray-linux-arm64-v8a" \
+  "$(warren_xray_pin_for_machine aarch64 | cut -d'|' -f1,2)" \
+  "Xray pin maps aarch64 to the arm64 binary and the v8a asset"
+assert_eq "arm32|Xray-linux-arm32-v7a" \
+  "$(warren_xray_pin_for_machine armv7l | cut -d'|' -f1,2)" \
+  "Xray pin maps armv7l to the arm32 binary 3x-ui expects"
+assert_failure "unknown VPS arch has no Xray pin" warren_xray_pin_for_machine riscv64
+
+xray_pin_has_sha() (
+  for machine in x86_64 aarch64 armv7l s390x; do
+    sha="$(warren_xray_pin_for_machine "$machine" | cut -d'|' -f3)"
+    case "$sha" in
+      ????????????????????????????????????????????????????????????????) ;;
+      *) printf "%s: [%s]\n" "$machine" "$sha" >&2; return 1 ;;
+    esac
+  done
+)
+assert_success "every Xray pin carries a 64-hex SHA256" xray_pin_has_sha
+
+assert_eq "25" "$(printf "%s" "${WARREN_XRAY_PINNED_RELEASE_TAG#v}" | cut -d. -f1)" \
+  "Xray core stays pinned to 25.x until sing-box can verify 26.x REALITY"
+
+# Регрессия 2026-11-22: без этого вызова VPS получает ядро из релиза 3x-ui (26.x)
+# и Podkop падает в reality verification failed, хотя Happ работает.
+assert_success "run_vps_flow pins the Xray core after installing 3x-ui" \
+  grep -q 'pin_3xui_xray_core' "$PROJECT_DIR/lib/vps.sh"
+assert_success "the VPS package step installs unzip for the Xray pin" \
+  grep -q 'iproute2 unzip' "$PROJECT_DIR/lib/vps_3xui.sh"
 
 printf "\nPassed: %d  Failed: %d\n" "$PASS_COUNT" "$FAIL_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

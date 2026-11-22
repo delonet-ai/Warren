@@ -73,11 +73,11 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/versions.sh
 
-- `warren_openwrt_family`, `warren_openwrt_family_supported`, `warren_openwrt_release_graceful`, `warren_expected_pkg_manager_for_release`, `warren_check_pkg_manager_matches_openwrt`, `warren_awg_release_family`, `warren_podkop_install_url_default`, `warren_versions_apply_defaults`, `warren_awg_protocol_version_for_release`, `warren_awg_packages_for_protocol`, `warren_awg_release_base_url`, `warren_awg_package_extensions_for_pm`, `warren_awg_pkg_postfix_for`, `warren_awg_patch_number`, `warren_awg_candidate_releases`, `warren_awg_probe_url`, `warren_awg_resolve_package_url`, `warren_awg_release_has_packages`, `warren_openwrt_release_kernel`, `warren_awg_fallback_kernel_matches`, `warren_awg_select_release`, `warren_version_policy_summary`
+- `warren_openwrt_family`, `warren_openwrt_family_supported`, `warren_openwrt_release_graceful`, `warren_expected_pkg_manager_for_release`, `warren_check_pkg_manager_matches_openwrt`, `warren_awg_release_family`, `warren_podkop_install_url_default`, `warren_versions_apply_defaults`, `warren_awg_protocol_version_for_release`, `warren_awg_packages_for_protocol`, `warren_awg_release_base_url`, `warren_awg_package_extensions_for_pm`, `warren_awg_pkg_postfix_for`, `warren_awg_patch_number`, `warren_awg_candidate_releases`, `warren_awg_probe_url`, `warren_awg_resolve_package_url`, `warren_awg_release_has_packages`, `warren_openwrt_release_kernel`, `warren_awg_fallback_kernel_matches`, `warren_awg_select_release`, `warren_xray_pin_for_machine`, `warren_version_policy_summary`
 
 ## lib/vps_3xui.sh
 
-- `json_get_string`, `json_has_success_true`, `json_get_number`, `json_get_first_string`, `vps_remote_state_dir`, `vps_remote_artifact_file`, `vps_local_artifact_cache`, `is_3xui_installed`, `upgrade_vps_packages`, `install_3xui`, `configure_3xui_admin`, `normalize_panel_base_path`, `refresh_3xui_panel_settings`, `wait_for_3xui_panel`, `collect_3xui_access_info`, `collect_3xui_api_token`, `ensure_3xui_api_token`, `login_3xui_api`
+- `json_get_string`, `json_has_success_true`, `json_get_number`, `json_get_first_string`, `vps_remote_state_dir`, `vps_remote_artifact_file`, `vps_local_artifact_cache`, `is_3xui_installed`, `upgrade_vps_packages`, `install_3xui`, `pin_3xui_xray_core`, `configure_3xui_admin`, `normalize_panel_base_path`, `refresh_3xui_panel_settings`, `wait_for_3xui_panel`, `collect_3xui_access_info`, `collect_3xui_api_token`, `ensure_3xui_api_token`, `login_3xui_api`
 
 ## lib/vps_reality.sh
 
@@ -85,15 +85,15 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## lib/vps_report.sh
 
-- `vps_sanitized_host`, `vps_workspace_dir`, `vps_keys_dir`, `vps_reports_dir`, `vps_report_file`, `vps_report_files`, `vps_report_vless_link`, `vps_report_field`, `vps_report_host`, `vps_report_ssh_port`, `vps_report_root_password`, `vps_report_vless_sni`, `vps_report_summary_text`, `notify_vps_report_via_tg`, `select_vps_report_for_podkop`
+- `vps_sanitized_host`, `vps_location_code`, `vps_workspace_dir`, `vps_keys_dir`, `vps_reports_dir`, `vps_report_file`, `vps_report_files`, `vps_report_vless_link`, `vps_report_field`, `vps_report_host`, `vps_report_ssh_port`, `vps_report_root_password`, `vps_report_vless_sni`, `vps_report_summary_text`, `notify_vps_report_via_tg`, `select_vps_report_for_podkop`
 
 ## lib/vps_ssh.sh
 
-- `vps_key_file`, `vps_ssh_local_timeout`, `vps_is_dropbear_ssh`, `vps_ssh_password_timeout`, `vps_ssh_password`, `vps_ssh_key_timeout`, `vps_ssh_key`, `vps_ssh_timeout`, `vps_ssh`, `vps_write_remote_file`, `probe_vps_access`, `exchange_vps_keys`, `detect_vps_os`
+- `vps_key_file`, `vps_ssh_local_timeout`, `vps_is_dropbear_ssh`, `vps_ssh_password_timeout`, `vps_ssh_password`, `vps_ssh_key_timeout`, `vps_ssh_key`, `vps_ssh_timeout`, `vps_ssh`, `vps_write_remote_file`, `probe_vps_access`, `exchange_vps_keys`, `vps_detect_location`, `detect_vps_os`
 
 ## lib/vps.sh
 
-- `vps_progress_stage`, `vps_progress_line`, `vps_step_start`, `vps_step_done`, `ensure_vps_prereqs`, `collect_vps_inputs`, `vps_forget_root_password`, `print_vps_summary`, `collect_vps_facts`, `run_vps_flow`
+- `vps_progress_stage`, `vps_progress_line`, `vps_step_start`, `vps_step_done`, `ensure_vps_prereqs`, `collect_vps_inputs`, `vps_resolve_location`, `vps_forget_root_password`, `print_vps_summary`, `collect_vps_facts`, `run_vps_flow`
 
 ## lib/watchdog.sh
 
@@ -141,7 +141,7 @@ Architecture map: [INDEX.md](INDEX.md).
 
 ## tests/run.sh
 
-- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `reality_payload_accepts_sing_box`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `podkop_engine_seen_in_proc`, `registry_handlers_exist`, `registry_menu_unique`, `luci_modes_registered`, `registry_dispatches_service`, `menu_submenu_saves_service_mode`, `settings_tool`, `settings_build_snapshot`, `settings_no_secrets_in_snapshot`, `settings_commands`, `settings_plan_reports_diff`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `remote_agent_config_is_data`, `watchdog_recovers_engine`, `watchdog_waits_after_boot`, `watchdog_skips_self_recovered_podkop`, `watchdog_stops_after_three_failures`, `corp_bot_env`, `corp_unbound_env`, `corp_run_captures_output_and_code`, `corp_dns_del_uses_the_name_behind_the_index`, `corp_dns_add_rejects_a_bare_word`, `corp_available_follows_the_vivpn_binary`, `every_corp_button_has_a_handler`, `corp_cert_offers_accept_only_when_verified`, `parse_update_field`, `awg_env`, `awg_generated_ok`, `awg_generator_holds_constraints`, `awg_rand_spreads`, `awg_legacy_is_wg`, `awg_generated_not_wg`, `awg_params_from_uci`, `awg_fresh_alloc`, `awg_rotate_rewrites_conf`, `tg_awg_env`, `pk_env`, `pk_db`, `pk_get`, `pk_domain_count`, `settings_text_tool`, `settings_text_restore`
+- `pass`, `fail_test`, `assert_eq`, `assert_success`, `assert_failure`, `reality_payload_accepts_sing_box`, `runtime_state_set`, `podkop_init_running`, `podkop_engine_running`, `podkop_config_ok`, `podkop_rules_active`, `podkop_nft_active`, `podkop_engine_seen_in_proc`, `registry_handlers_exist`, `registry_menu_unique`, `luci_modes_registered`, `registry_dispatches_service`, `menu_submenu_saves_service_mode`, `settings_tool`, `settings_build_snapshot`, `settings_no_secrets_in_snapshot`, `settings_commands`, `settings_plan_reports_diff`, `retry_recovers_after_temporary_failure`, `wget_timeout_flags`, `inet_waits_for_wan`, `awg_stub_wget`, `awg_select`, `retry_rejects_tampered_payload`, `skip_hash_check_allows_dev_payload`, `forget_vps_password_after_success`, `remote_agent_config_is_data`, `watchdog_recovers_engine`, `watchdog_waits_after_boot`, `watchdog_skips_self_recovered_podkop`, `watchdog_stops_after_three_failures`, `corp_bot_env`, `corp_unbound_env`, `corp_run_captures_output_and_code`, `corp_dns_del_uses_the_name_behind_the_index`, `corp_dns_add_rejects_a_bare_word`, `corp_available_follows_the_vivpn_binary`, `every_corp_button_has_a_handler`, `corp_cert_offers_accept_only_when_verified`, `parse_update_field`, `awg_env`, `awg_generated_ok`, `awg_generator_holds_constraints`, `awg_rand_spreads`, `awg_legacy_is_wg`, `awg_generated_not_wg`, `awg_params_from_uci`, `awg_fresh_alloc`, `awg_rotate_rewrites_conf`, `tg_awg_env`, `vless_link_carries_location`, `pk_env`, `pk_db`, `pk_get`, `pk_domain_count`, `settings_text_tool`, `settings_text_restore`, `xray_pin_has_sha`
 
 ## tools/build-router-upload.sh
 

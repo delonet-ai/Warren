@@ -529,6 +529,7 @@ luci_apply_form_overrides() {
         VPS_HOST="${LUCI_VPS_HOST:-}"
         VPS_SSH_PORT="${LUCI_VPS_SSH_PORT:-22}"
         VPS_ROOT_PASSWORD="${LUCI_VPS_ROOT_PASSWORD:-}"
+        VPS_LOCATION="${LUCI_VPS_LOCATION:-}"
       fi
       ;;
     remote_admin|remote_admin_config)

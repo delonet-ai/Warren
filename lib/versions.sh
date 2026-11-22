@@ -5,6 +5,15 @@ WARREN_PODKOP_RELEASE_TAG="${WARREN_PODKOP_RELEASE_TAG:-0.7.21}"
 WARREN_PODKOP_INSTALL_SHA256="${WARREN_PODKOP_INSTALL_SHA256:-292da42b060f2eea935de80e3dd9ace4bb980a9559afb1af175f4468b7c9263f}"
 WARREN_3XUI_PINNED_RELEASE_TAG="${WARREN_3XUI_PINNED_RELEASE_TAG:-v3.9.0}"
 WARREN_3XUI_INSTALL_SHA256="${WARREN_3XUI_INSTALL_SHA256:-18616fe26c8f6c92db6daa2dcd7cd53c5143ee69ecfd26d8ea6dc9b2c78607a6}"
+# Xray едет внутри релиза 3x-ui (bin/xray-linux-<arch> из ассета), поэтому пин
+# 3x-ui определяет и версию ядра. Xray 26.x ломает REALITY для sing-box клиентов
+# (Podkop) — xray-core клиенты при этом работают. Поэтому ядро пинится отдельно и
+# подменяется после установки панели. Подтверждено 2026-11-22, см. TECHNICAL_README.
+WARREN_XRAY_PINNED_RELEASE_TAG="${WARREN_XRAY_PINNED_RELEASE_TAG:-v25.12.8}"
+WARREN_XRAY_ZIP_SHA256_AMD64="${WARREN_XRAY_ZIP_SHA256_AMD64:-97f20fed49750c24fc389c2946549ba2a374907e07e9adb2ce75799dd80088d9}"
+WARREN_XRAY_ZIP_SHA256_ARM64="${WARREN_XRAY_ZIP_SHA256_ARM64:-fdffb733313d784afea143e6bd3fd6ad7d521fb337e966a0e042bb823172309e}"
+WARREN_XRAY_ZIP_SHA256_ARM32="${WARREN_XRAY_ZIP_SHA256_ARM32:-ffa5450bdc9fbc964ad00d1aed075960efdee7fcefb854055068d9fa1d9ddfe1}"
+WARREN_XRAY_ZIP_SHA256_S390X="${WARREN_XRAY_ZIP_SHA256_S390X:-184939bbab50de2641b245559c25314159e0e4f5600cc1df8ee3c41cf155a255}"
 WARREN_REMOTE_ADMIN_PROTOCOL_VERSION="${WARREN_REMOTE_ADMIN_PROTOCOL_VERSION:-1}"
 WARREN_LUCI_BUNDLE_VERSION="${WARREN_LUCI_BUNDLE_VERSION:-${WARREN_VERSION:-0.7.0}}"
 
@@ -268,12 +277,30 @@ warren_awg_select_release() {
   done
 }
 
+# `uname -m` на VPS -> "<суффикс бинаря 3x-ui>|<ассет релиза Xray>|<SHA256 zip>".
+# Имена бинарей совпадают с install.sh 3x-ui (arm -> arm32), ассеты — с релизом Xray.
+warren_xray_pin_for_machine() {
+  case "${1:-}" in
+    x86_64|amd64)
+      printf "amd64|Xray-linux-64|%s\n" "${WARREN_XRAY_ZIP_SHA256_AMD64:-}" ;;
+    aarch64|arm64)
+      printf "arm64|Xray-linux-arm64-v8a|%s\n" "${WARREN_XRAY_ZIP_SHA256_ARM64:-}" ;;
+    armv7l|armv7|armhf|arm)
+      printf "arm32|Xray-linux-arm32-v7a|%s\n" "${WARREN_XRAY_ZIP_SHA256_ARM32:-}" ;;
+    s390x)
+      printf "s390x|Xray-linux-s390x|%s\n" "${WARREN_XRAY_ZIP_SHA256_S390X:-}" ;;
+    *)
+      return 1 ;;
+  esac
+}
+
 warren_version_policy_summary() {
   cat <<EOF
 OpenWrt families: ${WARREN_SUPPORTED_OPENWRT_FAMILIES}
 Tested OpenWrt release: ${WARREN_OPENWRT_PINNED_RELEASE}
 Podkop installer tag/SHA256: ${WARREN_PODKOP_RELEASE_TAG} / ${WARREN_PODKOP_INSTALL_SHA256}
 3x-ui tag/SHA256: ${WARREN_3XUI_PINNED_RELEASE_TAG} / ${WARREN_3XUI_INSTALL_SHA256}
+Xray core tag: ${WARREN_XRAY_PINNED_RELEASE_TAG} (подменяет ядро из релиза 3x-ui)
 AWG source: ${WARREN_AWG_PACKAGE_SOURCE}
 Remote Admin protocol: ${WARREN_REMOTE_ADMIN_PROTOCOL_VERSION}
 Warren/LuCI bundle: ${WARREN_LUCI_BUNDLE_VERSION}

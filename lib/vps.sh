@@ -78,11 +78,14 @@ collect_vps_inputs() {
 
     ask "Root пароль VPS" VPS_ROOT_PASSWORD "${VPS_ROOT_PASSWORD:-}"
     [ -n "$VPS_ROOT_PASSWORD" ] || fail "Root пароль VPS пустой"
+
+    ask "ID локации для имени в Podkop (GE, USA, FI, KZ; пусто — определить автоматически)" VPS_LOCATION "${VPS_LOCATION:-}"
   fi
 
   conf_set VPS_HOST "$VPS_HOST"
   conf_set VPS_SSH_PORT "$VPS_SSH_PORT"
   conf_set VPS_ROOT_PASSWORD "$VPS_ROOT_PASSWORD"
+  conf_set VPS_LOCATION "$(vps_location_code)"
 
   if [ "${MODE:-}" != "auto" ]; then
     init_runtime_state
@@ -92,6 +95,23 @@ collect_vps_inputs() {
   runtime_state_set "vps_host" "$VPS_HOST"
   runtime_state_set "vps_ssh_port" "$VPS_SSH_PORT"
   runtime_state_set "vps_root_password" "$VPS_ROOT_PASSWORD"
+  runtime_state_set "vps_location" "$(vps_location_code)"
+}
+
+# Keeps the operator's value when set, otherwise asks the VPS for its country.
+vps_resolve_location() {
+  VPS_LOCATION="$(vps_location_code)"
+  if [ -z "$VPS_LOCATION" ]; then
+    VPS_LOCATION="$(vps_detect_location || true)"
+    VPS_LOCATION="$(vps_location_code)"
+  fi
+  if [ -n "$VPS_LOCATION" ]; then
+    info "ID локации для имени в Podkop: $VPS_LOCATION"
+  else
+    info "ID локации не задан и не определился; имя останется без суффикса"
+  fi
+  conf_set VPS_LOCATION "$VPS_LOCATION"
+  runtime_state_set "vps_location" "$VPS_LOCATION"
 }
 
 vps_forget_root_password() {
@@ -147,6 +167,7 @@ run_vps_flow() {
 
   vps_step_start 4
   detect_vps_os
+  vps_resolve_location
   upgrade_vps_packages
   collect_vps_facts
 
@@ -179,6 +200,8 @@ run_vps_flow() {
       fi
       ;;
   esac
+
+  pin_3xui_xray_core
 
   vps_step_start 6
   collect_3xui_access_info

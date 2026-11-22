@@ -44,23 +44,23 @@ is_3xui_installed() {
 upgrade_vps_packages() {
   case "$VPS_OS_ID" in
     ubuntu|debian|raspbian|armbian)
-      vps_ssh_timeout 1800 "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade --with-new-pkgs -y && apt-get install -y bash curl ca-certificates coreutils procps openssl dnsutils iproute2'" \
+      vps_ssh_timeout 1800 "sh -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade --with-new-pkgs -y && apt-get install -y bash curl ca-certificates coreutils procps openssl dnsutils iproute2 unzip'" \
         || fail "Не удалось обновить пакеты на VPS (apt)"
       ;;
     centos|rhel|almalinux|rocky|fedora|ol)
-      vps_ssh "sh -lc 'if command -v dnf >/dev/null 2>&1; then dnf upgrade -y && dnf install -y curl ca-certificates; else yum update -y && yum install -y curl ca-certificates; fi'" \
+      vps_ssh "sh -lc 'if command -v dnf >/dev/null 2>&1; then dnf upgrade -y && dnf install -y curl ca-certificates unzip; else yum update -y && yum install -y curl ca-certificates unzip; fi'" \
         || fail "Не удалось обновить пакеты на VPS (dnf/yum)"
       ;;
     arch|manjaro|parch)
-      vps_ssh "sh -lc 'pacman -Syu --noconfirm curl ca-certificates'" \
+      vps_ssh "sh -lc 'pacman -Syu --noconfirm curl ca-certificates unzip'" \
         || fail "Не удалось обновить пакеты на VPS (pacman)"
       ;;
     opensuse*|sles)
-      vps_ssh "sh -lc 'zypper refresh && zypper update -y && zypper install -y curl ca-certificates'" \
+      vps_ssh "sh -lc 'zypper refresh && zypper update -y && zypper install -y curl ca-certificates unzip'" \
         || fail "Не удалось обновить пакеты на VPS (zypper)"
       ;;
     alpine)
-      vps_ssh "sh -lc 'apk update && apk upgrade && apk add curl ca-certificates'" \
+      vps_ssh "sh -lc 'apk update && apk upgrade && apk add curl ca-certificates unzip'" \
         || fail "Не удалось обновить пакеты на VPS (apk)"
       ;;
     *)
@@ -195,6 +195,87 @@ install_3xui() {
       fail "Не удалось установить 3x-ui на VPS"
     }
   vps_step_done "3x-ui установлен"
+}
+
+# Заменяет ядро Xray из релиза 3x-ui на пин WARREN_XRAY_PINNED_RELEASE_TAG.
+# Без этого VPS получает Xray 26.x, с которым Podkop (sing-box) падает в
+# "reality verification failed", хотя xray-core клиенты работают.
+pin_3xui_xray_core() {
+  xray_machine="$(vps_ssh_timeout 30 "sh -lc 'uname -m'" 2>/dev/null | tr -d ' \t\r\n')"
+  xray_pin="$(warren_xray_pin_for_machine "$xray_machine" 2>/dev/null || true)"
+  if [ -z "$xray_pin" ]; then
+    warn "Неизвестная архитектура VPS (${xray_machine:-unknown}): оставляю ядро Xray из релиза 3x-ui. Podkop может не подняться."
+    return 0
+  fi
+
+  xray_suffix="$(printf "%s" "$xray_pin" | cut -d'|' -f1)"
+  xray_asset="$(printf "%s" "$xray_pin" | cut -d'|' -f2)"
+  xray_sha="$(printf "%s" "$xray_pin" | cut -d'|' -f3)"
+  [ -n "$xray_sha" ] || fail "Не задан ожидаемый SHA256 для Xray ${WARREN_XRAY_PINNED_RELEASE_TAG} (${xray_asset})"
+
+  xray_script_local="$(vps_workspace_dir)/xray-core-pin.sh"
+  xray_script_remote="/tmp/warren-xray-core-pin.sh"
+
+  {
+    printf '#!/bin/sh\n'
+    printf 'set -eu\n'
+    printf 'tag=%s\n'    "$(quote_sh "$WARREN_XRAY_PINNED_RELEASE_TAG")"
+    printf 'asset=%s\n'  "$(quote_sh "$xray_asset")"
+    printf 'sha=%s\n'    "$(quote_sh "$xray_sha")"
+    printf 'bin=%s\n'    "$(quote_sh "/usr/local/x-ui/bin/xray-linux-${xray_suffix}")"
+    printf '[ -x "$bin" ] || { echo "Warren: нет бинаря ядра $bin"; exit 65; }\n'
+    printf 'want="${tag#v}"\n'
+    printf 'cur="$("$bin" version 2>/dev/null | head -n1 | cut -d" " -f2)"\n'
+    printf 'if [ "$cur" = "$want" ]; then printf "%%s %%s\\n" "__WARREN_XRAY_ALREADY__" "$cur"; exit 0; fi\n'
+    printf 'command -v unzip >/dev/null 2>&1 || { echo "Warren: на VPS нет unzip"; exit 68; }\n'
+    printf 'd="$(mktemp -d /tmp/warren-xray.XXXXXX)"\n'
+    printf 'url="https://github.com/XTLS/Xray-core/releases/download/$tag/$asset.zip"\n'
+    printf 'curl -fsSL --connect-timeout 10 --max-time 300 -o "$d/x.zip" "$url" || { rm -rf "$d"; exit 66; }\n'
+    printf 'actual="$(sha256sum "$d/x.zip" 2>/dev/null | cut -d" " -f1)"\n'
+    printf 'if [ "$actual" != "$sha" ]; then\n'
+    printf '  echo "Warren: Xray zip SHA256 mismatch: expected $sha, got ${actual:-unknown}"\n'
+    printf '  rm -rf "$d"; exit 67\n'
+    printf 'fi\n'
+    printf 'unzip -o -q "$d/x.zip" xray -d "$d" || { rm -rf "$d"; exit 69; }\n'
+    printf 'mkdir -p /root/.warren\n'
+    printf 'backup="/root/.warren/$(basename "$bin").bundled"\n'
+    printf '[ -f "$backup" ] || cp -a "$bin" "$backup"\n'
+    printf 'install -m 0755 "$d/xray" "$bin"\n'
+    printf 'rm -rf "$d"\n'
+    printf 'if command -v systemctl >/dev/null 2>&1; then\n'
+    printf '  systemctl restart x-ui >/dev/null 2>&1 || systemctl restart x-ui.service >/dev/null 2>&1 || exit 70\n'
+    printf '  i=0\n'
+    printf '  while [ "$i" -lt 30 ]; do\n'
+    printf '    systemctl is-active --quiet x-ui >/dev/null 2>&1 && break\n'
+    printf '    sleep 1\n'
+    printf '    i=$((i + 1))\n'
+    printf '  done\n'
+    printf '  systemctl is-active --quiet x-ui >/dev/null 2>&1 || exit 71\n'
+    printf 'else\n'
+    printf '  service x-ui restart >/dev/null 2>&1 || exit 70\n'
+    printf 'fi\n'
+    printf 'printf "%%s %%s\\n" "__WARREN_XRAY_PINNED__" "$("$bin" version 2>/dev/null | head -n1)"\n'
+  } > "$xray_script_local" || fail "Не удалось подготовить скрипт пина ядра Xray"
+  chmod 700 "$xray_script_local" 2>/dev/null || true
+  vps_write_remote_file "$xray_script_local" "$xray_script_remote" || fail "Не удалось загрузить скрипт пина ядра Xray на VPS"
+
+  info "Фиксирую ядро Xray на ${WARREN_XRAY_PINNED_RELEASE_TAG} (${xray_asset}, arch ${xray_machine})..."
+  xray_pin_out="$(vps_ssh_timeout 900 "sh $(quote_sh "$xray_script_remote")")" \
+    || fail "Не удалось зафиксировать ядро Xray на ${WARREN_XRAY_PINNED_RELEASE_TAG}"
+
+  case "$xray_pin_out" in
+    *__WARREN_XRAY_ALREADY__*)
+      runtime_state_set "xray_core_tag" "$WARREN_XRAY_PINNED_RELEASE_TAG"
+      vps_step_done "Ядро Xray уже на пине ${WARREN_XRAY_PINNED_RELEASE_TAG}"
+      ;;
+    *__WARREN_XRAY_PINNED__*)
+      runtime_state_set "xray_core_tag" "$WARREN_XRAY_PINNED_RELEASE_TAG"
+      vps_step_done "Ядро Xray зафиксировано: ${WARREN_XRAY_PINNED_RELEASE_TAG}"
+      ;;
+    *)
+      fail "Подмена ядра Xray не подтвердилась: $xray_pin_out"
+      ;;
+  esac
 }
 
 configure_3xui_admin() {
@@ -461,6 +542,7 @@ load_remote_artifact() {
   # shellcheck disable=SC1090
   . "$artifact_local"
 
+  VPS_LOCATION="${VPS_LOCATION:-}"
   PANEL_USERNAME="${PANEL_USERNAME:-}"
   PANEL_PASSWORD="${PANEL_PASSWORD:-}"
   PANEL_URL="${PANEL_URL:-}"
@@ -480,6 +562,7 @@ save_remote_artifact() {
     printf "VPS_HOST=%s\n" "$(quote_sh "${VPS_HOST:-}")"
     printf "VPS_SSH_PORT=%s\n" "$(quote_sh "${VPS_SSH_PORT:-}")"
     printf "VPS_INSTANCE_ID=%s\n" "$(quote_sh "${VPS_INSTANCE_ID:-}")"
+    printf "VPS_LOCATION=%s\n" "$(quote_sh "${VPS_LOCATION:-}")"
     printf "PANEL_URL=%s\n" "$(quote_sh "${PANEL_URL:-}")"
     printf "PANEL_SCHEME=%s\n" "$(quote_sh "${PANEL_SCHEME:-}")"
     printf "PANEL_PORT=%s\n" "$(quote_sh "${PANEL_PORT:-}")"

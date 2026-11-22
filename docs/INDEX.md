@@ -10,7 +10,7 @@ Roadmap и статусы — в [TECHNICAL_README.md](../TECHNICAL_README.md#mi
 ```text
  Mac (dev/admin)                    Router (OpenWrt 25.x apk, pinned 25.12.6)            VPS (Debian/Ubuntu)
  ─────────────────                  ──────────────────────────────────────────              ───────────────────
- tools/test-e2e.sh ──scp/ssh──▶     bootstrap.sh ─▶ warren.sh (orchestrator)                 3x-ui (pinned v3.5.0)
+ tools/test-e2e.sh ──scp/ssh──▶     bootstrap.sh ─▶ warren.sh (orchestrator)                 3x-ui v3.9.0 + Xray v25.12.8
  tools/warren-settings.sh ─ssh─▶        │  source lib/*.sh (WARREN_LIB_LIST)                  └ VLESS+Reality inbound
  tools/remote-admin/                    │
    warren-remote-control.sh ─ssh─▶      ├─ interactive menu (lib/ui.sh)                      /usr/local/bin/warren-remote
@@ -138,7 +138,9 @@ LuCI runner ставится из `luci-app-warren/root/usr/libexec/warren/warre
 
 ## Версии внешних компонентов
 
-Всё в `lib/versions.sh` (`warren_versions_apply_defaults`): Podkop installer `0.7.21` + SHA, 3x-ui `v3.5.0` + SHA,
+Всё в `lib/versions.sh` (`warren_versions_apply_defaults`): Podkop installer `0.7.21` + SHA, 3x-ui `v3.9.0` + SHA,
+ядро Xray `v25.12.8` + SHA на каждую арку (`warren_xray_pin_for_machine`; подменяется после установки панели в
+`pin_3xui_xray_core`, потому что 26.x ломает REALITY для sing-box/Podkop),
 AmneziaWG — exact `v${DISTRIB_RELEASE}` из `Slava-Shchipunov/awg-openwrt`, иначе same-family fallback
 (`warren_awg_select_release`). OpenWrt `26+` — graceful mode (`WARREN_ALLOW_UNKNOWN_OPENWRT=1`).
 

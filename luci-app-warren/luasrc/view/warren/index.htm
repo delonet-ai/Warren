@@ -228,6 +228,10 @@ end
             <label>Root пароль VPS</label>
             <input name="vps_root_password" type="password" autocomplete="off" value="<%=conf and conf.VPS_ROOT_PASSWORD or ""%>" />
           </div>
+          <div>
+            <label>ID локации (для имени в Podkop)</label>
+            <input name="vps_location" type="text" value="<%=conf and conf.VPS_LOCATION or ""%>" placeholder="GE, USA, FI, KZ" />
+          </div>
         </div>
         <p class="warren-note">Во время базовой настройки Warren автоматически выполнит expand-root и перезагрузит роутер. После загрузки просто снова открой Warren или запусти <code>warren</code>.</p>
         <input type="hidden" name="browser_epoch" value="" />
@@ -308,6 +312,7 @@ end
           <div><label>IP адрес VPS</label><input name="vps_host" type="text" placeholder="203.0.113.10" /></div>
           <div><label>SSH порт</label><input name="vps_ssh_port" type="text" value="22" /></div>
           <div><label>Root пароль</label><input name="vps_root_password" type="password" autocomplete="off" /></div>
+          <div><label>ID локации</label><input name="vps_location" type="text" placeholder="GE, USA, FI, KZ" /></div>
         </div>
         <button class="btn cbi-button cbi-button-apply" type="submit">Залей новый VPS</button>
       </form>

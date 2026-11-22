@@ -4,6 +4,11 @@ vps_sanitized_host() {
   printf "%s" "${VPS_HOST:-unknown}" | tr -c 'A-Za-z0-9._-' '_'
 }
 
+# Location tag shown in Podkop (VLESS link fragment): "GE", "USA", "FI", "KZ".
+vps_location_code() {
+  printf "%s" "${VPS_LOCATION:-}" | tr '[:lower:]' '[:upper:]' | tr -dc 'A-Z0-9' | cut -c1-8
+}
+
 vps_workspace_dir() {
   conf_dir="$(dirname "$CONF")"
   printf "%s" "${WARREN_VPS_DIR:-${conf_dir}/vps}"

@@ -34,6 +34,7 @@ VPS_ROOT_PASSWORD="$(extract_field "SSH root password")"
 PANEL_URL="$(extract_field "3x-ui URL")"
 PANEL_USERNAME="$(extract_field "3x-ui username")"
 PANEL_PASSWORD="$(extract_field "3x-ui password")"
+VPS_LOCATION="$(extract_field "Location")"
 
 [ -n "$VPS_HOST" ] || { echo "missing VPS host in report" >&2; exit 1; }
 [ -n "$VPS_SSH_PORT" ] || VPS_SSH_PORT=22
@@ -50,7 +51,7 @@ VPS_KEY_PATH="$(ls /etc/warren/vps/keys/${VPS_HOST}*_ed25519 2>/dev/null | head 
   exit 1
 }
 
-export VPS_HOST VPS_SSH_PORT VPS_ROOT_PASSWORD VPS_KEY_PATH PANEL_URL PANEL_USERNAME PANEL_PASSWORD
+export VPS_HOST VPS_SSH_PORT VPS_ROOT_PASSWORD VPS_KEY_PATH PANEL_URL PANEL_USERNAME PANEL_PASSWORD VPS_LOCATION
 
 collect_3xui_access_info
 generate_reality_materials
@@ -80,6 +81,7 @@ build_vless_link
   printf "SSH root login: %s\n" "root"
   printf "SSH root password: %s\n" "${VPS_ROOT_PASSWORD:-unknown}"
   printf "OS: %s\n" "${VPS_OS_PRETTY:-unknown}"
+  printf "Location: %s\n" "$(vps_location_code)"
   printf "3x-ui URL: %s\n" "${PANEL_URL:-unknown}"
   printf "3x-ui username: %s\n" "${PANEL_USERNAME:-unknown}"
   printf "3x-ui password: %s\n" "${PANEL_PASSWORD:-unknown}"

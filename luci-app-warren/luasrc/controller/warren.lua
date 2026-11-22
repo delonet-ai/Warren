@@ -446,6 +446,7 @@ local function write_form_env()
     VPS_HOST = "vps_host",
     VPS_SSH_PORT = "vps_ssh_port",
     VPS_ROOT_PASSWORD = "vps_root_password",
+    VPS_LOCATION = "vps_location",
     TG_BOT_TOKEN = "tg_bot_token",
     TG_BOT_CHAT_ID = "tg_chat_id",
     SNI_APPLY_SOURCE = "sni_apply_source",
