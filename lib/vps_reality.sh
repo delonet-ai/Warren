@@ -197,6 +197,7 @@ create_vless_reality_payload() {
 }
 EOF
 
+  chmod 600 "$inbound_json_local" 2>/dev/null || true
   vps_write_remote_file "$inbound_json_local" "$inbound_json_remote" || fail "Не удалось загрузить inbound payload на VPS"
 }
 
@@ -268,6 +269,16 @@ build_vless_link() {
   runtime_state_set "vless_link" "$VLESS_LINK"
 }
 
+# Рабочие файлы провижининга содержат приватный ключ Reality, пароль панели и
+# cookie сессии, а раньше оставались лежать и на роутере (0644), и в /tmp на VPS.
+vps_cleanup_provisioning_scratch() {
+  for _vcs_name in inbound-vless-reality.json panel-login.json panel-login-attempt.sh \
+                   panel-inbound-api.sh panel-xray-x25519.sh xray-core-pin.sh; do
+    rm -f "$(vps_workspace_dir)/${_vcs_name}" 2>/dev/null || true
+  done
+  vps_ssh_timeout 30 "sh -lc 'rm -f /tmp/warren-inbound-vless-reality.json /tmp/warren-panel-login.json /tmp/warren-panel.cookie /tmp/warren-panel-login-attempt.sh /tmp/warren-panel-inbound-api.sh /tmp/warren-panel-xray-x25519.sh /tmp/warren-xray-core-pin.sh'" >/dev/null 2>&1 || true
+}
+
 configure_vless_reality() {
   if ! login_3xui_api; then
     warn "Не удалось войти в web API 3x-ui; продолжаю через root-доступ и API token из SQLite"
@@ -305,5 +316,6 @@ configure_vless_reality() {
   chmod 600 "$REPORT_FILE" 2>/dev/null || true
 
   save_remote_artifact
+  vps_cleanup_provisioning_scratch
   vps_step_done "VLESS + Reality inbound создан, локальный отчёт записан: $REPORT_FILE"
 }

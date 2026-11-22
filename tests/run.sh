@@ -1332,6 +1332,34 @@ assert_success "the Xray pin installs unzip itself when the VPS has none" \
 assert_success "a failed Xray pin prints what the VPS said" \
   grep -q 'say "\$xray_pin_out"' "$PROJECT_DIR/lib/vps_3xui.sh"
 
+# --- Provisioning scratch hygiene -----------------------------------------
+# Регрессия 2026-11-22: на боевом роутере нашлись inbound-vless-reality.json с
+# приватным ключом Reality и panel-login.json — оба 0644 и оставленные навсегда.
+payload_file_is_private() (
+  vps_workspace_dir() { printf '%s\n' "$TEST_TMP"; }
+  vps_write_remote_file() { return 0; }
+  CLIENT_COMMENT=test CLIENT_EMAIL=test CLIENT_UUID=11111111-2222-4333-8444-555555555555
+  CLIENT_SUBID=test REALITY_PRIVATE_KEY=secret REALITY_PUBLIC_KEY=pub
+  SID_PRIMARY=abcd SID_EXTRA_1=01 SID_EXTRA_2=02 SID_EXTRA_3=03
+  SID_EXTRA_4=04 SID_EXTRA_5=05 SID_EXTRA_6=06 SID_EXTRA_7=07
+  create_vless_reality_payload || return 1
+  perms="$(ls -l "$TEST_TMP/inbound-vless-reality.json" | cut -c1-10)"
+  [ "$perms" = "-rw-------" ] || { printf "perms=%s\n" "$perms" >&2; return 1; }
+)
+assert_success "the inbound payload with the Reality private key is 0600" payload_file_is_private
+
+assert_success "the VPS flow wipes its scratch files after provisioning" \
+  grep -q 'vps_cleanup_provisioning_scratch' "$PROJECT_DIR/lib/vps_reality.sh"
+
+scratch_cleanup_covers_secrets() (
+  body="$(sed -n '/^vps_cleanup_provisioning_scratch() {/,/^}/p' "$PROJECT_DIR/lib/vps_reality.sh")"
+  for n in inbound-vless-reality.json panel-login.json warren-panel.cookie warren-inbound-vless-reality.json; do
+    case "$body" in *"$n"*) ;; *) printf "not cleaned: %s\n" "$n" >&2; return 1 ;; esac
+  done
+)
+assert_success "cleanup covers the payload, the login json and the session cookie" \
+  scratch_cleanup_covers_secrets
+
 # --- Random material ------------------------------------------------------
 # Регрессия 2026-11-22: запасной путь `date +%s` выдавал один и тот же обрезок
 # времени, и на боевом VPS все shortId оказались кусками "1793962707".
