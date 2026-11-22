@@ -1325,5 +1325,12 @@ assert_success "run_vps_flow pins the Xray core after installing 3x-ui" \
 assert_success "the VPS package step installs unzip for the Xray pin" \
   grep -q 'iproute2 unzip' "$PROJECT_DIR/lib/vps_3xui.sh"
 
+# Регрессия 2026-11-22: на переиспользуемом VPS upgrade_vps_packages не выполнялся,
+# unzip отсутствовал, и пин падал с exit 68 вместо того, чтобы доставить пакет.
+assert_success "the Xray pin installs unzip itself when the VPS has none" \
+  grep -q 'apt-get install -y unzip' "$PROJECT_DIR/lib/vps_3xui.sh"
+assert_success "a failed Xray pin prints what the VPS said" \
+  grep -q 'say "\$xray_pin_out"' "$PROJECT_DIR/lib/vps_3xui.sh"
+
 printf "\nPassed: %d  Failed: %d\n" "$PASS_COUNT" "$FAIL_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

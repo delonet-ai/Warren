@@ -227,7 +227,20 @@ pin_3xui_xray_core() {
     printf 'want="${tag#v}"\n'
     printf 'cur="$("$bin" version 2>/dev/null | head -n1 | cut -d" " -f2)"\n'
     printf 'if [ "$cur" = "$want" ]; then printf "%%s %%s\\n" "__WARREN_XRAY_ALREADY__" "$cur"; exit 0; fi\n'
-    printf 'command -v unzip >/dev/null 2>&1 || { echo "Warren: на VPS нет unzip"; exit 68; }\n'
+    # Пакеты ставит upgrade_vps_packages, но при переиспользовании готового VPS
+    # этот шаг не выполнялся — доставляем unzip сами, иначе распаковать нечем.
+    printf 'if ! command -v unzip >/dev/null 2>&1; then\n'
+    printf '  if command -v apt-get >/dev/null 2>&1; then\n'
+    printf '    DEBIAN_FRONTEND=noninteractive apt-get install -y unzip >/dev/null 2>&1 ||\n'
+    printf '      { apt-get update >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive apt-get install -y unzip >/dev/null 2>&1; } || true\n'
+    printf '  elif command -v dnf >/dev/null 2>&1; then dnf install -y unzip >/dev/null 2>&1 || true\n'
+    printf '  elif command -v yum >/dev/null 2>&1; then yum install -y unzip >/dev/null 2>&1 || true\n'
+    printf '  elif command -v apk >/dev/null 2>&1; then apk add unzip >/dev/null 2>&1 || true\n'
+    printf '  elif command -v pacman >/dev/null 2>&1; then pacman -Sy --noconfirm unzip >/dev/null 2>&1 || true\n'
+    printf '  elif command -v zypper >/dev/null 2>&1; then zypper install -y unzip >/dev/null 2>&1 || true\n'
+    printf '  fi\n'
+    printf 'fi\n'
+    printf 'command -v unzip >/dev/null 2>&1 || { echo "Warren: на VPS нет unzip и его не удалось доставить"; exit 68; }\n'
     printf 'd="$(mktemp -d /tmp/warren-xray.XXXXXX)"\n'
     printf 'url="https://github.com/XTLS/Xray-core/releases/download/$tag/$asset.zip"\n'
     printf 'curl -fsSL --connect-timeout 10 --max-time 300 -o "$d/x.zip" "$url" || { rm -rf "$d"; exit 66; }\n'
@@ -260,8 +273,10 @@ pin_3xui_xray_core() {
   vps_write_remote_file "$xray_script_local" "$xray_script_remote" || fail "Не удалось загрузить скрипт пина ядра Xray на VPS"
 
   info "Фиксирую ядро Xray на ${WARREN_XRAY_PINNED_RELEASE_TAG} (${xray_asset}, arch ${xray_machine})..."
-  xray_pin_out="$(vps_ssh_timeout 900 "sh $(quote_sh "$xray_script_remote")")" \
-    || fail "Не удалось зафиксировать ядро Xray на ${WARREN_XRAY_PINNED_RELEASE_TAG}"
+  xray_pin_out="$(vps_ssh_timeout 900 "sh $(quote_sh "$xray_script_remote")")" || {
+    [ -z "$xray_pin_out" ] || say "$xray_pin_out"
+    fail "Не удалось зафиксировать ядро Xray на ${WARREN_XRAY_PINNED_RELEASE_TAG}"
+  }
 
   case "$xray_pin_out" in
     *__WARREN_XRAY_ALREADY__*)
